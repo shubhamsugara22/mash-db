@@ -1,8 +1,13 @@
 # POC 
 
 TODO: Check feasibility with rust
+
 Simple DB 
+
+
 Vanilla DB creation 
+
+
 Explain diff components of DB
 
 Reference:
