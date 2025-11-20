@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 
 mod column;
+mod parser;
 mod table;
 
 use table::{Row, Table};
@@ -16,8 +17,14 @@ enum PrepareResult {
 }
 
 enum Statement {
-    Insert { id: u32, username: String, email: String },
-    Select,
+    Insert {
+        id: u32,
+        username: String,
+        email: String,
+    },
+    Select {
+        columns: Option<Vec<String>>,
+    },
 }
 
 fn print_prompt() {
@@ -41,18 +48,25 @@ fn prepare_statement(input: &str) -> PrepareResult {
         if parts.len() < 4 {
             return PrepareResult::UnrecognizedStatement;
         }
-        
+
         let id = match parts[1].parse::<u32>() {
             Ok(id) => id,
             Err(_) => return PrepareResult::UnrecognizedStatement,
         };
-        
+
         let username = parts[2].to_string();
         let email = parts[3].to_string();
-        
-        PrepareResult::Success(Statement::Insert { id, username, email })
-    } else if input.starts_with("select") {
-        PrepareResult::Success(Statement::Select)
+
+        PrepareResult::Success(Statement::Insert {
+            id,
+            username,
+            email,
+        })
+    } else if input.to_lowercase().starts_with("select") {
+        match parser::parse_select(input) {
+            Ok(cols) => PrepareResult::Success(Statement::Select { columns: cols }),
+            Err(_) => PrepareResult::UnrecognizedStatement,
+        }
     } else {
         PrepareResult::UnrecognizedStatement
     }
@@ -60,20 +74,36 @@ fn prepare_statement(input: &str) -> PrepareResult {
 
 fn execute_statement(statement: Statement, table: &mut Table) {
     match statement {
-        Statement::Insert { id, username, email } => {
-            match Row::new(id, username, email) {
-                Ok(row) => {
-                    table.insert(row);
-                    println!("Executed.");
-                }
-                Err(e) => {
-                    println!("Error: {}", e);
-                }
+        Statement::Insert {
+            id,
+            username,
+            email,
+        } => match Row::new(id, username, email) {
+            Ok(row) => {
+                table.insert(row);
+                println!("Executed.");
             }
-        }
-        Statement::Select => {
+            Err(e) => {
+                println!("Error: {}", e);
+            }
+        },
+        Statement::Select { columns } => {
             for row in table.select_all() {
-                println!("({}, {}, {})", row.id, row.username, row.email);
+                match &columns {
+                    None => println!("({}, {}, {})", row.id, row.username, row.email),
+                    Some(cols) => {
+                        let mut values: Vec<String> = Vec::new();
+                        for col in cols.iter() {
+                            match col.as_str() {
+                                "id" => values.push(row.id.to_string()),
+                                "username" => values.push(row.username.clone()),
+                                "email" => values.push(row.email.clone()),
+                                other => values.push(format!("NULL({})", other)),
+                            }
+                        }
+                        println!("({})", values.join(", "));
+                    }
+                }
             }
             println!("Executed.");
         }
@@ -82,21 +112,21 @@ fn execute_statement(statement: Statement, table: &mut Table) {
 
 fn main() {
     let mut table = Table::new();
-    
+
     loop {
         print_prompt();
-        
+
         let mut input = String::new();
         io::stdin()
             .read_line(&mut input)
             .expect("Failed to read line");
-        
+
         let input = input.trim();
-        
+
         if input.is_empty() {
             continue;
         }
-        
+
         if input.starts_with('.') {
             match do_meta_command(input) {
                 MetaCommandResult::Success => continue,
@@ -106,7 +136,7 @@ fn main() {
                 }
             }
         }
-        
+
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
                 execute_statement(statement, &mut table);
@@ -117,4 +147,3 @@ fn main() {
         }
     }
 }
-
