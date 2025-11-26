@@ -74,18 +74,12 @@ fn prepare_statement(input: &str) -> PrepareResult {
 
 fn execute_statement(statement: Statement, table: &mut Table) {
     match statement {
-        Statement::Insert {
-            id,
-            username,
-            email,
-        } => match Row::new(id, username, email) {
-            Ok(row) => {
-                table.insert(row);
-                println!("Executed.");
-            }
-            Err(e) => {
-                println!("Error: {}", e);
-            }
+        Statement::Insert { id, username, email } => match Row::new(id, username, email) {
+            Ok(row) => match table.insert(row) {
+                Ok(()) => println!("Executed."),
+                Err(e) => println!("Error: {}", e),
+            },
+            Err(e) => println!("Error: {}", e),
         },
         Statement::Select { columns } => {
             for row in table.select_all() {
