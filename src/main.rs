@@ -25,6 +25,11 @@ enum Statement {
     Select {
         columns: Option<Vec<String>>,
     },
+    Update {
+        id: u32,
+        column: String,
+        value: String,
+    },
 }
 
 fn print_prompt() {
@@ -62,6 +67,27 @@ fn prepare_statement(input: &str) -> PrepareResult {
             username,
             email,
         })
+    } else if input.to_lowercase().starts_with("update") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() < 5 || parts[2].to_lowercase() != "set" {
+            return PrepareResult::UnrecognizedStatement;
+        }
+
+        let id = match parts[1].parse::<u32>() {
+            Ok(id) => id,
+            Err(_) => return PrepareResult::UnrecognizedStatement,
+        };
+
+        let set_part = parts[3];
+        let eq_pos = set_part.find('=');
+        if eq_pos.is_none() {
+            return PrepareResult::UnrecognizedStatement;
+        }
+        let eq_pos = eq_pos.unwrap();
+        let column = set_part[..eq_pos].to_string();
+        let value = set_part[eq_pos + 1..].to_string();
+
+        PrepareResult::Success(Statement::Update { id, column, value })
     } else if input.to_lowercase().starts_with("select") {
         match parser::parse_select(input) {
             Ok(cols) => PrepareResult::Success(Statement::Select { columns: cols }),
@@ -74,7 +100,11 @@ fn prepare_statement(input: &str) -> PrepareResult {
 
 fn execute_statement(statement: Statement, table: &mut Table) {
     match statement {
-        Statement::Insert { id, username, email } => match Row::new(id, username, email) {
+        Statement::Insert {
+            id,
+            username,
+            email,
+        } => match Row::new(id, username, email) {
             Ok(row) => match table.insert(row) {
                 Ok(()) => println!("Executed."),
                 Err(e) => println!("Error: {}", e),
@@ -101,6 +131,10 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             }
             println!("Executed.");
         }
+        Statement::Update { id, column, value } => match table.update(id, &column, &value) {
+            Ok(()) => println!("Executed."),
+            Err(e) => println!("Error: {}", e),
+        },
     }
 }
 

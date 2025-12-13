@@ -9,6 +9,7 @@ A simple database implementation in Rust, built from scratch following SQLite ar
 - **Basic SQL Support**:
   - `insert <id> <username> <email>` - Insert a row
   - `select` - Retrieve all rows
+  - `update <id> set <column>=<value>` - Update a row (e.g., `update 1 set username=alice2`)
 - **In-Memory Storage** - Table stores rows in a Vec
 - **Data Validation** - Username (max 32 chars) and email (max 255 chars) length checks
 
@@ -24,8 +25,10 @@ db > insert 1 alice alice@example.com
 Executed.
 db > insert 2 bob bob@example.com
 Executed.
+db > update 1 set username=alice2
+Executed.
 db > select
-(1, alice, alice@example.com)
+(1, alice2, alice@example.com)
 (2, bob, bob@example.com)
 Executed.
 db > .exit
