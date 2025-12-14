@@ -30,6 +30,9 @@ enum Statement {
         column: String,
         value: String,
     },
+    Delete {
+        id: u32,
+    },
 }
 
 fn print_prompt() {
