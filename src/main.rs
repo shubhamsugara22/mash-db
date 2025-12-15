@@ -148,6 +148,10 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         Statement::Update { id, column, value } => match table.update(id, &column, &value) {
             Ok(()) => println!("Executed."),
             Err(e) => println!("Error: {}", e),
+        }
+        Statement::Delete { id } => match table.delete(id) {
+            Ok(()) => println!("Executed."),
+            Err(e) => println!("Error: {}", e),
         },
     }
 }
