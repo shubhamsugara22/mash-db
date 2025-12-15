@@ -78,6 +78,16 @@ impl Table {
             Err(format!("Row with id {} not found", id))
         }
     }
+    pub fn delete(&mut self, id: u32) -> Result<(), String> {
+        let initial_len = self.rows.len();
+        self.rows.retain(|row| row.id != id);
+
+        if self.rows.len() == initial_len {
+            Err(format!("Row with id {} not found", id))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
