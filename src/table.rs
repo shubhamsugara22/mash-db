@@ -142,4 +142,21 @@ mod tests {
         // Update id (should fail)
         assert!(table.update(1, "id", "2").is_err());
     }
+    #[test]
+    fn delete_removes_existing_row() {
+        let mut table = Table::new();
+
+        let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
+        let r2 = Row::new(2, "bob".to_string(), "bob@example.com".to_string()).unwrap();
+
+        table.insert(r1).unwrap();
+        table.insert(r2).unwrap();
+
+        // Delete existing row
+        assert!(table.delete(1).is_ok());
+
+        let rows = table.select_all();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 2);
+    }
 }
