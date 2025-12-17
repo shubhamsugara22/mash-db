@@ -159,4 +159,68 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, 2);
     }
+        #[test]
+    fn delete_where_by_id_removes_row() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+
+        let deleted = table.delete_where("id", "1").unwrap();
+        assert_eq!(deleted, 1);
+
+        let rows = table.select_all();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 2);
+    }
+    #[test]
+    fn delete_where_by_username() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(2, "alice".to_string(), "a2@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(3, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+
+        let deleted = table.delete_where("username", "alice").unwrap();
+        assert_eq!(deleted, 2);
+
+        let rows = table.select_all();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].username, "bob");
+    }
+    #[test]
+    fn delete_where_by_email() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+
+        let deleted = table.delete_where("email", "b@b.com").unwrap();
+        assert_eq!(deleted, 1);
+
+        let rows = table.select_all();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].email, "a@a.com");
+    }
+    #[test]
+    fn delete_where_invalid_column_fails() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+
+        let res = table.delete_where("invalid", "alice");
+        assert!(res.is_err());
+    }
+    #[test]
+    fn delete_where_no_matching_rows_returns_zero() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+
+        let deleted = table.delete_where("username", "bob").unwrap();
+        assert_eq!(deleted, 0);
+
+        let rows = table.select_all();
+        assert_eq!(rows.len(), 1);
+    }
 }
