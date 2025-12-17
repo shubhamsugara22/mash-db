@@ -88,6 +88,27 @@ impl Table {
             Ok(())
         }
     }
+    pub fn delete_where(&mut self, column: &str, value: &str) -> Result<usize, String> {
+        let initial_len = self.rows.len();
+
+        match column {
+            "id" => {
+                let id = value
+                    .parse::<u32>()
+                    .map_err(|_| "Invalid id value".to_string())?;
+
+                self.rows.retain(|row| row.id != id);
+            }
+            "username" => {
+                self.rows.retain(|row| row.username != value);
+            }
+            "email" => {
+                self.rows.retain(|row| row.email != value);
+            }
+            _ => return Err(format!("Invalid column '{}'", column)),
+        }
+        Ok(initial_len - self.rows.len())
+    }
 }
 
 #[cfg(test)]
