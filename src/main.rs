@@ -33,6 +33,10 @@ enum Statement {
     Delete {
         id: u32,
     },
+    DeleteWhere {
+        column: String,
+        value: String,
+    },
 }
 
 fn print_prompt() {
@@ -107,9 +111,27 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Err(_) => return PrepareResult::UnrecognizedStatement,
         };
         PrepareResult::Success(Statement::Delete { id })
+
+    } else if input.to_lowercase().starts_with("delete where") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() != 3 {
+            return PrepareResult::UnrecognizedStatement;
+        }
+
+        let cond = parts[2];
+        let eq_pos = cond.find('=');
+        if eq_pos.is_none() {
+            return PrepareResult::UnrecognizedStatement;
+        }
+
+        let eq_pos = eq_pos.unwrap();
+        let column = cond[..eq_pos].to_string();
+        let value = cond[eq_pos + 1..].to_string();
+
+        PrepareResult::Success(Statement::DeleteWhere { column, value })
     } else {
         PrepareResult::UnrecognizedStatement
-    }
+    } 
 }
 
 fn execute_statement(statement: Statement, table: &mut Table) {
