@@ -174,6 +174,10 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         Statement::Delete { id } => match table.delete(id) {
             Ok(()) => println!("Executed."),
             Err(e) => println!("Error: {}", e),
+        }
+        Statement::DeleteWhere { column, value } => match table.delete_where(&column, &value) {
+            Ok(count) => println!("Deleted {} rows.", count),
+            Err(e) => println!("Error: {}", e),
         },
     }
 }
