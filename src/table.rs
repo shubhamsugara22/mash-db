@@ -109,6 +109,11 @@ impl Table {
         }
         Ok(initial_len - self.rows.len())
     }
+    pub fn clear(&mut self) -> usize {
+        let count = self.rows.len();
+        self.rows.clear();
+        count
+    }
 }
 
 #[cfg(test)]

@@ -37,6 +37,7 @@ enum Statement {
         column: String,
         value: String,
     },
+    DeleteAll,
 }
 
 fn print_prompt() {
@@ -129,6 +130,10 @@ fn prepare_statement(input: &str) -> PrepareResult {
         let value = cond[eq_pos + 1..].to_string();
 
         PrepareResult::Success(Statement::DeleteWhere { column, value })
+    
+    } else if input.to_lowercase() == "delete all" {
+        PrepareResult::Success(Statement::DeleteAll)
+    
     } else {
         PrepareResult::UnrecognizedStatement
     } 
@@ -178,6 +183,10 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         Statement::DeleteWhere { column, value } => match table.delete_where(&column, &value) {
             Ok(count) => println!("Deleted {} rows.", count),
             Err(e) => println!("Error: {}", e),
+        }
+        Statement::DeleteAll => {
+            let count = table.clear();
+            println!("Deleted {} rows.", count);
         },
     }
 }
