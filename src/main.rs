@@ -101,18 +101,9 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Ok(cols) => PrepareResult::Success(Statement::Select { columns: cols }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_lowercase().starts_with("delete") {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() != 2 {
-            return PrepareResult::UnrecognizedStatement;
-        }
-
-        let id = match parts[1].parse::<u32>() {
-            Ok(id) => id,
-            Err(_) => return PrepareResult::UnrecognizedStatement,
-        };
-        PrepareResult::Success(Statement::Delete { id })
-
+    } else if input.to_lowercase() == "delete all" {
+        PrepareResult::Success(Statement::DeleteAll)
+    
     } else if input.to_lowercase().starts_with("delete where") {
         let parts: Vec<&str> = input.split_whitespace().collect();
         if parts.len() != 3 {
@@ -131,9 +122,18 @@ fn prepare_statement(input: &str) -> PrepareResult {
 
         PrepareResult::Success(Statement::DeleteWhere { column, value })
     
-    } else if input.to_lowercase() == "delete all" {
-        PrepareResult::Success(Statement::DeleteAll)
-    
+    }  else if input.to_lowercase().starts_with("delete") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() != 2 {
+            return PrepareResult::UnrecognizedStatement;
+        }
+
+        let id = match parts[1].parse::<u32>() {
+            Ok(id) => id,
+            Err(_) => return PrepareResult::UnrecognizedStatement,
+        };
+        PrepareResult::Success(Statement::Delete { id })
+
     } else {
         PrepareResult::UnrecognizedStatement
     } 
