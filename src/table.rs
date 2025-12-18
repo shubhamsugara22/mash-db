@@ -249,4 +249,23 @@ mod tests {
         let rows = table.select_all();
         assert_eq!(rows.len(), 1);
     }
+    #[test]
+    fn delete_all_removes_everything() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+
+        let deleted = table.clear();
+        assert_eq!(deleted, 2);
+        assert_eq!(table.select_all().len(), 0);
+    }
+    #[test]
+    fn delete_all_on_empty_table() {
+        let mut table = Table::new();
+
+        let deleted = table.clear();
+        assert_eq!(deleted, 0);
+        assert_eq!(table.select_all().len(), 0);
+    }
 }
