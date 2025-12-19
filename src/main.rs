@@ -25,6 +25,11 @@ enum Statement {
     Select {
         columns: Option<Vec<String>>,
     },
+    SelectWhere {
+        columns: Option<Vec<String>>,
+        column: String,
+        value: String,
+    },
     Update {
         id: u32,
         column: String,

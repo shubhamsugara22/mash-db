@@ -49,7 +49,41 @@ impl Table {
     pub fn select_all(&self) -> &[Row] {
         &self.rows
     }
+    
+    pub fn select_where(&self, column: &str, value: &str) -> Result<Vec<&Row>, String> {
+        let mut result = Vec::new();
 
+        match column {
+            "id" => {
+                let id = value
+                    .parse::<u32>()
+                    .map_err(|_| "Invalid id value".to_string())?;
+
+                for row in &self.rows {
+                    if row.id == id {
+                        result.push(row);
+                    }
+                }
+            }
+            "username" => {
+                for row in &self.rows {
+                    if row.username == value {
+                        result.push(row);
+                    }
+                }
+            }
+            "email" => {
+                for row in &self.rows {
+                    if row.email == value {
+                        result.push(row);
+                    }
+                }
+            }
+            _ => return Err(format!("Invalid column '{}'", column)),
+        }
+
+        Ok(result)
+    }
     /// Update a row by id.
     /// Returns an error if the id doesn't exist or the value is invalid for the column.
     pub fn update(&mut self, id: u32, column: &str, value: &str) -> Result<(), String> {
