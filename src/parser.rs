@@ -64,9 +64,45 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     tokens
 }
 
-pub fn parse_select(input: &str) -> Result<Option<Vec<String>>, String> {
-    let tokens = tokenize(input);
-    parse_select_tokens(&tokens)
+pub fn parse_select(
+    input: &str,
+) -> Result<(Option<Vec<String>>, Option<(String, String)>), String> {
+    let input = input.trim();
+
+    if !input.to_lowercase().starts_with("select") {
+        return Err("Not a select statement".to_string());
+    }
+
+    let rest = input[6..].trim(); // after "select"
+
+    if rest.is_empty() {
+        return Ok((None, None));
+    }
+
+    let parts: Vec<&str> = rest.splitn(2, " where ").collect();
+
+    let columns = if parts[0].trim().is_empty() {
+        None
+    } else {
+        Some(
+            parts[0]
+                .split(',')
+                .map(|c| c.trim().to_string())
+                .collect(),
+        )
+    };
+
+    let condition = if parts.len() == 2 {
+        let cond = parts[1];
+        let eq_pos = cond.find('=').ok_or("Invalid WHERE clause")?;
+        let column = cond[..eq_pos].trim().to_string();
+        let value = cond[eq_pos + 1..].trim().to_string();
+        Some((column, value))
+    } else {
+        None
+    };
+
+    Ok((columns, condition))
 }
 
 fn parse_select_tokens(tokens: &[Token]) -> Result<Option<Vec<String>>, String> {

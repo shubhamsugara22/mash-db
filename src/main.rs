@@ -101,9 +101,18 @@ fn prepare_statement(input: &str) -> PrepareResult {
         let value = set_part[eq_pos + 1..].to_string();
 
         PrepareResult::Success(Statement::Update { id, column, value })
-    } else if input.to_lowercase().starts_with("select") {
+    }  else if input.to_lowercase().starts_with("select") {
         match parser::parse_select(input) {
-            Ok(cols) => PrepareResult::Success(Statement::Select { columns: cols }),
+            Ok((columns, Some((column, value)))) => {
+                PrepareResult::Success(Statement::SelectWhere {
+                    columns,
+                    column,
+                    value,
+                })
+            }
+            Ok((columns, None)) => {
+                PrepareResult::Success(Statement::Select { columns })
+            }
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if input.to_lowercase() == "delete all" {
@@ -176,6 +185,33 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                 }
             }
             println!("Executed.");
+        }
+        Statement::SelectWhere {
+            columns,
+            column,
+            value,
+        } => match table.select_where(&column, &value) {
+            Ok(rows) => {
+                for row in rows {
+                    match &columns {
+                        None => println!("({}, {}, {})", row.id, row.username, row.email),
+                        Some(cols) => {
+                            let mut values = Vec::new();
+                            for col in cols {
+                                match col.as_str() {
+                                    "id" => values.push(row.id.to_string()),
+                                    "username" => values.push(row.username.clone()),
+                                    "email" => values.push(row.email.clone()),
+                                    other => values.push(format!("NULL({})", other)),
+                                }
+                            }
+                            println!("({})", values.join(", "));
+                        }
+                    }
+                }
+                println!("Executed.");
+            }
+            Err(e) => println!("Error: {}", e),
         }
         Statement::Update { id, column, value } => match table.update(id, &column, &value) {
             Ok(()) => println!("Executed."),
