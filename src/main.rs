@@ -101,23 +101,18 @@ fn prepare_statement(input: &str) -> PrepareResult {
         let value = set_part[eq_pos + 1..].to_string();
 
         PrepareResult::Success(Statement::Update { id, column, value })
-    }  else if input.to_lowercase().starts_with("select") {
+    } else if input.to_lowercase().starts_with("select") {
         match parser::parse_select(input) {
-            Ok((columns, Some((column, value)))) => {
-                PrepareResult::Success(Statement::SelectWhere {
-                    columns,
-                    column,
-                    value,
-                })
-            }
-            Ok((columns, None)) => {
-                PrepareResult::Success(Statement::Select { columns })
-            }
+            Ok((cols, None)) => PrepareResult::Success(Statement::Select { columns: cols }),
+            Ok((cols, Some((col, val)))) => PrepareResult::Success(Statement::SelectWhere {
+                columns: cols,
+                column: col,
+                value: val,
+            }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if input.to_lowercase() == "delete all" {
         PrepareResult::Success(Statement::DeleteAll)
-    
     } else if input.to_lowercase().starts_with("delete where") {
         let parts: Vec<&str> = input.split_whitespace().collect();
         if parts.len() != 3 {
@@ -135,8 +130,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
         let value = cond[eq_pos + 1..].to_string();
 
         PrepareResult::Success(Statement::DeleteWhere { column, value })
-    
-    }  else if input.to_lowercase().starts_with("delete") {
+    } else if input.to_lowercase().starts_with("delete") {
         let parts: Vec<&str> = input.split_whitespace().collect();
         if parts.len() != 2 {
             return PrepareResult::UnrecognizedStatement;
@@ -147,10 +141,9 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Err(_) => return PrepareResult::UnrecognizedStatement,
         };
         PrepareResult::Success(Statement::Delete { id })
-
     } else {
         PrepareResult::UnrecognizedStatement
-    } 
+    }
 }
 
 fn execute_statement(statement: Statement, table: &mut Table) {
@@ -212,23 +205,23 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                 println!("Executed.");
             }
             Err(e) => println!("Error: {}", e),
-        }
+        },
         Statement::Update { id, column, value } => match table.update(id, &column, &value) {
             Ok(()) => println!("Executed."),
             Err(e) => println!("Error: {}", e),
-        }
+        },
         Statement::Delete { id } => match table.delete(id) {
             Ok(()) => println!("Executed."),
             Err(e) => println!("Error: {}", e),
-        }
+        },
         Statement::DeleteWhere { column, value } => match table.delete_where(&column, &value) {
             Ok(count) => println!("Deleted {} rows.", count),
             Err(e) => println!("Error: {}", e),
-        }
+        },
         Statement::DeleteAll => {
             let count = table.clear();
             println!("Deleted {} rows.", count);
-        },
+        }
     }
 }
 

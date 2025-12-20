@@ -49,7 +49,7 @@ impl Table {
     pub fn select_all(&self) -> &[Row] {
         &self.rows
     }
-    
+
     pub fn select_where(&self, column: &str, value: &str) -> Result<Vec<&Row>, String> {
         let mut result = Vec::new();
 
@@ -301,5 +301,58 @@ mod tests {
         let deleted = table.clear();
         assert_eq!(deleted, 0);
         assert_eq!(table.select_all().len(), 0);
+    }
+    #[test]
+    fn select_where_by_id() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+
+        let rows = table.select_where("id", "1").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].username, "alice");
+    }
+    #[test]
+    fn select_where_by_username() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(2, "alice".to_string(), "a2@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(3, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+
+        let rows = table.select_where("username", "alice").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].email, "a@a.com");
+        assert_eq!(rows[1].email, "a2@a.com");
+    }
+    #[test]
+    fn select_where_by_email() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+
+        let rows = table.select_where("email", "b@b.com").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 2);
+    }
+    #[test]
+    fn select_where_no_matches_returns_empty() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+
+        let rows = table.select_where("username", "bob").unwrap();
+        assert_eq!(rows.len(), 0);
+    }
+    #[test]
+    fn select_where_invalid_column_fails() {
+        let mut table = Table::new();
+
+        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+
+        let res = table.select_where("invalid", "alice");
+        assert!(res.is_err());
     }
 }

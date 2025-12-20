@@ -81,15 +81,18 @@ pub fn parse_select(
 
     let parts: Vec<&str> = rest.splitn(2, " where ").collect();
 
+    if parts.len() == 1 && parts[0].starts_with("where ") {
+        let cond_str = &parts[0][6..]; // skip "where "
+        let eq_pos = cond_str.find('=').ok_or("Invalid WHERE clause")?;
+        let column = cond_str[..eq_pos].trim().to_string();
+        let value = cond_str[eq_pos + 1..].trim().to_string();
+        return Ok((None, Some((column, value))));
+    }
+
     let columns = if parts[0].trim().is_empty() {
         None
     } else {
-        Some(
-            parts[0]
-                .split(',')
-                .map(|c| c.trim().to_string())
-                .collect(),
-        )
+        Some(parts[0].split(',').map(|c| c.trim().to_string()).collect())
     };
 
     let condition = if parts.len() == 2 {
