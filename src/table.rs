@@ -1,7 +1,9 @@
 const COLUMN_USERNAME_SIZE: usize = 32;
 const COLUMN_EMAIL_SIZE: usize = 255;
 
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Row {
     pub id: u32,
     pub username: String,
@@ -27,6 +29,7 @@ impl Row {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Table {
     rows: Vec<Row>,
 }
@@ -148,6 +151,20 @@ impl Table {
         self.rows.clear();
         count
     }
+
+    /// Save the table to a JSON file.
+    pub fn save_to_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load a table from a JSON file.
+    pub fn load_from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let json = std::fs::read_to_string(path)?;
+        let table: Table = serde_json::from_str(&json)?;
+        Ok(table)
+    }
 }
 
 #[cfg(test)]
@@ -202,6 +219,29 @@ mod tests {
         // Update id (should fail)
         assert!(table.update(1, "id", "2").is_err());
     }
+
+    #[test]
+    fn save_and_load_table() {
+        let mut table = Table::new();
+
+        let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
+        let r2 = Row::new(2, "bob".to_string(), "bob@example.com".to_string()).unwrap();
+        table.insert(r1).unwrap();
+        table.insert(r2).unwrap();
+
+        // Save to file
+        let filename = "test_table.json";
+        assert!(table.save_to_file(filename).is_ok());
+
+        // Load from file
+        let loaded_table = Table::load_from_file(filename).unwrap();
+        assert_eq!(loaded_table.select_all().len(), 2);
+        assert_eq!(loaded_table.select_all()[0].username, "alice");
+        assert_eq!(loaded_table.select_all()[1].username, "bob");
+
+        // Clean up
+        std::fs::remove_file(filename).unwrap();
+    }
     #[test]
     fn delete_removes_existing_row() {
         let mut table = Table::new();
@@ -219,12 +259,16 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, 2);
     }
-        #[test]
+    #[test]
     fn delete_where_by_id_removes_row() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
 
         let deleted = table.delete_where("id", "1").unwrap();
         assert_eq!(deleted, 1);
@@ -237,9 +281,15 @@ mod tests {
     fn delete_where_by_username() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(2, "alice".to_string(), "a2@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(3, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "alice".to_string(), "a2@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(3, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
 
         let deleted = table.delete_where("username", "alice").unwrap();
         assert_eq!(deleted, 2);
@@ -252,8 +302,12 @@ mod tests {
     fn delete_where_by_email() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
 
         let deleted = table.delete_where("email", "b@b.com").unwrap();
         assert_eq!(deleted, 1);
@@ -266,7 +320,9 @@ mod tests {
     fn delete_where_invalid_column_fails() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
 
         let res = table.delete_where("invalid", "alice");
         assert!(res.is_err());
@@ -275,7 +331,9 @@ mod tests {
     fn delete_where_no_matching_rows_returns_zero() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
 
         let deleted = table.delete_where("username", "bob").unwrap();
         assert_eq!(deleted, 0);
@@ -287,8 +345,12 @@ mod tests {
     fn delete_all_removes_everything() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
 
         let deleted = table.clear();
         assert_eq!(deleted, 2);
@@ -306,8 +368,12 @@ mod tests {
     fn select_where_by_id() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
 
         let rows = table.select_where("id", "1").unwrap();
         assert_eq!(rows.len(), 1);
@@ -317,9 +383,15 @@ mod tests {
     fn select_where_by_username() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(2, "alice".to_string(), "a2@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(3, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "alice".to_string(), "a2@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(3, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
 
         let rows = table.select_where("username", "alice").unwrap();
         assert_eq!(rows.len(), 2);
@@ -330,8 +402,12 @@ mod tests {
     fn select_where_by_email() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
 
         let rows = table.select_where("email", "b@b.com").unwrap();
         assert_eq!(rows.len(), 1);
@@ -341,7 +417,9 @@ mod tests {
     fn select_where_no_matches_returns_empty() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
 
         let rows = table.select_where("username", "bob").unwrap();
         assert_eq!(rows.len(), 0);
@@ -350,7 +428,9 @@ mod tests {
     fn select_where_invalid_column_fails() {
         let mut table = Table::new();
 
-        table.insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap()).unwrap();
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
 
         let res = table.select_where("invalid", "alice");
         assert!(res.is_err());

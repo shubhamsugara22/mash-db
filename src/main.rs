@@ -50,13 +50,39 @@ fn print_prompt() {
     io::stdout().flush().unwrap();
 }
 
-fn do_meta_command(input: &str) -> MetaCommandResult {
-    match input {
-        ".exit" => {
-            println!("Bye!");
-            std::process::exit(0);
+fn do_meta_command(input: &str, table: &mut Table) -> MetaCommandResult {
+    if input.starts_with(".save ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 2 {
+            let filename = parts[1];
+            match table.save_to_file(filename) {
+                Ok(()) => println!("Saved to '{}'.", filename),
+                Err(e) => println!("Error saving: {}", e),
+            }
+        } else {
+            println!("Usage: .save <filename>");
         }
-        _ => MetaCommandResult::UnrecognizedCommand,
+        MetaCommandResult::Success
+    } else if input.starts_with(".load ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 2 {
+            let filename = parts[1];
+            match Table::load_from_file(filename) {
+                Ok(new_table) => {
+                    *table = new_table;
+                    println!("Loaded from '{}'.", filename);
+                }
+                Err(e) => println!("Error loading: {}", e),
+            }
+        } else {
+            println!("Usage: .load <filename>");
+        }
+        MetaCommandResult::Success
+    } else if input == ".exit" {
+        println!("Bye!");
+        std::process::exit(0);
+    } else {
+        MetaCommandResult::UnrecognizedCommand
     }
 }
 
@@ -243,7 +269,7 @@ fn main() {
         }
 
         if input.starts_with('.') {
-            match do_meta_command(input) {
+            match do_meta_command(input, &mut table) {
                 MetaCommandResult::Success => continue,
                 MetaCommandResult::UnrecognizedCommand => {
                     println!("Unrecognized command '{}'", input);

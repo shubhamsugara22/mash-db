@@ -5,7 +5,7 @@ A simple database implementation in Rust, built from scratch following SQLite ar
 ## Current Features
 
 - **REPL Interface** - Interactive command-line interface with `db >` prompt
-- **Meta Commands** - `.exit` to quit the database
+- **Meta Commands** - `.exit` to quit the database, `.save <filename>` to save data, `.load <filename>` to load data
 - **Basic SQL Support**:
   - `insert <id> <username> <email>` - Insert a row
   - `select` - Retrieve all rows
@@ -25,10 +25,18 @@ db > insert 1 alice alice@example.com
 Executed.
 db > insert 2 bob bob@example.com
 Executed.
-db > update 1 set username=alice2
-Executed.
+db > .save mydata.json
+Saved to 'mydata.json'.
+db > .exit
+Bye!
+```
+
+Then restart:
+```
+db > .load mydata.json
+Loaded from 'mydata.json'.
 db > select
-(1, alice2, alice@example.com)
+(1, alice, alice@example.com)
 (2, bob, bob@example.com)
 Executed.
 db > .exit
@@ -43,7 +51,7 @@ Bye!
 
 ## TODO
 
-- [ ] Persistence (save to disk)
+- [x] Persistence (save to disk)
 - [ ] B-tree implementation
 - [ ] Pager for memory management
 - [ ] More SQL commands (UPDATE, DELETE, WHERE clauses)
