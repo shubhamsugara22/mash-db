@@ -9,9 +9,14 @@ A simple database implementation in Rust, built from scratch following SQLite ar
 - **Basic SQL Support**:
   - `insert <id> <username> <email>` - Insert a row
   - `select` - Retrieve all rows
+  - `select where <column>=<value>` - Select rows with WHERE condition (e.g., `select where id=1`)
   - `update <id> set <column>=<value>` - Update a row (e.g., `update 1 set username=alice2`)
-- **In-Memory Storage** - Table stores rows in a Vec
+  - `delete <id>` - Delete a row by ID
+  - `delete where <column>=<value>` - Delete rows with WHERE condition
+- **B-Tree Indexing** - Efficient O(log n) lookups for ID-based operations
+- **In-Memory Storage** - Table stores rows in a Vec with B-Tree index
 - **Data Validation** - Username (max 32 chars) and email (max 255 chars) length checks
+- **Persistence** - Save/load table to/from JSON files
 
 ## Usage
 
@@ -46,15 +51,15 @@ Bye!
 ## Architecture
 
 - `main.rs` - REPL loop, command parsing, and statement execution
-- `table.rs` - Row and Table structures for data storage
+- `table.rs` - Row and Table structures for data storage with B-Tree indexing
 - `column.rs` - (Reserved for future column definitions)
 
 ## TODO
 
 - [x] Persistence (save to disk)
-- [ ] B-tree implementation
+- [x] B-tree implementation
 - [ ] Pager for memory management
-- [ ] More SQL commands (UPDATE, DELETE, WHERE clauses)
+- [ ] More SQL commands (JOINs, advanced WHERE)
 - [ ] Proper SQL parser
 
 ## References

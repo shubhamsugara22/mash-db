@@ -435,4 +435,43 @@ mod tests {
         let res = table.select_where("invalid", "alice");
         assert!(res.is_err());
     }
+    #[test]
+    fn btree_index_correctness() {
+        let mut table = Table::new();
+
+        // Insert rows
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(3, "charlie".to_string(), "c@c.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
+
+        // Select by id should work efficiently (using index)
+        let rows = table.select_where("id", "1").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].username, "alice");
+
+        let rows = table.select_where("id", "2").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].username, "bob");
+
+        let rows = table.select_where("id", "3").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].username, "charlie");
+
+        // Delete and check it no longer exists
+        table.delete(2).unwrap();
+        let rows = table.select_where("id", "2").unwrap();
+        assert_eq!(rows.len(), 0);
+
+        // Other rows still exist
+        let rows = table.select_where("id", "1").unwrap();
+        assert_eq!(rows.len(), 1);
+        let rows = table.select_where("id", "3").unwrap();
+        assert_eq!(rows.len(), 1);
+    }
 }
