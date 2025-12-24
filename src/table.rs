@@ -1,7 +1,10 @@
 const COLUMN_USERNAME_SIZE: usize = 32;
 const COLUMN_EMAIL_SIZE: usize = 255;
+const PAGE_SIZE: usize = 10; // Rows per page
 
+use crate::pager::Pager;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Row {
@@ -29,28 +32,61 @@ impl Row {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Table {
-    rows: Vec<Row>,
+    pager: Pager,
+    id_index: BTreeMap<u32, (usize, usize)>, // Maps id to (page_index, row_index)
+    username_index: BTreeMap<String, Vec<(usize, usize)>>, // Maps username to list of (page, row) indices
+    email_index: BTreeMap<String, Vec<(usize, usize)>>, // Maps email to list of (page, row) indices
 }
 
 impl Table {
-    pub fn new() -> Self {
-        Table { rows: Vec::new() }
+    pub fn new(file_path: String) -> Self {
+        let pager = Pager::new(file_path);
+        let mut table = Table {
+            pager,
+            id_index: BTreeMap::new(),
+            username_index: BTreeMap::new(),
+            email_index: BTreeMap::new(),
+        };
+        table.rebuild_indexes();
+        table
     }
 
     /// Insert a row into the table.
     /// Returns an error if a row with the same `id` already exists.
     pub fn insert(&mut self, row: Row) -> Result<(), String> {
-        if self.rows.iter().any(|r| r.id == row.id) {
+        if self.id_index.contains_key(&row.id) {
             return Err(format!("Duplicate id {}", row.id));
         }
-        self.rows.push(row);
+        // Find the page to add to
+        let page_index =
+            if self.pager.pages.is_empty() || self.pager.pages.last().unwrap().is_full() {
+                self.pager.pages.len()
+            } else {
+                self.pager.pages.len() - 1
+            };
+        let row_index = if page_index < self.pager.pages.len() {
+            self.pager.pages[page_index].rows.len()
+        } else {
+            0
+        };
+        self.pager.add_row(row.clone());
+        let pos = (page_index, row_index);
+        self.id_index.insert(row.id, pos);
+        self.username_index
+            .entry(row.username.clone())
+            .or_insert(Vec::new())
+            .push(pos);
+        self.email_index
+            .entry(row.email.clone())
+            .or_insert(Vec::new())
+            .push(pos);
         Ok(())
     }
 
-    pub fn select_all(&self) -> &[Row] {
-        &self.rows
+    pub fn select_all(&self) -> Vec<&Row> {
+        self.pager.pages.iter().flat_map(|p| &p.rows).collect()
     }
 
     pub fn select_where(&self, column: &str, value: &str) -> Result<Vec<&Row>, String> {
@@ -61,24 +97,21 @@ impl Table {
                 let id = value
                     .parse::<u32>()
                     .map_err(|_| "Invalid id value".to_string())?;
-
-                for row in &self.rows {
-                    if row.id == id {
-                        result.push(row);
-                    }
+                if let Some(&(page_index, row_index)) = self.id_index.get(&id) {
+                    result.push(&self.pager.pages[page_index].rows[row_index]);
                 }
             }
             "username" => {
-                for row in &self.rows {
-                    if row.username == value {
-                        result.push(row);
+                if let Some(positions) = self.username_index.get(value) {
+                    for &(page_index, row_index) in positions {
+                        result.push(&self.pager.pages[page_index].rows[row_index]);
                     }
                 }
             }
             "email" => {
-                for row in &self.rows {
-                    if row.email == value {
-                        result.push(row);
+                if let Some(positions) = self.email_index.get(value) {
+                    for &(page_index, row_index) in positions {
+                        result.push(&self.pager.pages[page_index].rows[row_index]);
                     }
                 }
             }
@@ -90,7 +123,8 @@ impl Table {
     /// Update a row by id.
     /// Returns an error if the id doesn't exist or the value is invalid for the column.
     pub fn update(&mut self, id: u32, column: &str, value: &str) -> Result<(), String> {
-        if let Some(row) = self.rows.iter_mut().find(|r| r.id == id) {
+        if let Some(&(page_index, row_index)) = self.id_index.get(&id) {
+            let row = &mut self.pager.pages[page_index].rows[row_index];
             match column {
                 "username" => {
                     if value.len() > COLUMN_USERNAME_SIZE {
@@ -99,13 +133,33 @@ impl Table {
                             COLUMN_USERNAME_SIZE
                         ));
                     }
+                    // Remove from old username index
+                    self.username_index
+                        .get_mut(&row.username)
+                        .unwrap()
+                        .retain(|&p| p != (page_index, row_index));
                     row.username = value.to_string();
+                    // Add to new username index
+                    self.username_index
+                        .entry(row.username.clone())
+                        .or_insert(Vec::new())
+                        .push((page_index, row_index));
                 }
                 "email" => {
                     if value.len() > COLUMN_EMAIL_SIZE {
                         return Err(format!("Email too long (max {} chars)", COLUMN_EMAIL_SIZE));
                     }
+                    // Remove from old email index
+                    self.email_index
+                        .get_mut(&row.email)
+                        .unwrap()
+                        .retain(|&p| p != (page_index, row_index));
                     row.email = value.to_string();
+                    // Add to new email index
+                    self.email_index
+                        .entry(row.email.clone())
+                        .or_insert(Vec::new())
+                        .push((page_index, row_index));
                 }
                 "id" => return Err("Cannot update id".to_string()),
                 _ => return Err(format!("Unknown column '{}'", column)),
@@ -116,54 +170,89 @@ impl Table {
         }
     }
     pub fn delete(&mut self, id: u32) -> Result<(), String> {
-        let initial_len = self.rows.len();
-        self.rows.retain(|row| row.id != id);
-
-        if self.rows.len() == initial_len {
-            Err(format!("Row with id {} not found", id))
-        } else {
+        if let Some((page_index, row_index)) = self.id_index.remove(&id) {
+            self.pager.pages[page_index].rows.remove(row_index);
+            // Rebuild indexes after removal
+            self.rebuild_indexes();
             Ok(())
+        } else {
+            Err(format!("Row with id {} not found", id))
         }
     }
     pub fn delete_where(&mut self, column: &str, value: &str) -> Result<usize, String> {
-        let initial_len = self.rows.len();
+        let mut deleted_count = 0;
 
         match column {
             "id" => {
                 let id = value
                     .parse::<u32>()
                     .map_err(|_| "Invalid id value".to_string())?;
-
-                self.rows.retain(|row| row.id != id);
+                return match self.delete(id) {
+                    Ok(_) => Ok(1),
+                    Err(_) => Ok(0),
+                };
             }
             "username" => {
-                self.rows.retain(|row| row.username != value);
+                for page in &mut self.pager.pages {
+                    page.rows.retain(|row| {
+                        if row.username == value {
+                            deleted_count += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
+                self.rebuild_indexes();
             }
             "email" => {
-                self.rows.retain(|row| row.email != value);
+                for page in &mut self.pager.pages {
+                    page.rows.retain(|row| {
+                        if row.email == value {
+                            deleted_count += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
+                self.rebuild_indexes();
             }
             _ => return Err(format!("Invalid column '{}'", column)),
         }
-        Ok(initial_len - self.rows.len())
+        Ok(deleted_count)
     }
+    pub fn rebuild_indexes(&mut self) {
+        self.id_index.clear();
+        self.username_index.clear();
+        self.email_index.clear();
+        for (page_index, page) in self.pager.pages.iter().enumerate() {
+            for (row_index, row) in page.rows.iter().enumerate() {
+                let pos = (page_index, row_index);
+                self.id_index.insert(row.id, pos);
+                self.username_index
+                    .entry(row.username.clone())
+                    .or_insert(Vec::new())
+                    .push(pos);
+                self.email_index
+                    .entry(row.email.clone())
+                    .or_insert(Vec::new())
+                    .push(pos);
+            }
+        }
+    }
+
     pub fn clear(&mut self) -> usize {
-        let count = self.rows.len();
-        self.rows.clear();
+        let count = self.pager.pages.iter().map(|p| p.rows.len()).sum();
+        self.pager.pages.clear();
+        self.id_index.clear();
+        self.username_index.clear();
+        self.email_index.clear();
         count
     }
 
-    /// Save the table to a JSON file.
-    pub fn save_to_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, json)?;
-        Ok(())
-    }
-
-    /// Load a table from a JSON file.
-    pub fn load_from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let json = std::fs::read_to_string(path)?;
-        let table: Table = serde_json::from_str(&json)?;
-        Ok(table)
+    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.pager.save()
     }
 }
 
@@ -182,7 +271,7 @@ mod tests {
 
     #[test]
     fn insert_prevents_duplicate_id() {
-        let mut table = Table::new();
+        let mut table = Table::new("test1.json".to_string());
 
         let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
         assert!(table.insert(r1).is_ok());
@@ -195,7 +284,7 @@ mod tests {
 
     #[test]
     fn update_modifies_existing_row() {
-        let mut table = Table::new();
+        let mut table = Table::new("test2.json".to_string());
 
         let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
         table.insert(r1).unwrap();
@@ -219,32 +308,9 @@ mod tests {
         // Update id (should fail)
         assert!(table.update(1, "id", "2").is_err());
     }
-
-    #[test]
-    fn save_and_load_table() {
-        let mut table = Table::new();
-
-        let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
-        let r2 = Row::new(2, "bob".to_string(), "bob@example.com".to_string()).unwrap();
-        table.insert(r1).unwrap();
-        table.insert(r2).unwrap();
-
-        // Save to file
-        let filename = "test_table.json";
-        assert!(table.save_to_file(filename).is_ok());
-
-        // Load from file
-        let loaded_table = Table::load_from_file(filename).unwrap();
-        assert_eq!(loaded_table.select_all().len(), 2);
-        assert_eq!(loaded_table.select_all()[0].username, "alice");
-        assert_eq!(loaded_table.select_all()[1].username, "bob");
-
-        // Clean up
-        std::fs::remove_file(filename).unwrap();
-    }
     #[test]
     fn delete_removes_existing_row() {
-        let mut table = Table::new();
+        let mut table = Table::new("test3.json".to_string());
 
         let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
         let r2 = Row::new(2, "bob".to_string(), "bob@example.com".to_string()).unwrap();
@@ -261,7 +327,7 @@ mod tests {
     }
     #[test]
     fn delete_where_by_id_removes_row() {
-        let mut table = Table::new();
+        let mut table = Table::new("test4.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -279,7 +345,7 @@ mod tests {
     }
     #[test]
     fn delete_where_by_username() {
-        let mut table = Table::new();
+        let mut table = Table::new("test5.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -300,7 +366,7 @@ mod tests {
     }
     #[test]
     fn delete_where_by_email() {
-        let mut table = Table::new();
+        let mut table = Table::new("test6.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -318,7 +384,7 @@ mod tests {
     }
     #[test]
     fn delete_where_invalid_column_fails() {
-        let mut table = Table::new();
+        let mut table = Table::new("test7.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -329,7 +395,7 @@ mod tests {
     }
     #[test]
     fn delete_where_no_matching_rows_returns_zero() {
-        let mut table = Table::new();
+        let mut table = Table::new("test8.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -343,7 +409,7 @@ mod tests {
     }
     #[test]
     fn delete_all_removes_everything() {
-        let mut table = Table::new();
+        let mut table = Table::new("test9.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -358,7 +424,7 @@ mod tests {
     }
     #[test]
     fn delete_all_on_empty_table() {
-        let mut table = Table::new();
+        let mut table = Table::new("test10.json".to_string());
 
         let deleted = table.clear();
         assert_eq!(deleted, 0);
@@ -366,7 +432,7 @@ mod tests {
     }
     #[test]
     fn select_where_by_id() {
-        let mut table = Table::new();
+        let mut table = Table::new("test11.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -381,7 +447,7 @@ mod tests {
     }
     #[test]
     fn select_where_by_username() {
-        let mut table = Table::new();
+        let mut table = Table::new("test12.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -400,7 +466,7 @@ mod tests {
     }
     #[test]
     fn select_where_by_email() {
-        let mut table = Table::new();
+        let mut table = Table::new("test13.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -415,7 +481,7 @@ mod tests {
     }
     #[test]
     fn select_where_no_matches_returns_empty() {
-        let mut table = Table::new();
+        let mut table = Table::new("test14.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -426,7 +492,7 @@ mod tests {
     }
     #[test]
     fn select_where_invalid_column_fails() {
-        let mut table = Table::new();
+        let mut table = Table::new("test15.json".to_string());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -437,7 +503,7 @@ mod tests {
     }
     #[test]
     fn btree_index_correctness() {
-        let mut table = Table::new();
+        let mut table = Table::new("test16.json".to_string());
 
         // Insert rows
         table

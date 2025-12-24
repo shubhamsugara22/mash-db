@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 
 mod column;
+mod pager;
 mod parser;
 mod table;
 
@@ -50,35 +51,8 @@ fn print_prompt() {
     io::stdout().flush().unwrap();
 }
 
-fn do_meta_command(input: &str, table: &mut Table) -> MetaCommandResult {
-    if input.starts_with(".save ") {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() == 2 {
-            let filename = parts[1];
-            match table.save_to_file(filename) {
-                Ok(()) => println!("Saved to '{}'.", filename),
-                Err(e) => println!("Error saving: {}", e),
-            }
-        } else {
-            println!("Usage: .save <filename>");
-        }
-        MetaCommandResult::Success
-    } else if input.starts_with(".load ") {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() == 2 {
-            let filename = parts[1];
-            match Table::load_from_file(filename) {
-                Ok(new_table) => {
-                    *table = new_table;
-                    println!("Loaded from '{}'.", filename);
-                }
-                Err(e) => println!("Error loading: {}", e),
-            }
-        } else {
-            println!("Usage: .load <filename>");
-        }
-        MetaCommandResult::Success
-    } else if input == ".exit" {
+fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
+    if input == ".exit" {
         println!("Bye!");
         std::process::exit(0);
     } else {
@@ -180,7 +154,10 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             email,
         } => match Row::new(id, username, email) {
             Ok(row) => match table.insert(row) {
-                Ok(()) => println!("Executed."),
+                Ok(()) => {
+                    table.save().unwrap();
+                    println!("Executed.");
+                }
                 Err(e) => println!("Error: {}", e),
             },
             Err(e) => println!("Error: {}", e),
@@ -233,26 +210,36 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             Err(e) => println!("Error: {}", e),
         },
         Statement::Update { id, column, value } => match table.update(id, &column, &value) {
-            Ok(()) => println!("Executed."),
+            Ok(()) => {
+                table.save().unwrap();
+                println!("Executed.");
+            }
             Err(e) => println!("Error: {}", e),
         },
         Statement::Delete { id } => match table.delete(id) {
-            Ok(()) => println!("Executed."),
+            Ok(()) => {
+                table.save().unwrap();
+                println!("Executed.");
+            }
             Err(e) => println!("Error: {}", e),
         },
         Statement::DeleteWhere { column, value } => match table.delete_where(&column, &value) {
-            Ok(count) => println!("Deleted {} rows.", count),
+            Ok(count) => {
+                table.save().unwrap();
+                println!("Deleted {} rows.", count);
+            }
             Err(e) => println!("Error: {}", e),
         },
         Statement::DeleteAll => {
             let count = table.clear();
+            table.save().unwrap();
             println!("Deleted {} rows.", count);
         }
     }
 }
 
 fn main() {
-    let mut table = Table::new();
+    let mut table = Table::new("data.json".to_string());
 
     loop {
         print_prompt();
