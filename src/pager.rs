@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 
-const PAGE_SIZE: usize = 10; // Number of rows per page
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Page {
     pub rows: Vec<super::table::Row>,
@@ -16,7 +14,7 @@ impl Page {
     }
 
     pub fn is_full(&self) -> bool {
-        self.rows.len() >= PAGE_SIZE
+        false // No fixed page size
     }
 
     pub fn add_row(&mut self, row: super::table::Row) {
