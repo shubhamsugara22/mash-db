@@ -82,7 +82,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
         })
     } else if input.to_lowercase().starts_with("update") {
         let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() < 5 || parts[2].to_lowercase() != "set" {
+        if parts.len() < 4 {
             return PrepareResult::UnrecognizedStatement;
         }
 
@@ -91,14 +91,8 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Err(_) => return PrepareResult::UnrecognizedStatement,
         };
 
-        let set_part = parts[3];
-        let eq_pos = set_part.find('=');
-        if eq_pos.is_none() {
-            return PrepareResult::UnrecognizedStatement;
-        }
-        let eq_pos = eq_pos.unwrap();
-        let column = set_part[..eq_pos].to_string();
-        let value = set_part[eq_pos + 1..].to_string();
+        let column = parts[2].to_string();
+        let value = parts[3].to_string();
 
         PrepareResult::Success(Statement::Update { id, column, value })
     } else if input.to_lowercase().starts_with("select") {
