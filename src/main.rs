@@ -29,6 +29,7 @@ enum Statement {
     SelectWhere {
         columns: Option<Vec<String>>,
         column: String,
+        operator: String,
         value: String,
     },
     Update {
@@ -80,9 +81,10 @@ fn prepare_statement(input: &str) -> PrepareResult {
     } else if input.to_uppercase().starts_with("SELECT") {
         match parser::parse_select(input) {
             Ok((cols, None)) => PrepareResult::Success(Statement::Select { columns: cols }),
-            Ok((cols, Some((col, val)))) => PrepareResult::Success(Statement::SelectWhere {
+            Ok((cols, Some((col, op, val)))) => PrepareResult::Success(Statement::SelectWhere {
                 columns: cols,
                 column: col,
+                operator: op,
                 value: val,
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
@@ -147,8 +149,9 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         Statement::SelectWhere {
             columns,
             column,
+            operator,
             value,
-        } => match table.select_where(&column, &value) {
+        } => match table.select_where(&column, &operator, &value) {
             Ok(rows) => {
                 for row in rows {
                     match &columns {

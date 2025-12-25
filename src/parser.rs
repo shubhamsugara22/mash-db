@@ -10,6 +10,11 @@ pub enum Token {
     Set,
     Delete,
     Eq,
+    Ne,
+    Gt,
+    Lt,
+    Ge,
+    Le,
     Comma,
     LParen,
     RParen,
@@ -81,6 +86,28 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             '(' => tokens.push(Token::LParen),
             ')' => tokens.push(Token::RParen),
             '*' => tokens.push(Token::Star),
+            '>' => {
+                if chars.peek() == Some(&'=') {
+                    chars.next();
+                    tokens.push(Token::Ge);
+                } else {
+                    tokens.push(Token::Gt);
+                }
+            }
+            '<' => {
+                if chars.peek() == Some(&'=') {
+                    chars.next();
+                    tokens.push(Token::Le);
+                } else {
+                    tokens.push(Token::Lt);
+                }
+            }
+            '!' => {
+                if chars.peek() == Some(&'=') {
+                    chars.next();
+                    tokens.push(Token::Ne);
+                }
+            }
             _ => {} // ignore
         }
     }
@@ -89,14 +116,14 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 
 pub fn parse_select(
     input: &str,
-) -> Result<(Option<Vec<String>>, Option<(String, String)>), String> {
+) -> Result<(Option<Vec<String>>, Option<(String, String, String)>), String> {
     let tokens = tokenize(input);
     parse_select_tokens(&tokens)
 }
 
 fn parse_select_tokens(
     tokens: &[Token],
-) -> Result<(Option<Vec<String>>, Option<(String, String)>), String> {
+) -> Result<(Option<Vec<String>>, Option<(String, String, String)>), String> {
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Select) {
         return Err("Expected SELECT".to_string());
@@ -118,20 +145,26 @@ fn parse_select_tokens(
         i += 1;
         if let Some(Token::Identifier(col)) = tokens.get(i) {
             i += 1;
-            if tokens.get(i) == Some(&Token::Eq) {
+            let op = match tokens.get(i) {
+                Some(Token::Eq) => "=",
+                Some(Token::Ne) => "!=",
+                Some(Token::Gt) => ">",
+                Some(Token::Lt) => "<",
+                Some(Token::Ge) => ">=",
+                Some(Token::Le) => "<=",
+                _ => return Err("Expected operator".to_string()),
+            };
+            i += 1;
+            let val = if let Some(Token::String(v)) = tokens.get(i) {
                 i += 1;
-                if let Some(Token::String(val)) = tokens.get(i) {
-                    i += 1;
-                    Some((col.clone(), val.clone()))
-                } else if let Some(Token::Number(val)) = tokens.get(i) {
-                    i += 1;
-                    Some((col.clone(), val.to_string()))
-                } else {
-                    return Err("Expected value".to_string());
-                }
+                v.clone()
+            } else if let Some(Token::Number(v)) = tokens.get(i) {
+                i += 1;
+                v.to_string()
             } else {
-                return Err("Expected =".to_string());
-            }
+                return Err("Expected value".to_string());
+            };
+            Some((col.clone(), op.to_string(), val))
         } else {
             return Err("Expected column".to_string());
         }

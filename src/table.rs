@@ -5,6 +5,30 @@ use crate::pager::Pager;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[derive(Debug, Clone, PartialEq)]
+enum Operator {
+    Eq,
+    Ne,
+    Gt,
+    Lt,
+    Ge,
+    Le,
+}
+
+impl Operator {
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "=" => Some(Operator::Eq),
+            "!=" => Some(Operator::Ne),
+            ">" => Some(Operator::Gt),
+            "<" => Some(Operator::Lt),
+            ">=" => Some(Operator::Ge),
+            "<=" => Some(Operator::Le),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Row {
     pub id: u32,
@@ -88,19 +112,59 @@ impl Table {
         self.pager.pages.iter().flat_map(|p| &p.rows).collect()
     }
 
-    pub fn select_where(&self, column: &str, value: &str) -> Result<Vec<&Row>, String> {
+    pub fn select_where(
+        &self,
+        column: &str,
+        operator: &str,
+        value: &str,
+    ) -> Result<Vec<&Row>, String> {
+        let op = Operator::from_str(operator).ok_or("Invalid operator".to_string())?;
         let mut result = Vec::new();
 
         match column {
             "id" => {
-                let id = value
+                let id_val = value
                     .parse::<u32>()
                     .map_err(|_| "Invalid id value".to_string())?;
-                if let Some(&(page_index, row_index)) = self.id_index.get(&id) {
-                    result.push(&self.pager.pages[page_index].rows[row_index]);
+                match op {
+                    Operator::Eq => {
+                        if let Some(&(page_index, row_index)) = self.id_index.get(&id_val) {
+                            result.push(&self.pager.pages[page_index].rows[row_index]);
+                        }
+                    }
+                    Operator::Ne => {
+                        for (id, &(page_index, row_index)) in &self.id_index {
+                            if *id != id_val {
+                                result.push(&self.pager.pages[page_index].rows[row_index]);
+                            }
+                        }
+                    }
+                    Operator::Gt => {
+                        for (id, &(page_index, row_index)) in self.id_index.range((id_val + 1)..) {
+                            result.push(&self.pager.pages[page_index].rows[row_index]);
+                        }
+                    }
+                    Operator::Lt => {
+                        for (id, &(page_index, row_index)) in self.id_index.range(..id_val) {
+                            result.push(&self.pager.pages[page_index].rows[row_index]);
+                        }
+                    }
+                    Operator::Ge => {
+                        for (id, &(page_index, row_index)) in self.id_index.range(id_val..) {
+                            result.push(&self.pager.pages[page_index].rows[row_index]);
+                        }
+                    }
+                    Operator::Le => {
+                        for (id, &(page_index, row_index)) in self.id_index.range(..=id_val) {
+                            result.push(&self.pager.pages[page_index].rows[row_index]);
+                        }
+                    }
                 }
             }
             "username" => {
+                if op != Operator::Eq {
+                    return Err("Only = supported for username".to_string());
+                }
                 if let Some(positions) = self.username_index.get(value) {
                     for &(page_index, row_index) in positions {
                         result.push(&self.pager.pages[page_index].rows[row_index]);
@@ -108,6 +172,9 @@ impl Table {
                 }
             }
             "email" => {
+                if op != Operator::Eq {
+                    return Err("Only = supported for email".to_string());
+                }
                 if let Some(positions) = self.email_index.get(value) {
                     for &(page_index, row_index) in positions {
                         result.push(&self.pager.pages[page_index].rows[row_index]);
@@ -440,7 +507,7 @@ mod tests {
             .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
             .unwrap();
 
-        let rows = table.select_where("id", "1").unwrap();
+        let rows = table.select_where("id", "=", "1").unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].username, "alice");
     }
@@ -458,7 +525,7 @@ mod tests {
             .insert(Row::new(3, "bob".to_string(), "b@b.com".to_string()).unwrap())
             .unwrap();
 
-        let rows = table.select_where("username", "alice").unwrap();
+        let rows = table.select_where("username", "=", "alice").unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].email, "a@a.com");
         assert_eq!(rows[1].email, "a2@a.com");
@@ -474,7 +541,7 @@ mod tests {
             .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
             .unwrap();
 
-        let rows = table.select_where("email", "b@b.com").unwrap();
+        let rows = table.select_where("email", "=", "b@b.com").unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, 2);
     }
@@ -486,7 +553,7 @@ mod tests {
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
             .unwrap();
 
-        let rows = table.select_where("username", "bob").unwrap();
+        let rows = table.select_where("username", "=", "bob").unwrap();
         assert_eq!(rows.len(), 0);
     }
     #[test]
@@ -497,7 +564,7 @@ mod tests {
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
             .unwrap();
 
-        let res = table.select_where("invalid", "alice");
+        let res = table.select_where("invalid", "=", "alice");
         assert!(res.is_err());
     }
     #[test]
@@ -516,27 +583,27 @@ mod tests {
             .unwrap();
 
         // Select by id should work efficiently (using index)
-        let rows = table.select_where("id", "1").unwrap();
+        let rows = table.select_where("id", "=", "1").unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].username, "alice");
 
-        let rows = table.select_where("id", "2").unwrap();
+        let rows = table.select_where("id", "=", "2").unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].username, "bob");
 
-        let rows = table.select_where("id", "3").unwrap();
+        let rows = table.select_where("id", "=", "3").unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].username, "charlie");
 
         // Delete and check it no longer exists
         table.delete(2).unwrap();
-        let rows = table.select_where("id", "2").unwrap();
+        let rows = table.select_where("id", "=", "2").unwrap();
         assert_eq!(rows.len(), 0);
 
         // Other rows still exist
-        let rows = table.select_where("id", "1").unwrap();
+        let rows = table.select_where("id", "=", "1").unwrap();
         assert_eq!(rows.len(), 1);
-        let rows = table.select_where("id", "3").unwrap();
+        let rows = table.select_where("id", "=", "3").unwrap();
         assert_eq!(rows.len(), 1);
     }
 }
