@@ -61,41 +61,23 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
 }
 
 fn prepare_statement(input: &str) -> PrepareResult {
-    if input.starts_with("insert") {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() < 4 {
-            return PrepareResult::UnrecognizedStatement;
+    if input.to_uppercase().starts_with("INSERT") {
+        match parser::parse_insert(input) {
+            Ok((id, username, email)) => PrepareResult::Success(Statement::Insert {
+                id,
+                username,
+                email,
+            }),
+            Err(_) => PrepareResult::UnrecognizedStatement,
         }
-
-        let id = match parts[1].parse::<u32>() {
-            Ok(id) => id,
-            Err(_) => return PrepareResult::UnrecognizedStatement,
-        };
-
-        let username = parts[2].to_string();
-        let email = parts[3].to_string();
-
-        PrepareResult::Success(Statement::Insert {
-            id,
-            username,
-            email,
-        })
-    } else if input.to_lowercase().starts_with("update") {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() < 4 {
-            return PrepareResult::UnrecognizedStatement;
+    } else if input.to_uppercase().starts_with("UPDATE") {
+        match parser::parse_update(input) {
+            Ok((id, column, value)) => {
+                PrepareResult::Success(Statement::Update { id, column, value })
+            }
+            Err(_) => PrepareResult::UnrecognizedStatement,
         }
-
-        let id = match parts[1].parse::<u32>() {
-            Ok(id) => id,
-            Err(_) => return PrepareResult::UnrecognizedStatement,
-        };
-
-        let column = parts[2].to_string();
-        let value = parts[3].to_string();
-
-        PrepareResult::Success(Statement::Update { id, column, value })
-    } else if input.to_lowercase().starts_with("select") {
+    } else if input.to_uppercase().starts_with("SELECT") {
         match parser::parse_select(input) {
             Ok((cols, None)) => PrepareResult::Success(Statement::Select { columns: cols }),
             Ok((cols, Some((col, val)))) => PrepareResult::Success(Statement::SelectWhere {
@@ -105,36 +87,22 @@ fn prepare_statement(input: &str) -> PrepareResult {
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_lowercase() == "delete all" {
+    } else if input.to_uppercase() == "DELETE ALL" {
         PrepareResult::Success(Statement::DeleteAll)
-    } else if input.to_lowercase().starts_with("delete where") {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() != 3 {
-            return PrepareResult::UnrecognizedStatement;
+    } else if input.to_uppercase().starts_with("DELETE") {
+        if input.to_uppercase().contains("WHERE") {
+            match parser::parse_delete_where(input) {
+                Ok((column, value)) => {
+                    PrepareResult::Success(Statement::DeleteWhere { column, value })
+                }
+                Err(_) => PrepareResult::UnrecognizedStatement,
+            }
+        } else {
+            match parser::parse_delete(input) {
+                Ok(id) => PrepareResult::Success(Statement::Delete { id }),
+                Err(_) => PrepareResult::UnrecognizedStatement,
+            }
         }
-
-        let cond = parts[2];
-        let eq_pos = cond.find('=');
-        if eq_pos.is_none() {
-            return PrepareResult::UnrecognizedStatement;
-        }
-
-        let eq_pos = eq_pos.unwrap();
-        let column = cond[..eq_pos].to_string();
-        let value = cond[eq_pos + 1..].to_string();
-
-        PrepareResult::Success(Statement::DeleteWhere { column, value })
-    } else if input.to_lowercase().starts_with("delete") {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() != 2 {
-            return PrepareResult::UnrecognizedStatement;
-        }
-
-        let id = match parts[1].parse::<u32>() {
-            Ok(id) => id,
-            Err(_) => return PrepareResult::UnrecognizedStatement,
-        };
-        PrepareResult::Success(Statement::Delete { id })
     } else {
         PrepareResult::UnrecognizedStatement
     }

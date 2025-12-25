@@ -7,12 +7,12 @@ A simple database implementation in Rust, built from scratch following SQLite ar
 - **REPL Interface** - Interactive command-line interface with `db >` prompt
 - **Meta Commands** - `.exit` to quit the database, `.save <filename>` to save data, `.load <filename>` to load data
 - **Basic SQL Support**:
-  - `insert <id> <username> <email>` - Insert a row
-  - `select` - Retrieve all rows
-  - `select where <column>=<value>` - Select rows with WHERE condition (e.g., `select where id=1`)
-  - `update <id> set <column>=<value>` - Update a row (e.g., `update 1 set username=alice2`)
-  - `delete <id>` - Delete a row by ID
-  - `delete where <column>=<value>` - Delete rows with WHERE condition
+  - `INSERT INTO table VALUES (id, 'username', 'email')` - Insert a row
+  - `SELECT * FROM table` - Retrieve all rows
+  - `SELECT * FROM table WHERE column = 'value'` - Select rows with WHERE condition
+  - `UPDATE table SET column = 'value' WHERE id = number` - Update a row
+  - `DELETE FROM table WHERE id = number` - Delete a row by ID
+  - `DELETE FROM table WHERE column = 'value'` - Delete rows with WHERE condition
 - **B-Tree Indexing** - Efficient O(log n) lookups for ID-based operations, and fast lookups for username and email
 - **In-Memory Storage** - Table stores rows in a Vec with B-Tree indexes
 - **Data Validation** - Username (max 32 chars) and email (max 255 chars) length checks
@@ -26,23 +26,18 @@ cargo run
 
 Example session:
 ```
-db > insert 1 alice alice@example.com
+db > INSERT INTO users VALUES (1, 'alice', 'alice@example.com')
 Executed.
-db > insert 2 bob bob@example.com
+db > INSERT INTO users VALUES (2, 'bob', 'bob@example.com')
 Executed.
-db > .save mydata.json
-Saved to 'mydata.json'.
-db > .exit
-Bye!
-```
-
-Then restart:
-```
-db > .load mydata.json
-Loaded from 'mydata.json'.
-db > select
+db > SELECT * FROM users
 (1, alice, alice@example.com)
 (2, bob, bob@example.com)
+Executed.
+db > UPDATE users SET username = 'bobby' WHERE id = 2
+Executed.
+db > SELECT * FROM users WHERE username = 'bobby'
+(2, bobby, bob@example.com)
 Executed.
 db > .exit
 Bye!
@@ -59,9 +54,9 @@ Bye!
 - [x] Persistence (save to disk)
 - [x] B-tree implementation
 - [x] Multi-column indexing (username, email)
-- [ ] Pager for memory management
+- [x] Pager for memory management
 - [ ] More SQL commands (JOINs, advanced WHERE)
-- [ ] Proper SQL parser
+- [x] Proper SQL parser
 
 ## References
 

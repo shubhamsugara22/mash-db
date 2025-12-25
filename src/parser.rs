@@ -1,11 +1,22 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
-    KeywordSelect,
-    Identifier(String),
-    Star,
+    Select,
+    From,
+    Where,
+    Insert,
+    Into,
+    Values,
+    Update,
+    Set,
+    Delete,
+    Eq,
     Comma,
-    Semicolon,
-    EOF,
+    LParen,
+    RParen,
+    Star,
+    Identifier(String),
+    String(String),
+    Number(u32),
 }
 
 fn is_ident_char(c: char) -> bool {
@@ -16,142 +27,319 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut chars = input.chars().peekable();
 
-    while let Some(&c) = chars.peek() {
-        if c.is_whitespace() {
-            chars.next();
-            continue;
-        }
-
+    while let Some(c) = chars.next() {
         match c {
-            '*' => {
-                tokens.push(Token::Star);
-                chars.next();
-            }
-            ',' => {
-                tokens.push(Token::Comma);
-                chars.next();
-            }
-            ';' => {
-                tokens.push(Token::Semicolon);
-                chars.next();
-            }
-            _ => {
-                if is_ident_char(c) {
-                    let mut ident = String::new();
-                    while let Some(&ch) = chars.peek() {
-                        if is_ident_char(ch) {
-                            ident.push(ch);
-                            chars.next();
-                        } else {
-                            break;
-                        }
-                    }
-
-                    if ident.eq_ignore_ascii_case("select") {
-                        tokens.push(Token::KeywordSelect);
+            ' ' | '\t' | '\n' => continue,
+            'a'..='z' | 'A'..='Z' | '_' => {
+                let mut ident = String::new();
+                ident.push(c);
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_alphanumeric() || ch == '_' {
+                        ident.push(chars.next().unwrap());
                     } else {
-                        tokens.push(Token::Identifier(ident));
+                        break;
                     }
-                } else {
-                    // Unknown char: skip it (keeps tokenizer forgiving)
-                    chars.next();
                 }
+                let token = match ident.to_uppercase().as_str() {
+                    "SELECT" => Token::Select,
+                    "FROM" => Token::From,
+                    "WHERE" => Token::Where,
+                    "INSERT" => Token::Insert,
+                    "INTO" => Token::Into,
+                    "VALUES" => Token::Values,
+                    "UPDATE" => Token::Update,
+                    "SET" => Token::Set,
+                    "DELETE" => Token::Delete,
+                    _ => Token::Identifier(ident),
+                };
+                tokens.push(token);
             }
+            '0'..='9' => {
+                let mut num = String::new();
+                num.push(c);
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_digit(10) {
+                        num.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(Token::Number(num.parse().unwrap()));
+            }
+            '"' | '\'' => {
+                let mut str = String::new();
+                while let Some(ch) = chars.next() {
+                    if ch == c {
+                        break;
+                    }
+                    str.push(ch);
+                }
+                tokens.push(Token::String(str));
+            }
+            '=' => tokens.push(Token::Eq),
+            ',' => tokens.push(Token::Comma),
+            '(' => tokens.push(Token::LParen),
+            ')' => tokens.push(Token::RParen),
+            '*' => tokens.push(Token::Star),
+            _ => {} // ignore
         }
     }
-
-    tokens.push(Token::EOF);
     tokens
 }
 
 pub fn parse_select(
     input: &str,
 ) -> Result<(Option<Vec<String>>, Option<(String, String)>), String> {
-    let input = input.trim();
-
-    if !input.to_lowercase().starts_with("select") {
-        return Err("Not a select statement".to_string());
-    }
-
-    let rest = input[6..].trim(); // after "select"
-
-    if rest.is_empty() {
-        return Ok((None, None));
-    }
-
-    let parts: Vec<&str> = rest.splitn(2, " where ").collect();
-
-    if parts.len() == 1 && parts[0].starts_with("where ") {
-        let cond_str = &parts[0][6..]; // skip "where "
-        let eq_pos = cond_str.find('=').ok_or("Invalid WHERE clause")?;
-        let column = cond_str[..eq_pos].trim().to_string();
-        let value = cond_str[eq_pos + 1..].trim().to_string();
-        return Ok((None, Some((column, value))));
-    }
-
-    let columns = if parts[0].trim().is_empty() {
-        None
-    } else {
-        Some(parts[0].split(',').map(|c| c.trim().to_string()).collect())
-    };
-
-    let condition = if parts.len() == 2 {
-        let cond = parts[1];
-        let eq_pos = cond.find('=').ok_or("Invalid WHERE clause")?;
-        let column = cond[..eq_pos].trim().to_string();
-        let value = cond[eq_pos + 1..].trim().to_string();
-        Some((column, value))
-    } else {
-        None
-    };
-
-    Ok((columns, condition))
+    let tokens = tokenize(input);
+    parse_select_tokens(&tokens)
 }
 
-fn parse_select_tokens(tokens: &[Token]) -> Result<Option<Vec<String>>, String> {
-    let mut idx = 0;
-    // expect KeywordSelect
-    match tokens.get(idx) {
-        Some(Token::KeywordSelect) => idx += 1,
-        _ => return Err("Not a SELECT statement".to_string()),
+fn parse_select_tokens(
+    tokens: &[Token],
+) -> Result<(Option<Vec<String>>, Option<(String, String)>), String> {
+    let mut i = 0;
+    if tokens.get(i) != Some(&Token::Select) {
+        return Err("Expected SELECT".to_string());
     }
-
-    // skip any whitespace tokens (tokenizer already removed whitespace)
-
-    // If next is Star or EOF or Semicolon -> select all
-    match tokens.get(idx) {
-        Some(Token::Star) => return Ok(None),
-        Some(Token::EOF) | Some(Token::Semicolon) => return Ok(None),
-        _ => {}
-    }
-
-    let mut cols = Vec::new();
-
-    loop {
-        match tokens.get(idx) {
-            Some(Token::Identifier(name)) => {
-                cols.push(name.clone());
-                idx += 1;
-            }
-            _ => return Err("Expected column name in SELECT".to_string()),
-        }
-
-        match tokens.get(idx) {
-            Some(Token::Comma) => {
-                idx += 1; // consume comma and continue
-            }
-            Some(Token::Semicolon) | Some(Token::EOF) => break,
-            Some(Token::Identifier(_)) => {
-                // allow identifiers without commas if user left spaces
-                continue;
-            }
-            _ => break,
-        }
-    }
-
-    if cols.is_empty() {
-        Ok(None)
+    i += 1;
+    let columns = if tokens.get(i) == Some(&Token::Star) {
+        i += 1;
+        None
     } else {
-        Ok(Some(cols))
+        None
+    };
+    if tokens.get(i) == Some(&Token::From) {
+        i += 1;
+        if let Some(Token::Identifier(_)) = tokens.get(i) {
+            i += 1;
+        }
     }
+    let where_clause = if tokens.get(i) == Some(&Token::Where) {
+        i += 1;
+        if let Some(Token::Identifier(col)) = tokens.get(i) {
+            i += 1;
+            if tokens.get(i) == Some(&Token::Eq) {
+                i += 1;
+                if let Some(Token::String(val)) = tokens.get(i) {
+                    i += 1;
+                    Some((col.clone(), val.clone()))
+                } else if let Some(Token::Number(val)) = tokens.get(i) {
+                    i += 1;
+                    Some((col.clone(), val.to_string()))
+                } else {
+                    return Err("Expected value".to_string());
+                }
+            } else {
+                return Err("Expected =".to_string());
+            }
+        } else {
+            return Err("Expected column".to_string());
+        }
+    } else {
+        None
+    };
+    Ok((columns, where_clause))
+}
+
+pub fn parse_insert(input: &str) -> Result<(u32, String, String), String> {
+    let tokens = tokenize(input);
+    parse_insert_tokens(&tokens)
+}
+
+fn parse_insert_tokens(tokens: &[Token]) -> Result<(u32, String, String), String> {
+    let mut i = 0;
+    if tokens.get(i) != Some(&Token::Insert) {
+        return Err("Expected INSERT".to_string());
+    }
+    i += 1;
+    if tokens.get(i) == Some(&Token::Into) {
+        i += 1;
+        if let Some(Token::Identifier(_)) = tokens.get(i) {
+            i += 1;
+        }
+    }
+    if tokens.get(i) != Some(&Token::Values) {
+        return Err("Expected VALUES".to_string());
+    }
+    i += 1;
+    if tokens.get(i) != Some(&Token::LParen) {
+        return Err("Expected (".to_string());
+    }
+    i += 1;
+    let id = if let Some(Token::Number(n)) = tokens.get(i) {
+        *n
+    } else {
+        return Err("Expected id number".to_string());
+    };
+    i += 1;
+    if tokens.get(i) != Some(&Token::Comma) {
+        return Err("Expected ,".to_string());
+    }
+    i += 1;
+    let username = if let Some(Token::String(s)) = tokens.get(i) {
+        s.clone()
+    } else {
+        return Err("Expected username string".to_string());
+    };
+    i += 1;
+    if tokens.get(i) != Some(&Token::Comma) {
+        return Err("Expected ,".to_string());
+    }
+    i += 1;
+    let email = if let Some(Token::String(s)) = tokens.get(i) {
+        s.clone()
+    } else {
+        return Err("Expected email string".to_string());
+    };
+    i += 1;
+    if tokens.get(i) != Some(&Token::RParen) {
+        return Err("Expected )".to_string());
+    }
+    i += 1;
+    if i != tokens.len() {
+        return Err("Extra tokens".to_string());
+    }
+    Ok((id, username, email))
+}
+
+pub fn parse_update(input: &str) -> Result<(u32, String, String), String> {
+    let tokens = tokenize(input);
+    parse_update_tokens(&tokens)
+}
+
+fn parse_update_tokens(tokens: &[Token]) -> Result<(u32, String, String), String> {
+    let mut i = 0;
+    if tokens.get(i) != Some(&Token::Update) {
+        return Err("Expected UPDATE".to_string());
+    }
+    i += 1;
+    if let Some(Token::Identifier(_)) = tokens.get(i) {
+        i += 1;
+    }
+    if tokens.get(i) != Some(&Token::Set) {
+        return Err("Expected SET".to_string());
+    }
+    i += 1;
+    let column = if let Some(Token::Identifier(col)) = tokens.get(i) {
+        col.clone()
+    } else {
+        return Err("Expected column".to_string());
+    };
+    i += 1;
+    if tokens.get(i) != Some(&Token::Eq) {
+        return Err("Expected =".to_string());
+    }
+    i += 1;
+    let value = if let Some(Token::String(s)) = tokens.get(i) {
+        s.clone()
+    } else {
+        return Err("Expected value".to_string());
+    };
+    i += 1;
+    if tokens.get(i) != Some(&Token::Where) {
+        return Err("Expected WHERE".to_string());
+    }
+    i += 1;
+    if tokens.get(i) != Some(&Token::Identifier("id".to_string())) {
+        return Err("Expected id".to_string());
+    }
+    i += 1;
+    if tokens.get(i) != Some(&Token::Eq) {
+        return Err("Expected =".to_string());
+    }
+    i += 1;
+    let id = if let Some(Token::Number(n)) = tokens.get(i) {
+        *n
+    } else {
+        return Err("Expected id number".to_string());
+    };
+    i += 1;
+    if i != tokens.len() {
+        return Err("Extra tokens".to_string());
+    }
+    Ok((id, column, value))
+}
+
+pub fn parse_delete(input: &str) -> Result<u32, String> {
+    let tokens = tokenize(input);
+    parse_delete_tokens(&tokens)
+}
+
+fn parse_delete_tokens(tokens: &[Token]) -> Result<u32, String> {
+    let mut i = 0;
+    if tokens.get(i) != Some(&Token::Delete) {
+        return Err("Expected DELETE".to_string());
+    }
+    i += 1;
+    if tokens.get(i) == Some(&Token::From) {
+        i += 1;
+        if let Some(Token::Identifier(_)) = tokens.get(i) {
+            i += 1;
+        }
+    }
+    if tokens.get(i) != Some(&Token::Where) {
+        return Err("Expected WHERE".to_string());
+    }
+    i += 1;
+    if tokens.get(i) != Some(&Token::Identifier("id".to_string())) {
+        return Err("Expected id".to_string());
+    }
+    i += 1;
+    if tokens.get(i) != Some(&Token::Eq) {
+        return Err("Expected =".to_string());
+    }
+    i += 1;
+    let id = if let Some(Token::Number(n)) = tokens.get(i) {
+        *n
+    } else {
+        return Err("Expected id number".to_string());
+    };
+    i += 1;
+    if i != tokens.len() {
+        return Err("Extra tokens".to_string());
+    }
+    Ok(id)
+}
+
+pub fn parse_delete_where(input: &str) -> Result<(String, String), String> {
+    let tokens = tokenize(input);
+    parse_delete_where_tokens(&tokens)
+}
+
+fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(String, String), String> {
+    let mut i = 0;
+    if tokens.get(i) != Some(&Token::Delete) {
+        return Err("Expected DELETE".to_string());
+    }
+    i += 1;
+    if tokens.get(i) == Some(&Token::From) {
+        i += 1;
+        if let Some(Token::Identifier(_)) = tokens.get(i) {
+            i += 1;
+        }
+    }
+    if tokens.get(i) != Some(&Token::Where) {
+        return Err("Expected WHERE".to_string());
+    }
+    i += 1;
+    let column = if let Some(Token::Identifier(col)) = tokens.get(i) {
+        col.clone()
+    } else {
+        return Err("Expected column".to_string());
+    };
+    i += 1;
+    if tokens.get(i) != Some(&Token::Eq) {
+        return Err("Expected =".to_string());
+    }
+    i += 1;
+    let value = if let Some(Token::String(s)) = tokens.get(i) {
+        s.clone()
+    } else {
+        return Err("Expected value".to_string());
+    };
+    i += 1;
+    if i != tokens.len() {
+        return Err("Extra tokens".to_string());
+    }
+    Ok((column, value))
 }
