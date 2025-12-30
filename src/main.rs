@@ -28,9 +28,8 @@ enum Statement {
     },
     SelectWhere {
         columns: Option<Vec<String>>,
-        column: String,
-        operator: String,
-        value: String,
+        conditions: Vec<(String, String, String)>,
+        operators: Vec<String>,
     },
     Update {
         id: u32,
@@ -81,12 +80,13 @@ fn prepare_statement(input: &str) -> PrepareResult {
     } else if input.to_uppercase().starts_with("SELECT") {
         match parser::parse_select(input) {
             Ok((cols, None)) => PrepareResult::Success(Statement::Select { columns: cols }),
-            Ok((cols, Some((col, op, val)))) => PrepareResult::Success(Statement::SelectWhere {
-                columns: cols,
-                column: col,
-                operator: op,
-                value: val,
-            }),
+            Ok((cols, Some((conditions, operators)))) => {
+                PrepareResult::Success(Statement::SelectWhere {
+                    columns: cols,
+                    conditions,
+                    operators,
+                })
+            }
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if input.to_uppercase() == "DELETE ALL" {
@@ -148,10 +148,9 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         }
         Statement::SelectWhere {
             columns,
-            column,
-            operator,
-            value,
-        } => match table.select_where(&column, &operator, &value) {
+            conditions,
+            operators,
+        } => match table.select_where_complex(&conditions, &operators) {
             Ok(rows) => {
                 for row in rows {
                     match &columns {

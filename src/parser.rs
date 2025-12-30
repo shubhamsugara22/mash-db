@@ -15,6 +15,8 @@ pub enum Token {
     Lt,
     Ge,
     Le,
+    And,
+    Or,
     Comma,
     LParen,
     RParen,
@@ -55,6 +57,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "UPDATE" => Token::Update,
                     "SET" => Token::Set,
                     "DELETE" => Token::Delete,
+                    "AND" => Token::And,
+                    "OR" => Token::Or,
                     _ => Token::Identifier(ident),
                 };
                 tokens.push(token);
@@ -116,14 +120,26 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 
 pub fn parse_select(
     input: &str,
-) -> Result<(Option<Vec<String>>, Option<(String, String, String)>), String> {
+) -> Result<
+    (
+        Option<Vec<String>>,
+        Option<(Vec<(String, String, String)>, Vec<String>)>,
+    ),
+    String,
+> {
     let tokens = tokenize(input);
     parse_select_tokens(&tokens)
 }
 
 fn parse_select_tokens(
     tokens: &[Token],
-) -> Result<(Option<Vec<String>>, Option<(String, String, String)>), String> {
+) -> Result<
+    (
+        Option<Vec<String>>,
+        Option<(Vec<(String, String, String)>, Vec<String>)>,
+    ),
+    String,
+> {
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Select) {
         return Err("Expected SELECT".to_string());
@@ -143,6 +159,10 @@ fn parse_select_tokens(
     }
     let where_clause = if tokens.get(i) == Some(&Token::Where) {
         i += 1;
+        let mut conditions = Vec::new();
+        let mut operators = Vec::new();
+
+        // Parse first condition
         if let Some(Token::Identifier(col)) = tokens.get(i) {
             i += 1;
             let op = match tokens.get(i) {
@@ -164,10 +184,54 @@ fn parse_select_tokens(
             } else {
                 return Err("Expected value".to_string());
             };
-            Some((col.clone(), op.to_string(), val))
+            conditions.push((col.clone(), op.to_string(), val));
         } else {
             return Err("Expected column".to_string());
         }
+
+        // Parse additional conditions with AND/OR
+        while i < tokens.len() {
+            if tokens.get(i) == Some(&Token::And) || tokens.get(i) == Some(&Token::Or) {
+                let logical_op = if tokens.get(i) == Some(&Token::And) {
+                    "AND"
+                } else {
+                    "OR"
+                }
+                .to_string();
+                operators.push(logical_op);
+                i += 1;
+
+                if let Some(Token::Identifier(col)) = tokens.get(i) {
+                    i += 1;
+                    let op = match tokens.get(i) {
+                        Some(Token::Eq) => "=",
+                        Some(Token::Ne) => "!=",
+                        Some(Token::Gt) => ">",
+                        Some(Token::Lt) => "<",
+                        Some(Token::Ge) => ">=",
+                        Some(Token::Le) => "<=",
+                        _ => return Err("Expected operator".to_string()),
+                    };
+                    i += 1;
+                    let val = if let Some(Token::String(v)) = tokens.get(i) {
+                        i += 1;
+                        v.clone()
+                    } else if let Some(Token::Number(v)) = tokens.get(i) {
+                        i += 1;
+                        v.to_string()
+                    } else {
+                        return Err("Expected value".to_string());
+                    };
+                    conditions.push((col.clone(), op.to_string(), val));
+                } else {
+                    return Err("Expected column after AND/OR".to_string());
+                }
+            } else {
+                break;
+            }
+        }
+
+        Some((conditions, operators))
     } else {
         None
     };

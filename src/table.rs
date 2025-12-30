@@ -186,6 +186,70 @@ impl Table {
 
         Ok(result)
     }
+
+    pub fn select_where_complex(&self, conditions: &[(String, String, String)], operators: &[String]) -> Result<Vec<&Row>, String> {
+        let mut result = Vec::new();
+        
+        for row in self.select_all() {
+            let mut matches = true;
+            
+            // Evaluate first condition
+            if !self.evaluate_condition(row, &conditions[0]) {
+                matches = false;
+            }
+            
+            // Evaluate remaining conditions with operators
+            for (i, op) in operators.iter().enumerate() {
+                let cond_result = self.evaluate_condition(row, &conditions[i + 1]);
+                match op.as_str() {
+                    "AND" => matches = matches && cond_result,
+                    "OR" => matches = matches || cond_result,
+                    _ => return Err("Invalid logical operator".to_string()),
+                }
+            }
+            
+            if matches {
+                result.push(row);
+            }
+        }
+        
+        Ok(result)
+    }
+    
+    fn evaluate_condition(&self, row: &Row, condition: &(String, String, String)) -> bool {
+        let (column, operator, value) = condition;
+        match column.as_str() {
+            "id" => {
+                let row_id = row.id as i64;
+                let val: i64 = value.parse().unwrap_or(0);
+                match operator.as_str() {
+                    "=" => row_id == val,
+                    "!=" => row_id != val,
+                    ">" => row_id > val,
+                    "<" => row_id < val,
+                    ">=" => row_id >= val,
+                    "<=" => row_id <= val,
+                    _ => false,
+                }
+            }
+            "username" => {
+                if operator == "=" {
+                    row.username == *value
+                } else {
+                    false // Only = supported for strings
+                }
+            }
+            "email" => {
+                if operator == "=" {
+                    row.email == *value
+                } else {
+                    false // Only = supported for strings
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// Update a row by id.
     /// Returns an error if the id doesn't exist or the value is invalid for the column.
     pub fn update(&mut self, id: u32, column: &str, value: &str) -> Result<(), String> {
