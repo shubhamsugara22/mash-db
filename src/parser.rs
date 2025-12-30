@@ -249,6 +249,27 @@ fn parse_insert_tokens(tokens: &[Token]) -> Result<(u32, String, String), String
         return Err("Expected INSERT".to_string());
     }
     i += 1;
+    // Check if simple format: INSERT id username email
+    if let Some(Token::Number(id)) = tokens.get(i) {
+        i += 1;
+        let username = if let Some(Token::Identifier(u)) = tokens.get(i) {
+            u.clone()
+        } else {
+            return Err("Expected username".to_string());
+        };
+        i += 1;
+        let email = if let Some(Token::Identifier(e)) = tokens.get(i) {
+            e.clone()
+        } else {
+            return Err("Expected email".to_string());
+        };
+        i += 1;
+        if i != tokens.len() {
+            return Err("Extra tokens".to_string());
+        }
+        return Ok((*id, username, email));
+    }
+    // Full format: INSERT [INTO table] VALUES (id, 'username', 'email')
     if tokens.get(i) == Some(&Token::Into) {
         i += 1;
         if let Some(Token::Identifier(_)) = tokens.get(i) {

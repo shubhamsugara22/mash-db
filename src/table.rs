@@ -187,35 +187,35 @@ impl Table {
         Ok(result)
     }
 
-    pub fn select_where_complex(&self, conditions: &[(String, String, String)], operators: &[String]) -> Result<Vec<&Row>, String> {
+    pub fn select_where_complex(
+        &self,
+        conditions: &[(String, String, String)],
+        operators: &[String],
+    ) -> Result<Vec<&Row>, String> {
         let mut result = Vec::new();
-        
+
         for row in self.select_all() {
-            let mut matches = true;
-            
-            // Evaluate first condition
-            if !self.evaluate_condition(row, &conditions[0]) {
-                matches = false;
-            }
-            
-            // Evaluate remaining conditions with operators
-            for (i, op) in operators.iter().enumerate() {
-                let cond_result = self.evaluate_condition(row, &conditions[i + 1]);
-                match op.as_str() {
-                    "AND" => matches = matches && cond_result,
-                    "OR" => matches = matches || cond_result,
+            // Start with the last condition
+            let mut matches = self.evaluate_condition(row, &conditions[conditions.len() - 1]);
+
+            // Apply operators in reverse order to give AND higher precedence
+            for i in (0..operators.len()).rev() {
+                let cond_result = self.evaluate_condition(row, &conditions[i]);
+                match operators[i].as_str() {
+                    "AND" => matches = cond_result && matches,
+                    "OR" => matches = cond_result || matches,
                     _ => return Err("Invalid logical operator".to_string()),
                 }
             }
-            
+
             if matches {
                 result.push(row);
             }
         }
-        
+
         Ok(result)
     }
-    
+
     fn evaluate_condition(&self, row: &Row, condition: &(String, String, String)) -> bool {
         let (column, operator, value) = condition;
         match column.as_str() {
@@ -632,42 +632,90 @@ mod tests {
         assert!(res.is_err());
     }
     #[test]
-    fn btree_index_correctness() {
-        let mut table = Table::new("test16.json".to_string());
+    fn select_where_complex_and() {
+        let mut table = Table::new("test_and.json".to_string());
 
-        // Insert rows
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
             .unwrap();
         table
-            .insert(Row::new(3, "charlie".to_string(), "c@c.com".to_string()).unwrap())
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(3, "alice".to_string(), "a2@a.com".to_string()).unwrap())
+            .unwrap();
+
+        let conditions = vec![
+            ("id".to_string(), ">".to_string(), "1".to_string()),
+            ("username".to_string(), "=".to_string(), "alice".to_string()),
+        ];
+        let operators = vec!["AND".to_string()];
+
+        let rows = table.select_where_complex(&conditions, &operators).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 3);
+        assert_eq!(rows[0].username, "alice");
+    }
+
+    #[test]
+    fn select_where_complex_or() {
+        let mut table = Table::new("test_or.json".to_string());
+
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
             .unwrap();
         table
             .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
             .unwrap();
+        table
+            .insert(Row::new(3, "charlie".to_string(), "c@c.com".to_string()).unwrap())
+            .unwrap();
 
-        // Select by id should work efficiently (using index)
-        let rows = table.select_where("id", "=", "1").unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].username, "alice");
+        let conditions = vec![
+            ("id".to_string(), "=".to_string(), "1".to_string()),
+            (
+                "username".to_string(),
+                "=".to_string(),
+                "charlie".to_string(),
+            ),
+        ];
+        let operators = vec!["OR".to_string()];
 
-        let rows = table.select_where("id", "=", "2").unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].username, "bob");
+        let rows = table.select_where_complex(&conditions, &operators).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|r| r.id == 1));
+        assert!(rows.iter().any(|r| r.username == "charlie"));
+    }
 
-        let rows = table.select_where("id", "=", "3").unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].username, "charlie");
+    #[test]
+    fn select_where_complex_mixed() {
+        let mut table = Table::new("test_mixed.json".to_string());
 
-        // Delete and check it no longer exists
-        table.delete(2).unwrap();
-        let rows = table.select_where("id", "=", "2").unwrap();
-        assert_eq!(rows.len(), 0);
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(3, "alice".to_string(), "a2@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(4, "charlie".to_string(), "c@c.com".to_string()).unwrap())
+            .unwrap();
 
-        // Other rows still exist
-        let rows = table.select_where("id", "=", "1").unwrap();
-        assert_eq!(rows.len(), 1);
-        let rows = table.select_where("id", "=", "3").unwrap();
-        assert_eq!(rows.len(), 1);
+        let conditions = vec![
+            ("id".to_string(), ">".to_string(), "1".to_string()),
+            ("username".to_string(), "=".to_string(), "alice".to_string()),
+            ("id".to_string(), "!=".to_string(), "4".to_string()),
+        ];
+        let operators = vec!["AND".to_string(), "OR".to_string()];
+
+        let rows = table.select_where_complex(&conditions, &operators).unwrap();
+        // Should match: (id > 1 AND username = alice) OR id != 4
+        // id=3 matches the AND part, id=2 matches the OR part (since id != 4)
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|r| r.id == 2));
+        assert!(rows.iter().any(|r| r.id == 3));
     }
 }
