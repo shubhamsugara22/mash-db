@@ -145,11 +145,29 @@ fn parse_select_tokens(
         return Err("Expected SELECT".to_string());
     }
     i += 1;
-    let columns = if tokens.get(i) == Some(&Token::Star) {
-        i += 1;
-        None
-    } else {
-        None
+    let columns = match tokens.get(i) {
+        Some(Token::Star) => {
+            i += 1;
+            None // means select all
+        }
+        Some(Token::Identifier(_)) => {
+            let mut cols = Vec::new();
+            while let Some(Token::Identifier(col)) = tokens.get(i) {
+                cols.push(col.clone());
+                i += 1;
+                if tokens.get(i) == Some(&Token::Comma) {
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+            Some(cols)
+        }
+        Some(Token::Where) => {
+            // No columns provided, default to *
+            None
+        }
+        _ => return Err("Expected column list, *, or WHERE".to_string()),
     };
     if tokens.get(i) == Some(&Token::From) {
         i += 1;
