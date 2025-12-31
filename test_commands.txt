@@ -1,8 +1,8 @@
-INSERT 1 alice alice@example.com
-INSERT 2 bob bob@example.com
-INSERT 3 charlie charlie@example.com
-INSERT 4 alice alice2@example.com
-SELECT WHERE id > 1 AND username = alice
-SELECT WHERE id = 1 OR username = bob
-SELECT WHERE id > 2 AND username = alice OR id = 3
-.exit
+insert 1 alice alice@example.com
+insert 2 bob bob@example.com
+insert 3 charlie charlie@example.com
+insert 4 alice alice2@example.com
+
+select where id>1 and username=alice
+select where id=1 or username=bob
+select where id>2 and username=alice or id=3
