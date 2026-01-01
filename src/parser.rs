@@ -150,6 +150,10 @@ fn parse_select_tokens(
             i += 1;
             None // means select all
         }
+        Some(Token::Where) => {
+            // SELECT WHERE without column specification means SELECT *
+            None
+        }
         Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
             while let Some(Token::Identifier(col)) = tokens.get(i) {
@@ -162,10 +166,6 @@ fn parse_select_tokens(
                 }
             }
             Some(cols)
-        }
-        Some(Token::Where) => {
-            // No columns provided, default to *
-            None
         }
         _ => return Err("Expected column list, *, or WHERE".to_string()),
     };
@@ -199,6 +199,9 @@ fn parse_select_tokens(
             } else if let Some(Token::Number(v)) = tokens.get(i) {
                 i += 1;
                 v.to_string()
+            } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                i += 1;
+                v.clone()
             } else {
                 return Err("Expected value".to_string());
             };
@@ -237,6 +240,9 @@ fn parse_select_tokens(
                     } else if let Some(Token::Number(v)) = tokens.get(i) {
                         i += 1;
                         v.to_string()
+                    } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                        i += 1;
+                        v.clone()
                     } else {
                         return Err("Expected value".to_string());
                     };
