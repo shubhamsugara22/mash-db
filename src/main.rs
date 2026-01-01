@@ -3,6 +3,7 @@ use std::io::{self, Write};
 mod column;
 mod pager;
 mod parser;
+mod parser_tests;
 mod table;
 
 use table::{Row, Table};
