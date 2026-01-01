@@ -41,7 +41,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 let mut ident = String::new();
                 ident.push(c);
                 while let Some(&ch) = chars.peek() {
-                    if ch.is_alphanumeric() || ch == '_' {
+                    if ch.is_alphanumeric() || ch == '_' || ch == '@' || ch == '.' {
                         ident.push(chars.next().unwrap());
                     } else {
                         break;
