@@ -26,11 +26,17 @@ enum Statement {
     },
     Select {
         columns: Option<Vec<String>>,
+        order_by: Option<(String, bool)>, // (column, is_asc)
+        limit: Option<u32>,
+        offset: Option<u32>,
     },
     SelectWhere {
         columns: Option<Vec<String>>,
         conditions: Vec<(String, String, String)>,
         operators: Vec<String>,
+        order_by: Option<(String, bool)>, // (column, is_asc)
+        limit: Option<u32>,
+        offset: Option<u32>,
     },
     Update {
         id: u32,
@@ -80,12 +86,22 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if input.to_uppercase().starts_with("SELECT") {
         match parser::parse_select(input) {
-            Ok((cols, None)) => PrepareResult::Success(Statement::Select { columns: cols }),
-            Ok((cols, Some((conditions, operators)))) => {
+            Ok((cols, None, order_by, limit, offset)) => {
+                PrepareResult::Success(Statement::Select {
+                    columns: cols,
+                    order_by,
+                    limit,
+                    offset,
+                })
+            }
+            Ok((cols, Some((conditions, operators)), order_by, limit, offset)) => {
                 PrepareResult::Success(Statement::SelectWhere {
                     columns: cols,
                     conditions,
                     operators,
+                    order_by,
+                    limit,
+                    offset,
                 })
             }
             Err(_) => PrepareResult::UnrecognizedStatement,
@@ -127,8 +143,17 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             },
             Err(e) => println!("Error: {}", e),
         },
-        Statement::Select { columns } => {
-            for row in table.select_all() {
+        Statement::Select {
+            columns,
+            order_by,
+            limit,
+            offset,
+        } => {
+            let mut rows = table.select_all();
+            rows = apply_sorting(rows, order_by);
+            rows = apply_offset_limit(rows, offset, limit);
+
+            for row in rows {
                 match &columns {
                     None => println!("({}, {}, {})", row.id, row.username, row.email),
                     Some(cols) => {
@@ -151,8 +176,14 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             columns,
             conditions,
             operators,
+            order_by,
+            limit,
+            offset,
         } => match table.select_where_complex(&conditions, &operators) {
-            Ok(rows) => {
+            Ok(mut rows) => {
+                rows = apply_sorting(rows, order_by);
+                rows = apply_offset_limit(rows, offset, limit);
+
                 for row in rows {
                     match &columns {
                         None => println!("({}, {}, {})", row.id, row.username, row.email),
@@ -201,6 +232,41 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             println!("Deleted {} rows.", count);
         }
     }
+}
+
+// Sort rows based on ORDER BY clause
+fn apply_sorting(mut rows: Vec<&Row>, order_by: Option<(String, bool)>) -> Vec<&Row> {
+    if let Some((column, is_asc)) = order_by {
+        rows.sort_by(|a, b| {
+            let cmp = match column.as_str() {
+                "id" => a.id.cmp(&b.id),
+                "username" => a.username.cmp(&b.username),
+                "email" => a.email.cmp(&b.email),
+                _ => std::cmp::Ordering::Equal,
+            };
+            if is_asc {
+                cmp
+            } else {
+                cmp.reverse()
+            }
+        });
+    }
+    rows
+}
+
+// Apply LIMIT and OFFSET to results
+fn apply_offset_limit(rows: Vec<&Row>, offset: Option<u32>, limit: Option<u32>) -> Vec<&Row> {
+    let start = offset.unwrap_or(0) as usize;
+    let end = if let Some(lim) = limit {
+        start + lim as usize
+    } else {
+        rows.len()
+    };
+
+    rows.into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
 }
 
 fn main() {

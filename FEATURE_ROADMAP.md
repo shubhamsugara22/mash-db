@@ -14,6 +14,9 @@
   - `SELECT *` - Select all columns
   - `SELECT column1, column2` - Select specific columns
   - `SELECT WHERE` - Shorthand for SELECT * WHERE
+  - **`ORDER BY`** ✅ - Sort results by column (ASC/DESC)
+  - **`LIMIT`** ✅ - Restrict result count
+  - **`OFFSET`** ✅ - Skip first N rows for pagination
   
 - **WHERE Clause Operators**:
   - Equality: `=`, `!=`
@@ -39,6 +42,8 @@
 - **Error Handling**: Comprehensive error messages
 - **Data Validation**: Column size limits and duplicate ID prevention
 - **REPL Interface**: Interactive command-line interface
+- **Result Sorting**: Efficient in-memory sorting for ORDER BY
+- **Pagination Support**: LIMIT/OFFSET for result set pagination
 
 ---
 
@@ -58,14 +63,23 @@
 - **Priority**: HIGH
 - **Estimated Effort**: 3-4 weeks
 
-### 3. Enhanced Query Features
-- **ORDER BY**: Sort results by columns
+### 3. Enhanced Query Features ✅ COMPLETED
+- ✅ **ORDER BY**: Sort results by columns
   - `SELECT * WHERE id > 1 ORDER BY username ASC`
-- **LIMIT/OFFSET**: Pagination support
+  - Supports ASC and DESC for ascending/descending order
+  - Works with all column types (id, username, email)
+- ✅ **LIMIT/OFFSET**: Pagination support
   - `SELECT * LIMIT 10 OFFSET 20`
-- **DISTINCT**: Remove duplicate results
-- **Priority**: MEDIUM
-- **Estimated Effort**: 1-2 weeks
+  - Enables efficient pagination for large result sets
+  - Can be combined with ORDER BY for sorted pagination
+- **DISTINCT**: Remove duplicate results (future)
+- **Status**: ✅ COMPLETED
+- **Details**:
+  - Parser extended with Order, By, Asc, Desc, Limit, Offset tokens
+  - Statement enum includes optional order_by, limit, offset fields
+  - Implemented apply_sorting() and apply_offset_limit() helper functions
+  - 5 comprehensive parser tests covering all ORDER BY/LIMIT/OFFSET combinations
+  - All 39 unit tests passing (17 parser + 17 table + 5 new ORDER BY tests)
 
 ---
 

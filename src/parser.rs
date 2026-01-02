@@ -9,6 +9,12 @@ pub enum Token {
     Update,
     Set,
     Delete,
+    Order,
+    By,
+    Asc,
+    Desc,
+    Limit,
+    Offset,
     Eq,
     Ne,
     Gt,
@@ -57,6 +63,12 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "UPDATE" => Token::Update,
                     "SET" => Token::Set,
                     "DELETE" => Token::Delete,
+                    "ORDER" => Token::Order,
+                    "BY" => Token::By,
+                    "ASC" => Token::Asc,
+                    "DESC" => Token::Desc,
+                    "LIMIT" => Token::Limit,
+                    "OFFSET" => Token::Offset,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     _ => Token::Identifier(ident),
@@ -124,6 +136,9 @@ pub fn parse_select(
     (
         Option<Vec<String>>,
         Option<(Vec<(String, String, String)>, Vec<String>)>,
+        Option<(String, bool)>, // (column, is_asc)
+        Option<u32>,            // limit
+        Option<u32>,            // offset
     ),
     String,
 > {
@@ -137,6 +152,9 @@ fn parse_select_tokens(
     (
         Option<Vec<String>>,
         Option<(Vec<(String, String, String)>, Vec<String>)>,
+        Option<(String, bool)>,
+        Option<u32>,
+        Option<u32>,
     ),
     String,
 > {
@@ -259,7 +277,60 @@ fn parse_select_tokens(
     } else {
         None
     };
-    Ok((columns, where_clause))
+
+    // Parse ORDER BY clause
+    let order_by = if tokens.get(i) == Some(&Token::Order) {
+        i += 1;
+        if tokens.get(i) != Some(&Token::By) {
+            return Err("Expected BY after ORDER".to_string());
+        }
+        i += 1;
+        if let Some(Token::Identifier(col)) = tokens.get(i) {
+            i += 1;
+            let is_asc = if tokens.get(i) == Some(&Token::Asc) {
+                i += 1;
+                true
+            } else if tokens.get(i) == Some(&Token::Desc) {
+                i += 1;
+                false
+            } else {
+                true // Default to ASC if not specified
+            };
+            Some((col.clone(), is_asc))
+        } else {
+            return Err("Expected column after ORDER BY".to_string());
+        }
+    } else {
+        None
+    };
+
+    // Parse LIMIT clause
+    let limit = if tokens.get(i) == Some(&Token::Limit) {
+        i += 1;
+        if let Some(Token::Number(n)) = tokens.get(i) {
+            i += 1;
+            Some(*n)
+        } else {
+            return Err("Expected number after LIMIT".to_string());
+        }
+    } else {
+        None
+    };
+
+    // Parse OFFSET clause
+    let offset = if tokens.get(i) == Some(&Token::Offset) {
+        i += 1;
+        if let Some(Token::Number(n)) = tokens.get(i) {
+            i += 1;
+            Some(*n)
+        } else {
+            return Err("Expected number after OFFSET".to_string());
+        }
+    } else {
+        None
+    };
+
+    Ok((columns, where_clause, order_by, limit, offset))
 }
 
 pub fn parse_insert(input: &str) -> Result<(u32, String, String), String> {

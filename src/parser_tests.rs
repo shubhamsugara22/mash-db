@@ -43,17 +43,20 @@ mod tests {
     fn test_parse_select_with_columns() {
         let result = parse_select("SELECT id, username FROM users");
         assert!(result.is_ok());
-        let (cols, where_clause) = result.unwrap();
+        let (cols, where_clause, order_by, limit, offset) = result.unwrap();
         assert!(cols.is_some());
         assert_eq!(cols.unwrap().len(), 2);
         assert!(where_clause.is_none());
+        assert!(order_by.is_none());
+        assert!(limit.is_none());
+        assert!(offset.is_none());
     }
 
     #[test]
     fn test_parse_select_where_simple() {
         let result = parse_select("SELECT * WHERE id = 1");
         assert!(result.is_ok());
-        let (cols, where_clause) = result.unwrap();
+        let (cols, where_clause, _, _, _) = result.unwrap();
         assert!(cols.is_none());
         assert!(where_clause.is_some());
         let (conditions, operators) = where_clause.unwrap();
@@ -65,7 +68,7 @@ mod tests {
     fn test_parse_select_where_and() {
         let result = parse_select("SELECT WHERE id > 1 AND username = alice");
         assert!(result.is_ok());
-        let (_, where_clause) = result.unwrap();
+        let (_, where_clause, _, _, _) = result.unwrap();
         assert!(where_clause.is_some());
         let (conditions, operators) = where_clause.unwrap();
         assert_eq!(conditions.len(), 2);
@@ -77,7 +80,7 @@ mod tests {
     fn test_parse_select_where_or() {
         let result = parse_select("SELECT WHERE id = 1 OR username = bob");
         assert!(result.is_ok());
-        let (_, where_clause) = result.unwrap();
+        let (_, where_clause, _, _, _) = result.unwrap();
         let (_, operators) = where_clause.unwrap();
         assert_eq!(operators[0], "OR");
     }
@@ -86,7 +89,7 @@ mod tests {
     fn test_parse_select_where_mixed() {
         let result = parse_select("SELECT WHERE id > 2 AND username = alice OR id = 3");
         assert!(result.is_ok());
-        let (_, where_clause) = result.unwrap();
+        let (_, where_clause, _, _, _) = result.unwrap();
         let (conditions, operators) = where_clause.unwrap();
         assert_eq!(conditions.len(), 3);
         assert_eq!(operators.len(), 2);
@@ -148,5 +151,64 @@ mod tests {
     fn test_parse_invalid_select() {
         let result = parse_select("INVALID QUERY");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_select_with_order_by_asc() {
+        let result = parse_select("SELECT * WHERE id > 1 ORDER BY username ASC");
+        assert!(result.is_ok());
+        let (_, where_clause, order_by, limit, offset) = result.unwrap();
+        assert!(where_clause.is_some());
+        assert!(order_by.is_some());
+        let (col, is_asc) = order_by.unwrap();
+        assert_eq!(col, "username");
+        assert!(is_asc);
+        assert!(limit.is_none());
+        assert!(offset.is_none());
+    }
+
+    #[test]
+    fn test_parse_select_with_order_by_desc() {
+        let result = parse_select("SELECT * ORDER BY id DESC");
+        assert!(result.is_ok());
+        let (_, _, order_by, _, _) = result.unwrap();
+        assert!(order_by.is_some());
+        let (col, is_asc) = order_by.unwrap();
+        assert_eq!(col, "id");
+        assert!(!is_asc);
+    }
+
+    #[test]
+    fn test_parse_select_with_limit() {
+        let result = parse_select("SELECT * ORDER BY username LIMIT 10");
+        assert!(result.is_ok());
+        let (_, _, order_by, limit, offset) = result.unwrap();
+        assert!(order_by.is_some());
+        assert_eq!(limit, Some(10));
+        assert!(offset.is_none());
+    }
+
+    #[test]
+    fn test_parse_select_with_offset() {
+        let result = parse_select("SELECT * LIMIT 5 OFFSET 20");
+        assert!(result.is_ok());
+        let (_, _, _, limit, offset) = result.unwrap();
+        assert_eq!(limit, Some(5));
+        assert_eq!(offset, Some(20));
+    }
+
+    #[test]
+    fn test_parse_select_full_clause() {
+        let result = parse_select("SELECT id, username WHERE email = test@test.com ORDER BY username DESC LIMIT 15 OFFSET 5");
+        assert!(result.is_ok());
+        let (cols, where_clause, order_by, limit, offset) = result.unwrap();
+        assert!(cols.is_some());
+        assert!(where_clause.is_some());
+        assert!(order_by.is_some());
+        let (col, is_asc) = order_by.unwrap();
+        assert_eq!(col, "username");
+        assert!(!is_asc);
+        assert_eq!(limit, Some(15));
+        assert_eq!(offset, Some(5));
     }
 }
