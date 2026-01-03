@@ -25,12 +25,14 @@ enum Statement {
         email: String,
     },
     Select {
+        distinct: bool,
         columns: Option<Vec<String>>,
         order_by: Option<(String, bool)>, // (column, is_asc)
         limit: Option<u32>,
         offset: Option<u32>,
     },
     SelectWhere {
+        distinct: bool,
         columns: Option<Vec<String>>,
         conditions: Vec<(String, String, String)>,
         operators: Vec<String>,
@@ -86,16 +88,18 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if input.to_uppercase().starts_with("SELECT") {
         match parser::parse_select(input) {
-            Ok((cols, None, order_by, limit, offset)) => {
+            Ok((distinct, cols, None, order_by, limit, offset)) => {
                 PrepareResult::Success(Statement::Select {
+                    distinct,
                     columns: cols,
                     order_by,
                     limit,
                     offset,
                 })
             }
-            Ok((cols, Some((conditions, operators)), order_by, limit, offset)) => {
+            Ok((distinct, cols, Some((conditions, operators)), order_by, limit, offset)) => {
                 PrepareResult::Success(Statement::SelectWhere {
+                    distinct,
                     columns: cols,
                     conditions,
                     operators,
@@ -144,6 +148,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             Err(e) => println!("Error: {}", e),
         },
         Statement::Select {
+            distinct,
             columns,
             order_by,
             limit,
@@ -151,6 +156,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         } => {
             let mut rows = table.select_all();
             rows = apply_sorting(rows, order_by);
+            rows = apply_distinct(rows, distinct);
             rows = apply_offset_limit(rows, offset, limit);
 
             for row in rows {
@@ -173,6 +179,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             println!("Executed.");
         }
         Statement::SelectWhere {
+            distinct,
             columns,
             conditions,
             operators,
@@ -182,6 +189,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         } => match table.select_where_complex(&conditions, &operators) {
             Ok(mut rows) => {
                 rows = apply_sorting(rows, order_by);
+                rows = apply_distinct(rows, distinct);
                 rows = apply_offset_limit(rows, offset, limit);
 
                 for row in rows {
@@ -267,6 +275,26 @@ fn apply_offset_limit(rows: Vec<&Row>, offset: Option<u32>, limit: Option<u32>) 
         .skip(start)
         .take(end.saturating_sub(start))
         .collect()
+}
+
+// Remove duplicate rows if DISTINCT is enabled
+fn apply_distinct(rows: Vec<&Row>, distinct: bool) -> Vec<&Row> {
+    if !distinct {
+        return rows;
+    }
+
+    use std::collections::HashSet;
+    let mut seen = HashSet::new();
+    let mut unique_rows = Vec::new();
+
+    for row in rows {
+        let row_tuple = (row.id, row.username.clone(), row.email.clone());
+        if seen.insert(row_tuple) {
+            unique_rows.push(row);
+        }
+    }
+
+    unique_rows
 }
 
 fn main() {

@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Select,
+    Distinct,
     From,
     Where,
     Insert,
@@ -55,6 +56,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
                 let token = match ident.to_uppercase().as_str() {
                     "SELECT" => Token::Select,
+                    "DISTINCT" => Token::Distinct,
                     "FROM" => Token::From,
                     "WHERE" => Token::Where,
                     "INSERT" => Token::Insert,
@@ -134,11 +136,12 @@ pub fn parse_select(
     input: &str,
 ) -> Result<
     (
-        Option<Vec<String>>,
-        Option<(Vec<(String, String, String)>, Vec<String>)>,
-        Option<(String, bool)>, // (column, is_asc)
-        Option<u32>,            // limit
-        Option<u32>,            // offset
+        bool,                                                 // distinct
+        Option<Vec<String>>,                                  // columns
+        Option<(Vec<(String, String, String)>, Vec<String>)>, // where clause
+        Option<(String, bool)>,                               // (column, is_asc)
+        Option<u32>,                                          // limit
+        Option<u32>,                                          // offset
     ),
     String,
 > {
@@ -150,6 +153,7 @@ fn parse_select_tokens(
     tokens: &[Token],
 ) -> Result<
     (
+        bool,
         Option<Vec<String>>,
         Option<(Vec<(String, String, String)>, Vec<String>)>,
         Option<(String, bool)>,
@@ -163,6 +167,15 @@ fn parse_select_tokens(
         return Err("Expected SELECT".to_string());
     }
     i += 1;
+
+    // Check for DISTINCT
+    let distinct = if tokens.get(i) == Some(&Token::Distinct) {
+        i += 1;
+        true
+    } else {
+        false
+    };
+
     let columns = match tokens.get(i) {
         Some(Token::Star) => {
             i += 1;
@@ -330,7 +343,7 @@ fn parse_select_tokens(
         None
     };
 
-    Ok((columns, where_clause, order_by, limit, offset))
+    Ok((distinct, columns, where_clause, order_by, limit, offset))
 }
 
 pub fn parse_insert(input: &str) -> Result<(u32, String, String), String> {

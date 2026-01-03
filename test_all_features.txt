@@ -1,0 +1,83 @@
+insert 1 alice alice@example.com
+insert 2 bob bob@example.com
+insert 3 charlie charlie@example.com
+insert 4 diana diana@example.com
+insert 5 eve eve@example.com
+insert 6 alice alice2@example.com
+select *
+select id, username
+select username, email
+select id
+select where id=1
+select where username=alice
+select where email=bob@example.com
+select where id>2
+select where id<4
+select where id>=3
+select where id<=3
+select where id!=2
+select where id>1 and username=alice
+select where id>=2 and id<=4
+select where id=1 or username=bob
+select where username=alice or username=eve
+select where id>2 and username=alice or id=3
+select where id=1 or id=2 and username=bob
+select * order by id
+select * order by username
+select * order by email
+select * order by id asc
+select * order by username asc
+select * order by id desc
+select * order by username desc
+select * order by email desc
+select id, username order by username asc
+select username, email order by email desc
+select * order by id limit 3
+select * order by id desc limit 2
+select * limit 4
+select * order by id offset 2
+select * order by id limit 2 offset 0
+select * order by id limit 2 offset 2
+select * order by id limit 2 offset 4
+select * order by username asc limit 3 offset 1
+select distinct *
+select distinct username
+select distinct username, email
+select distinct id, username
+select distinct username where id>2
+select distinct * where username=alice
+select distinct username order by username asc
+select distinct * order by id desc
+select distinct username limit 3
+select distinct * order by id limit 4
+select distinct username where id>1 order by username asc limit 3
+select distinct * where id>=2 order by id desc limit 2
+select * where id>2 order by username asc
+select id, username where username=alice order by id desc
+select * where id<5 limit 3
+select username where id>1 limit 2
+select * where id>1 order by id asc limit 3
+select id, username where id<6 order by username desc limit 2
+select * where id>1 order by id asc limit 2 offset 1
+select id, username where id<5 order by id desc limit 2 offset 1
+select distinct username where id>1 order by username asc limit 5
+select distinct * where id>=2 order by id desc limit 3
+update 1 username john
+update 2 email bobby@newmail.com
+update 3 username charles
+select where id=1
+select where id=2
+select where id=3
+delete 5
+select *
+delete where username=eve
+select *
+delete where id>4
+select *
+select where id>100
+select where username=nonexistent
+select distinct id
+select * limit 1000
+select * offset 100
+select * where id=1 order by username
+select distinct username where id>100 order by username limit 5

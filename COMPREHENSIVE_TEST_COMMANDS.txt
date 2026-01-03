@@ -1,0 +1,248 @@
+======================================================
+MASH_DB COMPREHENSIVE TEST COMMANDS
+======================================================
+Complete test suite covering all database features:
+- Basic CRUD operations
+- WHERE clauses (AND/OR operators)
+- ORDER BY (ASC/DESC)
+- LIMIT and OFFSET (pagination)
+- DISTINCT (deduplication)
+- Combined queries
+
+======================================================
+SECTION 1: BASIC INSERT OPERATIONS
+======================================================
+# Insert 5 users with varied data
+insert 1 alice alice@example.com
+insert 2 bob bob@example.com
+insert 3 charlie charlie@example.com
+insert 4 diana diana@example.com
+insert 5 eve eve@example.com
+
+# Insert duplicate username (different ID, different email)
+insert 6 alice alice2@example.com
+
+======================================================
+SECTION 2: BASIC SELECT OPERATIONS
+======================================================
+# Select all rows
+select *
+
+# Select specific columns
+select id, username
+select username, email
+select id
+
+======================================================
+SECTION 3: WHERE CLAUSE TESTS
+======================================================
+# Simple WHERE conditions
+select where id=1
+select where username=alice
+select where email=bob@example.com
+
+# WHERE with comparison operators
+select where id>2
+select where id<4
+select where id>=3
+select where id<=3
+select where id!=2
+
+# WHERE with AND operator
+select where id>1 and username=alice
+select where id>=2 and id<=4
+
+# WHERE with OR operator
+select where id=1 or username=bob
+select where username=alice or username=eve
+
+# WHERE with mixed AND/OR (AND has higher precedence)
+select where id>2 and username=alice or id=3
+select where id=1 or id=2 and username=bob
+
+======================================================
+SECTION 4: ORDER BY TESTS
+======================================================
+# ORDER BY ASC (default)
+select * order by id
+select * order by username
+select * order by email
+
+# ORDER BY ASC (explicit)
+select * order by id asc
+select * order by username asc
+
+# ORDER BY DESC (descending)
+select * order by id desc
+select * order by username desc
+select * order by email desc
+
+# ORDER BY with specific columns
+select id, username order by username asc
+select username, email order by email desc
+
+======================================================
+SECTION 5: LIMIT AND OFFSET TESTS
+======================================================
+# LIMIT only (first N rows)
+select * order by id limit 3
+select * order by id desc limit 2
+select * limit 4
+
+# OFFSET only (skip N rows)
+select * order by id offset 2
+
+# LIMIT with OFFSET (pagination)
+select * order by id limit 2 offset 0
+select * order by id limit 2 offset 2
+select * order by id limit 2 offset 4
+select * order by username asc limit 3 offset 1
+
+======================================================
+SECTION 6: DISTINCT TESTS
+======================================================
+# DISTINCT with * (all columns)
+select distinct *
+
+# DISTINCT with specific columns
+select distinct username
+select distinct username, email
+select distinct id, username
+
+# DISTINCT with WHERE
+select distinct username where id>2
+select distinct * where username=alice
+
+# DISTINCT with ORDER BY
+select distinct username order by username asc
+select distinct * order by id desc
+
+# DISTINCT with LIMIT
+select distinct username limit 3
+select distinct * order by id limit 4
+
+# DISTINCT full clause (WHERE + ORDER BY + LIMIT)
+select distinct username where id>1 order by username asc limit 3
+select distinct * where id>=2 order by id desc limit 2
+
+======================================================
+SECTION 7: COMBINED QUERIES (ALL FEATURES)
+======================================================
+# WHERE + ORDER BY
+select * where id>2 order by username asc
+select id, username where username=alice order by id desc
+
+# WHERE + LIMIT
+select * where id<5 limit 3
+select username where id>1 limit 2
+
+# WHERE + ORDER BY + LIMIT
+select * where id>1 order by id asc limit 3
+select id, username where id<6 order by username desc limit 2
+
+# WHERE + ORDER BY + LIMIT + OFFSET
+select * where id>1 order by id asc limit 2 offset 1
+select id, username where id<5 order by id desc limit 2 offset 1
+
+# DISTINCT + WHERE + ORDER BY + LIMIT
+select distinct username where id>1 order by username asc limit 5
+select distinct * where id>=2 order by id desc limit 3
+
+======================================================
+SECTION 8: UPDATE OPERATIONS
+======================================================
+# Update specific row
+update 1 username john
+update 2 email bobby@newmail.com
+update 3 username charles
+
+# Verify updates
+select where id=1
+select where id=2
+select where id=3
+
+======================================================
+SECTION 9: DELETE OPERATIONS
+======================================================
+# Delete specific row
+delete 5
+
+# Delete with WHERE
+delete where username=eve
+
+# Delete multiple rows
+delete where id>4
+
+# Verify deletions
+select *
+
+======================================================
+SECTION 10: ADVANCED PAGINATION EXAMPLES
+======================================================
+# Pagination scenario: 2 rows per page
+# Page 1
+select * order by username asc limit 2 offset 0
+
+# Page 2
+select * order by username asc limit 2 offset 2
+
+# Page 3
+select * order by username asc limit 2 offset 4
+
+# Pagination with filtering
+select * where id>2 order by id asc limit 2 offset 0
+select * where id>2 order by id asc limit 2 offset 2
+
+======================================================
+SECTION 11: EDGE CASES AND VALIDATION
+======================================================
+# Empty results
+select where id>100
+select where username=nonexistent
+
+# DISTINCT on already unique data
+select distinct id
+
+# LIMIT larger than result set
+select * limit 1000
+
+# OFFSET beyond result set
+select * offset 100
+
+# ORDER BY with single row result
+select * where id=1 order by username
+
+# Combined clauses with no results
+select distinct username where id>100 order by username limit 5
+
+======================================================
+TEST EXECUTION NOTES
+======================================================
+1. Run tests in order to maintain data consistency
+2. Reset database (clear data.json) before running full test suite
+3. Expected behavior:
+   - WHERE: Filters rows based on conditions
+   - AND: Higher precedence than OR
+   - OR: Groups alternative conditions
+   - ORDER BY: Sorts results (ASC default, DESC reverse)
+   - LIMIT: Restricts number of returned rows
+   - OFFSET: Skips specified number of rows
+   - DISTINCT: Removes duplicate rows
+4. All features can be combined in a single query
+5. Execution order: WHERE → ORDER BY → DISTINCT → OFFSET → LIMIT
+
+======================================================
+FEATURE STATUS
+======================================================
+✅ INSERT (simple and full format)
+✅ SELECT (*, specific columns)
+✅ UPDATE (by id)
+✅ DELETE (by id, with WHERE)
+✅ WHERE (=, !=, <, >, <=, >=)
+✅ AND/OR operators (with precedence)
+✅ ORDER BY (ASC/DESC on all columns)
+✅ LIMIT (result count restriction)
+✅ OFFSET (pagination support)
+✅ DISTINCT (duplicate removal)
+
+======================================================

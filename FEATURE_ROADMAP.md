@@ -17,6 +17,7 @@
   - **`ORDER BY`** ✅ - Sort results by column (ASC/DESC)
   - **`LIMIT`** ✅ - Restrict result count
   - **`OFFSET`** ✅ - Skip first N rows for pagination
+  - **`DISTINCT`** ✅ - Remove duplicate rows from results
   
 - **WHERE Clause Operators**:
   - Equality: `=`, `!=`
@@ -72,12 +73,18 @@
   - `SELECT * LIMIT 10 OFFSET 20`
   - Enables efficient pagination for large result sets
   - Can be combined with ORDER BY for sorted pagination
-- **DISTINCT**: Remove duplicate results (future)
+- ✅ **DISTINCT**: Remove duplicate results
+  - `SELECT DISTINCT username`
+  - `SELECT DISTINCT * WHERE id > 2`
+  - Uses HashSet for efficient deduplication
+  - Works with all columns and can be combined with WHERE, ORDER BY, LIMIT
 - **Status**: ✅ COMPLETED
 - **Details**:
-  - Parser extended with Order, By, Asc, Desc, Limit, Offset tokens
-  - Statement enum includes optional order_by, limit, offset fields
-  - Implemented apply_sorting() and apply_offset_limit() helper functions
+  - Parser extended with Order, By, Asc, Desc, Limit, Offset, Distinct tokens
+  - Statement enum includes distinct boolean and optional order_by, limit, offset fields
+  - Implemented apply_sorting(), apply_offset_limit(), and apply_distinct() helper functions
+  - All 43 unit tests passing (27 parser + 17 table tests)
+  - Full integration testing complete
   - 5 comprehensive parser tests covering all ORDER BY/LIMIT/OFFSET combinations
   - All 39 unit tests passing (17 parser + 17 table + 5 new ORDER BY tests)
 
