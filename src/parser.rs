@@ -16,6 +16,12 @@ pub enum Token {
     Desc,
     Limit,
     Offset,
+    Group,
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
     Eq,
     Ne,
     Gt,
@@ -71,6 +77,12 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "DESC" => Token::Desc,
                     "LIMIT" => Token::Limit,
                     "OFFSET" => Token::Offset,
+                    "GROUP" => Token::Group,
+                    "COUNT" => Token::Count,
+                    "SUM" => Token::Sum,
+                    "AVG" => Token::Avg,
+                    "MIN" => Token::Min,
+                    "MAX" => Token::Max,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     _ => Token::Identifier(ident),
@@ -139,6 +151,7 @@ pub fn parse_select(
         bool,                                                 // distinct
         Option<Vec<String>>,                                  // columns
         Option<(Vec<(String, String, String)>, Vec<String>)>, // where clause
+        Option<Vec<String>>,                                  // group by columns
         Option<(String, bool)>,                               // (column, is_asc)
         Option<u32>,                                          // limit
         Option<u32>,                                          // offset
@@ -156,6 +169,7 @@ fn parse_select_tokens(
         bool,
         Option<Vec<String>>,
         Option<(Vec<(String, String, String)>, Vec<String>)>,
+        Option<Vec<String>>,
         Option<(String, bool)>,
         Option<u32>,
         Option<u32>,
@@ -291,6 +305,37 @@ fn parse_select_tokens(
         None
     };
 
+    // Parse GROUP BY clause
+    let group_by = if tokens.get(i) == Some(&Token::Group) {
+        i += 1;
+        if tokens.get(i) != Some(&Token::By) {
+            return Err("Expected BY after GROUP".to_string());
+        }
+        i += 1;
+
+        let mut columns = Vec::new();
+        if let Some(Token::Identifier(col)) = tokens.get(i) {
+            columns.push(col.clone());
+            i += 1;
+
+            // Parse additional columns separated by commas
+            while tokens.get(i) == Some(&Token::Comma) {
+                i += 1;
+                if let Some(Token::Identifier(col)) = tokens.get(i) {
+                    columns.push(col.clone());
+                    i += 1;
+                } else {
+                    return Err("Expected column after comma in GROUP BY".to_string());
+                }
+            }
+            Some(columns)
+        } else {
+            return Err("Expected column after GROUP BY".to_string());
+        }
+    } else {
+        None
+    };
+
     // Parse ORDER BY clause
     let order_by = if tokens.get(i) == Some(&Token::Order) {
         i += 1;
@@ -343,7 +388,15 @@ fn parse_select_tokens(
         None
     };
 
-    Ok((distinct, columns, where_clause, order_by, limit, offset))
+    Ok((
+        distinct,
+        columns,
+        where_clause,
+        group_by,
+        order_by,
+        limit,
+        offset,
+    ))
 }
 
 pub fn parse_insert(input: &str) -> Result<(u32, String, String), String> {

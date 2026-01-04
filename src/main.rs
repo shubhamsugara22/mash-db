@@ -27,6 +27,7 @@ enum Statement {
     Select {
         distinct: bool,
         columns: Option<Vec<String>>,
+        group_by: Option<Vec<String>>,
         order_by: Option<(String, bool)>, // (column, is_asc)
         limit: Option<u32>,
         offset: Option<u32>,
@@ -36,6 +37,7 @@ enum Statement {
         columns: Option<Vec<String>>,
         conditions: Vec<(String, String, String)>,
         operators: Vec<String>,
+        group_by: Option<Vec<String>>,
         order_by: Option<(String, bool)>, // (column, is_asc)
         limit: Option<u32>,
         offset: Option<u32>,
@@ -88,26 +90,34 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if input.to_uppercase().starts_with("SELECT") {
         match parser::parse_select(input) {
-            Ok((distinct, cols, None, order_by, limit, offset)) => {
+            Ok((distinct, cols, None, group_by, order_by, limit, offset)) => {
                 PrepareResult::Success(Statement::Select {
                     distinct,
                     columns: cols,
+                    group_by,
                     order_by,
                     limit,
                     offset,
                 })
             }
-            Ok((distinct, cols, Some((conditions, operators)), order_by, limit, offset)) => {
-                PrepareResult::Success(Statement::SelectWhere {
-                    distinct,
-                    columns: cols,
-                    conditions,
-                    operators,
-                    order_by,
-                    limit,
-                    offset,
-                })
-            }
+            Ok((
+                distinct,
+                cols,
+                Some((conditions, operators)),
+                group_by,
+                order_by,
+                limit,
+                offset,
+            )) => PrepareResult::Success(Statement::SelectWhere {
+                distinct,
+                columns: cols,
+                conditions,
+                operators,
+                group_by,
+                order_by,
+                limit,
+                offset,
+            }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if input.to_uppercase() == "DELETE ALL" {
@@ -150,6 +160,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         Statement::Select {
             distinct,
             columns,
+            group_by,
             order_by,
             limit,
             offset,
@@ -183,6 +194,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             columns,
             conditions,
             operators,
+            group_by,
             order_by,
             limit,
             offset,
