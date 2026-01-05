@@ -309,4 +309,294 @@ mod tests {
         assert!(group_by.is_some());
         assert!(order_by.is_some());
     }
+
+    #[test]
+    fn test_parse_select_columns_star() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![Token::Star];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        matches!(col_vec[0], SelectColumn::Star);
+    }
+
+    #[test]
+    fn test_parse_select_columns_regular() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![
+            Token::Identifier("username".to_string()),
+            Token::Comma,
+            Token::Identifier("email".to_string()),
+        ];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_select_columns_count_star() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![Token::Count, Token::LParen, Token::Star, Token::RParen];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        match &col_vec[0] {
+            SelectColumn::Aggregate(AggregateFunc::Count(None)) => assert!(true),
+            _ => assert!(false, "Expected COUNT(*)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_columns_count_column() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![
+            Token::Count,
+            Token::LParen,
+            Token::Identifier("id".to_string()),
+            Token::RParen,
+        ];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        match &col_vec[0] {
+            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => assert_eq!(col, "id"),
+            _ => assert!(false, "Expected COUNT(id)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_columns_sum() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![
+            Token::Sum,
+            Token::LParen,
+            Token::Identifier("age".to_string()),
+            Token::RParen,
+        ];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        match &col_vec[0] {
+            SelectColumn::Aggregate(AggregateFunc::Sum(col)) => assert_eq!(col, "age"),
+            _ => assert!(false, "Expected SUM(age)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_columns_avg() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![
+            Token::Avg,
+            Token::LParen,
+            Token::Identifier("salary".to_string()),
+            Token::RParen,
+        ];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        match &col_vec[0] {
+            SelectColumn::Aggregate(AggregateFunc::Avg(col)) => assert_eq!(col, "salary"),
+            _ => assert!(false, "Expected AVG(salary)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_columns_min() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![
+            Token::Min,
+            Token::LParen,
+            Token::Identifier("score".to_string()),
+            Token::RParen,
+        ];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        match &col_vec[0] {
+            SelectColumn::Aggregate(AggregateFunc::Min(col)) => assert_eq!(col, "score"),
+            _ => assert!(false, "Expected MIN(score)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_columns_max() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![
+            Token::Max,
+            Token::LParen,
+            Token::Identifier("score".to_string()),
+            Token::RParen,
+        ];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        match &col_vec[0] {
+            SelectColumn::Aggregate(AggregateFunc::Max(col)) => assert_eq!(col, "score"),
+            _ => assert!(false, "Expected MAX(score)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_columns_mixed() {
+        use crate::parser::parse_select_columns;
+        let tokens = vec![
+            Token::Identifier("username".to_string()),
+            Token::Comma,
+            Token::Count,
+            Token::LParen,
+            Token::Star,
+            Token::RParen,
+        ];
+        let mut i = 0;
+        let result = parse_select_columns(&tokens, &mut i);
+        assert!(result.is_ok());
+        let cols = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 2);
+        match &col_vec[0] {
+            SelectColumn::Column(col) => assert_eq!(col, "username"),
+            _ => assert!(false, "Expected Column(username)"),
+        }
+        match &col_vec[1] {
+            SelectColumn::Aggregate(AggregateFunc::Count(None)) => assert!(true),
+            _ => assert!(false, "Expected COUNT(*)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_count_star() {
+        let result = parse_select("SELECT COUNT(*) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        assert_eq!(col_vec[0], "count(*)");
+    }
+
+    #[test]
+    fn test_parse_select_with_count_column() {
+        let result = parse_select("SELECT COUNT(id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        assert_eq!(col_vec[0], "count(id)");
+    }
+
+    #[test]
+    fn test_parse_select_with_sum() {
+        let result = parse_select("SELECT SUM(age) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        assert_eq!(col_vec[0], "sum(age)");
+    }
+
+    #[test]
+    fn test_parse_select_with_avg() {
+        let result = parse_select("SELECT AVG(salary) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        assert_eq!(col_vec[0], "avg(salary)");
+    }
+
+    #[test]
+    fn test_parse_select_with_min() {
+        let result = parse_select("SELECT MIN(score) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        assert_eq!(col_vec[0], "min(score)");
+    }
+
+    #[test]
+    fn test_parse_select_with_max() {
+        let result = parse_select("SELECT MAX(score) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 1);
+        assert_eq!(col_vec[0], "max(score)");
+    }
+
+    #[test]
+    fn test_parse_select_mixed_regular_and_aggregate() {
+        let result = parse_select("SELECT username, COUNT(*) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 2);
+        assert_eq!(col_vec[0], "username");
+        assert_eq!(col_vec[1], "count(*)");
+    }
+
+    #[test]
+    fn test_parse_select_multiple_aggregates() {
+        let result = parse_select("SELECT COUNT(*), SUM(age), AVG(salary) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 3);
+        assert_eq!(col_vec[0], "count(*)");
+        assert_eq!(col_vec[1], "sum(age)");
+        assert_eq!(col_vec[2], "avg(salary)");
+    }
+
+    #[test]
+    fn test_parse_select_with_aggregate_and_group_by() {
+        let result = parse_select("SELECT username, COUNT(*) FROM users GROUP BY username");
+        assert!(result.is_ok());
+        let (_, cols, _, group_by, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        assert!(group_by.is_some());
+        let col_vec = cols.unwrap();
+        assert_eq!(col_vec.len(), 2);
+        assert_eq!(col_vec[0], "username");
+        assert_eq!(col_vec[1], "count(*)");
+    }
 }

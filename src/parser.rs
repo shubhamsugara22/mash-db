@@ -39,6 +39,24 @@ pub enum Token {
     Number(u32),
 }
 
+// Aggregate function representation
+#[derive(Debug, Clone)]
+pub enum AggregateFunc {
+    Count(Option<String>), // COUNT(*) or COUNT(column)
+    Sum(String),           // SUM(column)
+    Avg(String),           // AVG(column)
+    Min(String),           // MIN(column)
+    Max(String),           // MAX(column)
+}
+
+// Column in SELECT can be a regular column or an aggregate
+#[derive(Debug, Clone)]
+pub enum SelectColumn {
+    Column(String),
+    Aggregate(AggregateFunc),
+    Star,
+}
+
 fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
@@ -144,17 +162,161 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     tokens
 }
 
+// Helper function to parse SELECT columns (can include aggregates)
+pub fn parse_select_columns(
+    tokens: &[Token],
+    i: &mut usize,
+) -> Result<Option<Vec<SelectColumn>>, String> {
+    match tokens.get(*i) {
+        Some(Token::Star) => {
+            *i += 1;
+            Ok(Some(vec![SelectColumn::Star]))
+        }
+        Some(Token::Where) => {
+            // SELECT WHERE without column specification means SELECT *
+            Ok(None)
+        }
+        Some(Token::Count)
+        | Some(Token::Sum)
+        | Some(Token::Avg)
+        | Some(Token::Min)
+        | Some(Token::Max)
+        | Some(Token::Identifier(_)) => {
+            let mut cols = Vec::new();
+
+            loop {
+                let col = match tokens.get(*i) {
+                    Some(Token::Count) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after COUNT".to_string());
+                        }
+                        *i += 1;
+
+                        if tokens.get(*i) == Some(&Token::Star) {
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after COUNT(*)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::Count(None))
+                        } else if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after COUNT(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::Count(Some(col_name)))
+                        } else {
+                            return Err("Expected * or column after COUNT(".to_string());
+                        }
+                    }
+                    Some(Token::Sum) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after SUM".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after SUM(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::Sum(col_name))
+                        } else {
+                            return Err("Expected column after SUM(".to_string());
+                        }
+                    }
+                    Some(Token::Avg) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after AVG".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after AVG(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::Avg(col_name))
+                        } else {
+                            return Err("Expected column after AVG(".to_string());
+                        }
+                    }
+                    Some(Token::Min) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after MIN".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after MIN(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::Min(col_name))
+                        } else {
+                            return Err("Expected column after MIN(".to_string());
+                        }
+                    }
+                    Some(Token::Max) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after MAX".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after MAX(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::Max(col_name))
+                        } else {
+                            return Err("Expected column after MAX(".to_string());
+                        }
+                    }
+                    Some(Token::Identifier(col)) => {
+                        let col_name = col.clone();
+                        *i += 1;
+                        SelectColumn::Column(col_name)
+                    }
+                    _ => return Err("Expected column or aggregate function".to_string()),
+                };
+
+                cols.push(col);
+
+                if tokens.get(*i) == Some(&Token::Comma) {
+                    *i += 1;
+                } else {
+                    break;
+                }
+            }
+            Ok(Some(cols))
+        }
+        _ => Err("Expected column list, *, or WHERE".to_string()),
+    }
+}
+
 pub fn parse_select(
     input: &str,
 ) -> Result<
     (
         bool,                                                 // distinct
-        Option<Vec<String>>,                                  // columns
+        Option<Vec<String>>, // columns (keeping as String for backward compat)
         Option<(Vec<(String, String, String)>, Vec<String>)>, // where clause
-        Option<Vec<String>>,                                  // group by columns
-        Option<(String, bool)>,                               // (column, is_asc)
-        Option<u32>,                                          // limit
-        Option<u32>,                                          // offset
+        Option<Vec<String>>, // group by columns
+        Option<(String, bool)>, // (column, is_asc)
+        Option<u32>,         // limit
+        Option<u32>,         // offset
     ),
     String,
 > {
@@ -199,18 +361,37 @@ fn parse_select_tokens(
             // SELECT WHERE without column specification means SELECT *
             None
         }
-        Some(Token::Identifier(_)) => {
-            let mut cols = Vec::new();
-            while let Some(Token::Identifier(col)) = tokens.get(i) {
-                cols.push(col.clone());
-                i += 1;
-                if tokens.get(i) == Some(&Token::Comma) {
-                    i += 1;
-                } else {
-                    break;
+        Some(Token::Identifier(_))
+        | Some(Token::Count)
+        | Some(Token::Sum)
+        | Some(Token::Avg)
+        | Some(Token::Min)
+        | Some(Token::Max) => {
+            // Use the helper function to parse columns (which might include aggregates)
+            match parse_select_columns(&tokens, &mut i) {
+                Ok(Some(select_cols)) => {
+                    // Convert SelectColumn to String for backward compatibility
+                    // For now, just use column names and ignore aggregate function info
+                    let cols: Vec<String> = select_cols
+                        .iter()
+                        .map(|col| match col {
+                            SelectColumn::Column(name) => name.clone(),
+                            SelectColumn::Star => "*".to_string(),
+                            SelectColumn::Aggregate(agg) => match agg {
+                                AggregateFunc::Count(Some(name)) => format!("count({})", name),
+                                AggregateFunc::Count(None) => "count(*)".to_string(),
+                                AggregateFunc::Sum(name) => format!("sum({})", name),
+                                AggregateFunc::Avg(name) => format!("avg({})", name),
+                                AggregateFunc::Min(name) => format!("min({})", name),
+                                AggregateFunc::Max(name) => format!("max({})", name),
+                            },
+                        })
+                        .collect();
+                    Some(cols)
                 }
+                Ok(None) => None,
+                Err(e) => return Err(e),
             }
-            Some(cols)
         }
         _ => return Err("Expected column list, *, or WHERE".to_string()),
     };
