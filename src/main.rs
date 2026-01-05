@@ -320,37 +320,73 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         } => {
             let mut rows = table.select_all();
 
-            // Handle GROUP BY with aggregates
-            if let Some(ref group_cols) = group_by {
-                let groups = group_rows_by_columns(rows, group_cols);
+            // Check if columns contain any aggregates
+            let has_aggregates = match &columns {
+                Some(cols) => cols.iter().any(|c| {
+                    c.starts_with("count(")
+                        || c.starts_with("sum(")
+                        || c.starts_with("avg(")
+                        || c.starts_with("min(")
+                        || c.starts_with("max(")
+                }),
+                None => false,
+            };
 
-                // Parse columns for aggregates
-                let agg_cols: Vec<AggregateColumn> = match &columns {
-                    Some(cols) => cols
-                        .iter()
-                        .map(|c| AggregateColumn::from_col_string(c))
-                        .collect(),
-                    None => vec![],
-                };
+            // Handle aggregates (with or without GROUP BY)
+            if has_aggregates {
+                if let Some(ref group_cols) = group_by {
+                    // GROUP BY with aggregates
+                    let groups = group_rows_by_columns(rows, group_cols);
 
-                // Compute aggregate results
-                let mut result_rows = Vec::new();
-                for (_, group_rows) in groups {
+                    // Parse columns for aggregates
+                    let agg_cols: Vec<AggregateColumn> = match &columns {
+                        Some(cols) => cols
+                            .iter()
+                            .map(|c| AggregateColumn::from_col_string(c))
+                            .collect(),
+                        None => vec![],
+                    };
+
+                    // Compute aggregate results
+                    let mut result_rows = Vec::new();
+                    for (_, group_rows) in groups {
+                        let mut values = Vec::new();
+                        for agg in &agg_cols {
+                            values.push(compute_aggregate(agg, &group_rows));
+                        }
+                        result_rows.push(values);
+                    }
+
+                    // Sort, apply distinct, offset/limit
+                    // Note: Simplified - just display results
+                    for values in result_rows {
+                        println!("({})", values.join(", "));
+                    }
+                } else {
+                    // Aggregates without GROUP BY - compute over all rows
+                    rows = apply_sorting(rows, order_by);
+                    rows = apply_distinct(rows, distinct);
+                    rows = apply_offset_limit(rows, offset, limit);
+
+                    // Parse columns for aggregates
+                    let agg_cols: Vec<AggregateColumn> = match &columns {
+                        Some(cols) => cols
+                            .iter()
+                            .map(|c| AggregateColumn::from_col_string(c))
+                            .collect(),
+                        None => vec![],
+                    };
+
+                    // Compute aggregates over all rows
                     let mut values = Vec::new();
                     for agg in &agg_cols {
-                        values.push(compute_aggregate(agg, &group_rows));
+                        values.push(compute_aggregate(agg, &rows));
                     }
-                    result_rows.push(values);
-                }
-
-                // Sort, apply distinct, offset/limit
-                // Note: Simplified - just display results
-                for values in result_rows {
                     println!("({})", values.join(", "));
                 }
                 println!("Executed.");
             } else {
-                // Regular SELECT without GROUP BY
+                // Regular SELECT without aggregates
                 rows = apply_sorting(rows, order_by);
                 rows = apply_distinct(rows, distinct);
                 rows = apply_offset_limit(rows, offset, limit);
@@ -386,36 +422,72 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             offset,
         } => match table.select_where_complex(&conditions, &operators) {
             Ok(mut rows) => {
-                // Handle GROUP BY with aggregates
-                if let Some(ref group_cols) = group_by {
-                    let groups = group_rows_by_columns(rows, group_cols);
+                // Check if columns contain any aggregates
+                let has_aggregates = match &columns {
+                    Some(cols) => cols.iter().any(|c| {
+                        c.starts_with("count(")
+                            || c.starts_with("sum(")
+                            || c.starts_with("avg(")
+                            || c.starts_with("min(")
+                            || c.starts_with("max(")
+                    }),
+                    None => false,
+                };
 
-                    // Parse columns for aggregates
-                    let agg_cols: Vec<AggregateColumn> = match &columns {
-                        Some(cols) => cols
-                            .iter()
-                            .map(|c| AggregateColumn::from_col_string(c))
-                            .collect(),
-                        None => vec![],
-                    };
+                // Handle aggregates (with or without GROUP BY)
+                if has_aggregates {
+                    if let Some(ref group_cols) = group_by {
+                        // GROUP BY with aggregates
+                        let groups = group_rows_by_columns(rows, group_cols);
 
-                    // Compute aggregate results
-                    let mut result_rows = Vec::new();
-                    for (_, group_rows) in groups {
+                        // Parse columns for aggregates
+                        let agg_cols: Vec<AggregateColumn> = match &columns {
+                            Some(cols) => cols
+                                .iter()
+                                .map(|c| AggregateColumn::from_col_string(c))
+                                .collect(),
+                            None => vec![],
+                        };
+
+                        // Compute aggregate results
+                        let mut result_rows = Vec::new();
+                        for (_, group_rows) in groups {
+                            let mut values = Vec::new();
+                            for agg in &agg_cols {
+                                values.push(compute_aggregate(agg, &group_rows));
+                            }
+                            result_rows.push(values);
+                        }
+
+                        // Display results
+                        for values in result_rows {
+                            println!("({})", values.join(", "));
+                        }
+                    } else {
+                        // Aggregates without GROUP BY - compute over all filtered rows
+                        rows = apply_sorting(rows, order_by);
+                        rows = apply_distinct(rows, distinct);
+                        rows = apply_offset_limit(rows, offset, limit);
+
+                        // Parse columns for aggregates
+                        let agg_cols: Vec<AggregateColumn> = match &columns {
+                            Some(cols) => cols
+                                .iter()
+                                .map(|c| AggregateColumn::from_col_string(c))
+                                .collect(),
+                            None => vec![],
+                        };
+
+                        // Compute aggregates over filtered rows
                         let mut values = Vec::new();
                         for agg in &agg_cols {
-                            values.push(compute_aggregate(agg, &group_rows));
+                            values.push(compute_aggregate(agg, &rows));
                         }
-                        result_rows.push(values);
-                    }
-
-                    // Display results
-                    for values in result_rows {
                         println!("({})", values.join(", "));
                     }
                     println!("Executed.");
                 } else {
-                    // Regular SELECT WHERE without GROUP BY
+                    // Regular SELECT WHERE without aggregates
                     rows = apply_sorting(rows, order_by);
                     rows = apply_distinct(rows, distinct);
                     rows = apply_offset_limit(rows, offset, limit);
