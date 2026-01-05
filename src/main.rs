@@ -8,6 +8,44 @@ mod table;
 
 use table::{Row, Table};
 
+// Helper struct to represent aggregate functions and their values
+#[derive(Debug, Clone)]
+enum AggregateColumn {
+    Regular(String),
+    Count(Option<String>), // None for COUNT(*), Some(col) for COUNT(col)
+    Sum(String),
+    Avg(String),
+    Min(String),
+    Max(String),
+}
+
+impl AggregateColumn {
+    fn from_col_string(col: &str) -> AggregateColumn {
+        if col.starts_with("count(") && col.ends_with(")") {
+            let inner = &col[6..col.len() - 1];
+            if inner == "*" {
+                AggregateColumn::Count(None)
+            } else {
+                AggregateColumn::Count(Some(inner.to_string()))
+            }
+        } else if col.starts_with("sum(") && col.ends_with(")") {
+            let inner = &col[4..col.len() - 1];
+            AggregateColumn::Sum(inner.to_string())
+        } else if col.starts_with("avg(") && col.ends_with(")") {
+            let inner = &col[4..col.len() - 1];
+            AggregateColumn::Avg(inner.to_string())
+        } else if col.starts_with("min(") && col.ends_with(")") {
+            let inner = &col[4..col.len() - 1];
+            AggregateColumn::Min(inner.to_string())
+        } else if col.starts_with("max(") && col.ends_with(")") {
+            let inner = &col[4..col.len() - 1];
+            AggregateColumn::Max(inner.to_string())
+        } else {
+            AggregateColumn::Regular(col.to_string())
+        }
+    }
+}
+
 enum MetaCommandResult {
     Success,
     UnrecognizedCommand,
@@ -141,6 +179,121 @@ fn prepare_statement(input: &str) -> PrepareResult {
     }
 }
 
+// Helper function to group rows by specific columns
+fn group_rows_by_columns<'a>(
+    rows: Vec<&'a Row>,
+    group_by_cols: &[String],
+) -> std::collections::HashMap<String, Vec<&'a Row>> {
+    let mut groups: std::collections::HashMap<String, Vec<&'a Row>> =
+        std::collections::HashMap::new();
+
+    for row in rows {
+        let mut group_key = Vec::new();
+        for col in group_by_cols {
+            match col.as_str() {
+                "id" => group_key.push(row.id.to_string()),
+                "username" => group_key.push(row.username.clone()),
+                "email" => group_key.push(row.email.clone()),
+                _ => group_key.push("NULL".to_string()),
+            }
+        }
+        let key = group_key.join("|");
+        groups.entry(key).or_insert_with(Vec::new).push(row);
+    }
+
+    groups
+}
+
+// Helper function to compute aggregate value for a group of rows
+fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row]) -> String {
+    match agg {
+        AggregateColumn::Regular(col) => {
+            // For regular columns in GROUP BY, just return the first row's value
+            if let Some(first_row) = rows.first() {
+                match col.as_str() {
+                    "id" => first_row.id.to_string(),
+                    "username" => first_row.username.clone(),
+                    "email" => first_row.email.clone(),
+                    _ => "NULL".to_string(),
+                }
+            } else {
+                "NULL".to_string()
+            }
+        }
+        AggregateColumn::Count(col_opt) => {
+            match col_opt {
+                None => rows.len().to_string(), // COUNT(*)
+                Some(col) => {
+                    // COUNT(col) - count non-null values
+                    let count = rows
+                        .iter()
+                        .filter(|row| match col.as_str() {
+                            "id" => true,
+                            "username" => !row.username.is_empty(),
+                            "email" => !row.email.is_empty(),
+                            _ => false,
+                        })
+                        .count();
+                    count.to_string()
+                }
+            }
+        }
+        AggregateColumn::Sum(col) => {
+            let sum: f64 = rows
+                .iter()
+                .filter_map(|row| match col.as_str() {
+                    "id" => Some(row.id as f64),
+                    _ => None,
+                })
+                .sum();
+            format!("{:.0}", sum)
+        }
+        AggregateColumn::Avg(col) => {
+            let values: Vec<f64> = rows
+                .iter()
+                .filter_map(|row| match col.as_str() {
+                    "id" => Some(row.id as f64),
+                    _ => None,
+                })
+                .collect();
+            if values.is_empty() {
+                "NULL".to_string()
+            } else {
+                let avg = values.iter().sum::<f64>() / values.len() as f64;
+                format!("{:.2}", avg)
+            }
+        }
+        AggregateColumn::Min(col) => {
+            let values: Vec<u32> = rows
+                .iter()
+                .filter_map(|row| match col.as_str() {
+                    "id" => Some(row.id),
+                    _ => None,
+                })
+                .collect();
+            if let Some(&min_val) = values.iter().min() {
+                min_val.to_string()
+            } else {
+                "NULL".to_string()
+            }
+        }
+        AggregateColumn::Max(col) => {
+            let values: Vec<u32> = rows
+                .iter()
+                .filter_map(|row| match col.as_str() {
+                    "id" => Some(row.id),
+                    _ => None,
+                })
+                .collect();
+            if let Some(&max_val) = values.iter().max() {
+                max_val.to_string()
+            } else {
+                "NULL".to_string()
+            }
+        }
+    }
+}
+
 fn execute_statement(statement: Statement, table: &mut Table) {
     match statement {
         Statement::Insert {
@@ -166,40 +319,38 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             offset,
         } => {
             let mut rows = table.select_all();
-            rows = apply_sorting(rows, order_by);
-            rows = apply_distinct(rows, distinct);
-            rows = apply_offset_limit(rows, offset, limit);
 
-            for row in rows {
-                match &columns {
-                    None => println!("({}, {}, {})", row.id, row.username, row.email),
-                    Some(cols) => {
-                        let mut values: Vec<String> = Vec::new();
-                        for col in cols.iter() {
-                            match col.as_str() {
-                                "id" => values.push(row.id.to_string()),
-                                "username" => values.push(row.username.clone()),
-                                "email" => values.push(row.email.clone()),
-                                other => values.push(format!("NULL({})", other)),
-                            }
-                        }
-                        println!("({})", values.join(", "));
+            // Handle GROUP BY with aggregates
+            if let Some(ref group_cols) = group_by {
+                let groups = group_rows_by_columns(rows, group_cols);
+
+                // Parse columns for aggregates
+                let agg_cols: Vec<AggregateColumn> = match &columns {
+                    Some(cols) => cols
+                        .iter()
+                        .map(|c| AggregateColumn::from_col_string(c))
+                        .collect(),
+                    None => vec![],
+                };
+
+                // Compute aggregate results
+                let mut result_rows = Vec::new();
+                for (_, group_rows) in groups {
+                    let mut values = Vec::new();
+                    for agg in &agg_cols {
+                        values.push(compute_aggregate(agg, &group_rows));
                     }
+                    result_rows.push(values);
                 }
-            }
-            println!("Executed.");
-        }
-        Statement::SelectWhere {
-            distinct,
-            columns,
-            conditions,
-            operators,
-            group_by,
-            order_by,
-            limit,
-            offset,
-        } => match table.select_where_complex(&conditions, &operators) {
-            Ok(mut rows) => {
+
+                // Sort, apply distinct, offset/limit
+                // Note: Simplified - just display results
+                for values in result_rows {
+                    println!("({})", values.join(", "));
+                }
+                println!("Executed.");
+            } else {
+                // Regular SELECT without GROUP BY
                 rows = apply_sorting(rows, order_by);
                 rows = apply_distinct(rows, distinct);
                 rows = apply_offset_limit(rows, offset, limit);
@@ -208,8 +359,8 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                     match &columns {
                         None => println!("({}, {}, {})", row.id, row.username, row.email),
                         Some(cols) => {
-                            let mut values = Vec::new();
-                            for col in cols {
+                            let mut values: Vec<String> = Vec::new();
+                            for col in cols.iter() {
                                 match col.as_str() {
                                     "id" => values.push(row.id.to_string()),
                                     "username" => values.push(row.username.clone()),
@@ -222,6 +373,72 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                     }
                 }
                 println!("Executed.");
+            }
+        }
+        Statement::SelectWhere {
+            distinct,
+            columns,
+            conditions,
+            operators,
+            group_by,
+            order_by,
+            limit,
+            offset,
+        } => match table.select_where_complex(&conditions, &operators) {
+            Ok(mut rows) => {
+                // Handle GROUP BY with aggregates
+                if let Some(ref group_cols) = group_by {
+                    let groups = group_rows_by_columns(rows, group_cols);
+
+                    // Parse columns for aggregates
+                    let agg_cols: Vec<AggregateColumn> = match &columns {
+                        Some(cols) => cols
+                            .iter()
+                            .map(|c| AggregateColumn::from_col_string(c))
+                            .collect(),
+                        None => vec![],
+                    };
+
+                    // Compute aggregate results
+                    let mut result_rows = Vec::new();
+                    for (_, group_rows) in groups {
+                        let mut values = Vec::new();
+                        for agg in &agg_cols {
+                            values.push(compute_aggregate(agg, &group_rows));
+                        }
+                        result_rows.push(values);
+                    }
+
+                    // Display results
+                    for values in result_rows {
+                        println!("({})", values.join(", "));
+                    }
+                    println!("Executed.");
+                } else {
+                    // Regular SELECT WHERE without GROUP BY
+                    rows = apply_sorting(rows, order_by);
+                    rows = apply_distinct(rows, distinct);
+                    rows = apply_offset_limit(rows, offset, limit);
+
+                    for row in rows {
+                        match &columns {
+                            None => println!("({}, {}, {})", row.id, row.username, row.email),
+                            Some(cols) => {
+                                let mut values = Vec::new();
+                                for col in cols {
+                                    match col.as_str() {
+                                        "id" => values.push(row.id.to_string()),
+                                        "username" => values.push(row.username.clone()),
+                                        "email" => values.push(row.email.clone()),
+                                        other => values.push(format!("NULL({})", other)),
+                                    }
+                                }
+                                println!("({})", values.join(", "));
+                            }
+                        }
+                    }
+                    println!("Executed.");
+                }
             }
             Err(e) => println!("Error: {}", e),
         },

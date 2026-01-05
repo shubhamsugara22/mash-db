@@ -1,0 +1,50 @@
+== AGGREGATE FUNCTION TESTS ==
+
+# Test 1: Basic COUNT(*)
+INSERT 1 alice alice@example.com
+INSERT 2 bob bob@example.com
+INSERT 3 charlie charlie@example.com
+SELECT COUNT(*) FROM users
+
+# Test 2: COUNT(*) with GROUP BY
+SELECT username, COUNT(*) FROM users GROUP BY username
+
+# Test 3: SUM aggregate
+INSERT 4 david david@example.com
+INSERT 5 eve eve@example.com
+SELECT SUM(id) FROM users
+
+# Test 4: AVG aggregate
+SELECT AVG(id) FROM users
+
+# Test 5: MIN aggregate
+SELECT MIN(id) FROM users
+
+# Test 6: MAX aggregate
+SELECT MAX(id) FROM users
+
+# Test 7: Multiple aggregates
+SELECT COUNT(*), SUM(id), AVG(id) FROM users
+
+# Test 8: Mixed regular and aggregate columns
+SELECT username, COUNT(*) FROM users GROUP BY username
+
+# Test 9: COUNT with specific column
+SELECT COUNT(username) FROM users
+
+# Test 10: GROUP BY with WHERE
+DELETE WHERE username = bob
+SELECT username, COUNT(*) FROM users WHERE id > 1 GROUP BY username
+
+== EXPECTED RESULTS ==
+
+Test 1: COUNT(*) should return 3 (or appropriate count)
+Test 2: GROUP BY should show username with count for each
+Test 3: SUM(id) should show total sum of all IDs
+Test 4: AVG(id) should show average of IDs
+Test 5: MIN(id) should show smallest ID
+Test 6: MAX(id) should show largest ID
+Test 7: All three aggregates in one result
+Test 8: Each unique username with its count
+Test 9: COUNT of username values
+Test 10: GROUP BY with WHERE filtering applied first
