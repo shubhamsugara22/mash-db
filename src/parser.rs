@@ -17,6 +17,7 @@ pub enum Token {
     Limit,
     Offset,
     Group,
+    Having,
     Count,
     Sum,
     Avg,
@@ -96,6 +97,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "LIMIT" => Token::Limit,
                     "OFFSET" => Token::Offset,
                     "GROUP" => Token::Group,
+                    "HAVING" => Token::Having,
                     "COUNT" => Token::Count,
                     "SUM" => Token::Sum,
                     "AVG" => Token::Avg,
@@ -314,6 +316,7 @@ pub fn parse_select(
         Option<Vec<String>>, // columns (keeping as String for backward compat)
         Option<(Vec<(String, String, String)>, Vec<String>)>, // where clause
         Option<Vec<String>>, // group by columns
+        Option<(Vec<(String, String, String)>, Vec<String>)>, // having clause
         Option<(String, bool)>, // (column, is_asc)
         Option<u32>,         // limit
         Option<u32>,         // offset
@@ -332,6 +335,7 @@ fn parse_select_tokens(
         Option<Vec<String>>,
         Option<(Vec<(String, String, String)>, Vec<String>)>,
         Option<Vec<String>>,
+        Option<(Vec<(String, String, String)>, Vec<String>)>,
         Option<(String, bool)>,
         Option<u32>,
         Option<u32>,
@@ -517,6 +521,92 @@ fn parse_select_tokens(
         None
     };
 
+    // Parse HAVING clause (must come after GROUP BY)
+    let having = if tokens.get(i) == Some(&Token::Having) {
+        i += 1;
+        let mut conditions = Vec::new();
+        let mut operators = Vec::new();
+
+        // Parse first condition
+        if let Some(Token::Identifier(col)) = tokens.get(i) {
+            i += 1;
+            let op = match tokens.get(i) {
+                Some(Token::Eq) => "=",
+                Some(Token::Ne) => "!=",
+                Some(Token::Gt) => ">",
+                Some(Token::Lt) => "<",
+                Some(Token::Ge) => ">=",
+                Some(Token::Le) => "<=",
+                _ => return Err("Expected operator".to_string()),
+            };
+            i += 1;
+            let val = if let Some(Token::String(v)) = tokens.get(i) {
+                i += 1;
+                v.clone()
+            } else if let Some(Token::Number(v)) = tokens.get(i) {
+                i += 1;
+                v.to_string()
+            } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                i += 1;
+                v.clone()
+            } else {
+                return Err("Expected value".to_string());
+            };
+            conditions.push((col.clone(), op.to_string(), val));
+        } else {
+            return Err("Expected column or aggregate function".to_string());
+        }
+
+        // Parse additional conditions with AND/OR
+        while i < tokens.len() {
+            if tokens.get(i) == Some(&Token::And) || tokens.get(i) == Some(&Token::Or) {
+                let logical_op = if tokens.get(i) == Some(&Token::And) {
+                    "AND"
+                } else {
+                    "OR"
+                }
+                .to_string();
+                operators.push(logical_op);
+                i += 1;
+
+                if let Some(Token::Identifier(col)) = tokens.get(i) {
+                    i += 1;
+                    let op = match tokens.get(i) {
+                        Some(Token::Eq) => "=",
+                        Some(Token::Ne) => "!=",
+                        Some(Token::Gt) => ">",
+                        Some(Token::Lt) => "<",
+                        Some(Token::Ge) => ">=",
+                        Some(Token::Le) => "<=",
+                        _ => return Err("Expected operator".to_string()),
+                    };
+                    i += 1;
+                    let val = if let Some(Token::String(v)) = tokens.get(i) {
+                        i += 1;
+                        v.clone()
+                    } else if let Some(Token::Number(v)) = tokens.get(i) {
+                        i += 1;
+                        v.to_string()
+                    } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                        i += 1;
+                        v.clone()
+                    } else {
+                        return Err("Expected value".to_string());
+                    };
+                    conditions.push((col.clone(), op.to_string(), val));
+                } else {
+                    return Err("Expected column after AND/OR".to_string());
+                }
+            } else {
+                break;
+            }
+        }
+
+        Some((conditions, operators))
+    } else {
+        None
+    };
+
     // Parse ORDER BY clause
     let order_by = if tokens.get(i) == Some(&Token::Order) {
         i += 1;
@@ -574,6 +664,7 @@ fn parse_select_tokens(
         columns,
         where_clause,
         group_by,
+        having,
         order_by,
         limit,
         offset,

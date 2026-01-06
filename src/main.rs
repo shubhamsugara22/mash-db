@@ -66,6 +66,7 @@ enum Statement {
         distinct: bool,
         columns: Option<Vec<String>>,
         group_by: Option<Vec<String>>,
+        having: Option<(Vec<(String, String, String)>, Vec<String>)>,
         order_by: Option<(String, bool)>, // (column, is_asc)
         limit: Option<u32>,
         offset: Option<u32>,
@@ -76,6 +77,7 @@ enum Statement {
         conditions: Vec<(String, String, String)>,
         operators: Vec<String>,
         group_by: Option<Vec<String>>,
+        having: Option<(Vec<(String, String, String)>, Vec<String>)>,
         order_by: Option<(String, bool)>, // (column, is_asc)
         limit: Option<u32>,
         offset: Option<u32>,
@@ -128,11 +130,12 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if input.to_uppercase().starts_with("SELECT") {
         match parser::parse_select(input) {
-            Ok((distinct, cols, None, group_by, order_by, limit, offset)) => {
+            Ok((distinct, cols, None, group_by, having, order_by, limit, offset)) => {
                 PrepareResult::Success(Statement::Select {
                     distinct,
                     columns: cols,
                     group_by,
+                    having,
                     order_by,
                     limit,
                     offset,
@@ -143,6 +146,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
                 cols,
                 Some((conditions, operators)),
                 group_by,
+                having,
                 order_by,
                 limit,
                 offset,
@@ -152,6 +156,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
                 conditions,
                 operators,
                 group_by,
+                having,
                 order_by,
                 limit,
                 offset,
@@ -294,6 +299,91 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row]) -> String {
     }
 }
 
+// Helper function to evaluate HAVING conditions on grouped results
+fn evaluate_having_condition(
+    condition: &(String, String, String),
+    agg_cols: &[AggregateColumn],
+    values: &[String],
+) -> bool {
+    let (col, op, expected) = condition;
+
+    // Find the index of the aggregate function in the select columns
+    let col_lower = col.to_lowercase();
+    let agg_idx = agg_cols.iter().position(|agg| match agg {
+        AggregateColumn::Count(None) => col_lower == "count(*)",
+        AggregateColumn::Count(Some(c)) => col_lower == format!("count({})", c),
+        AggregateColumn::Sum(c) => col_lower == format!("sum({})", c),
+        AggregateColumn::Avg(c) => col_lower == format!("avg({})", c),
+        AggregateColumn::Min(c) => col_lower == format!("min({})", c),
+        AggregateColumn::Max(c) => col_lower == format!("max({})", c),
+        AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
+    });
+
+    if let Some(idx) = agg_idx {
+        let actual = &values[idx];
+
+        // Try to parse as numbers for numeric comparison
+        if let (Ok(actual_num), Ok(expected_num)) = (actual.parse::<f64>(), expected.parse::<f64>())
+        {
+            match op.as_str() {
+                "=" => (actual_num - expected_num).abs() < 0.0001,
+                "!=" => (actual_num - expected_num).abs() >= 0.0001,
+                ">" => actual_num > expected_num,
+                "<" => actual_num < expected_num,
+                ">=" => actual_num >= expected_num,
+                "<=" => actual_num <= expected_num,
+                _ => false,
+            }
+        } else {
+            // String comparison
+            match op.as_str() {
+                "=" => actual == expected,
+                "!=" => actual != expected,
+                ">" => actual > expected,
+                "<" => actual < expected,
+                ">=" => actual >= expected,
+                "<=" => actual <= expected,
+                _ => false,
+            }
+        }
+    } else {
+        false
+    }
+}
+
+// Helper function to check if grouped results pass HAVING conditions
+fn passes_having_filter(
+    having: &Option<(Vec<(String, String, String)>, Vec<String>)>,
+    agg_cols: &[AggregateColumn],
+    values: &[String],
+) -> bool {
+    match having {
+        None => true, // No HAVING clause, all pass
+        Some((conditions, operators)) => {
+            if conditions.is_empty() {
+                return true;
+            }
+
+            // Evaluate first condition
+            let mut result = evaluate_having_condition(&conditions[0], agg_cols, values);
+
+            // Evaluate remaining conditions with operators
+            for (i, condition) in conditions.iter().enumerate().skip(1) {
+                let condition_result = evaluate_having_condition(condition, agg_cols, values);
+                if let Some(op) = operators.get(i - 1) {
+                    result = match op.as_str() {
+                        "AND" => result && condition_result,
+                        "OR" => result || condition_result,
+                        _ => result,
+                    };
+                }
+            }
+
+            result
+        }
+    }
+}
+
 fn execute_statement(statement: Statement, table: &mut Table) {
     match statement {
         Statement::Insert {
@@ -314,6 +404,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             distinct,
             columns,
             group_by,
+            having,
             order_by,
             limit,
             offset,
@@ -354,7 +445,11 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                         for agg in &agg_cols {
                             values.push(compute_aggregate(agg, &group_rows));
                         }
-                        result_rows.push(values);
+
+                        // Apply HAVING filter
+                        if passes_having_filter(&having, &agg_cols, &values) {
+                            result_rows.push(values);
+                        }
                     }
 
                     // Sort, apply distinct, offset/limit
@@ -417,6 +512,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             conditions,
             operators,
             group_by,
+            having,
             order_by,
             limit,
             offset,
@@ -456,7 +552,11 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                             for agg in &agg_cols {
                                 values.push(compute_aggregate(agg, &group_rows));
                             }
-                            result_rows.push(values);
+
+                            // Apply HAVING filter
+                            if passes_having_filter(&having, &agg_cols, &values) {
+                                result_rows.push(values);
+                            }
                         }
 
                         // Display results

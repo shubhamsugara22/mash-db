@@ -591,12 +591,101 @@ mod tests {
     fn test_parse_select_with_aggregate_and_group_by() {
         let result = parse_select("SELECT username, COUNT(*) FROM users GROUP BY username");
         assert!(result.is_ok());
-        let (_, cols, _, group_by, _, _, _) = result.unwrap();
+        let (_, cols, _, group_by, having, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         assert!(group_by.is_some());
+        assert!(having.is_none());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 2);
         assert_eq!(col_vec[0], "username");
         assert_eq!(col_vec[1], "count(*)");
     }
-}
+
+    #[test]
+    fn test_parse_select_with_having_simple() {
+        let result = parse_select("SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 2");
+        assert!(result.is_ok());
+        let (_, cols, _, group_by, having, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        assert!(group_by.is_some());
+        assert!(having.is_some());
+        
+        let (conditions, operators) = having.unwrap();
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].0, "count(*)");
+        assert_eq!(conditions[0].1, ">");
+        assert_eq!(conditions[0].2, "2");
+        assert_eq!(operators.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_select_with_having_multiple_conditions() {
+        let result = parse_select("SELECT username, COUNT(*), AVG(id) FROM users GROUP BY username HAVING count(*) > 2 AND avg(id) < 50");
+        assert!(result.is_ok());
+        let (_, _, _, group_by, having, _, _, _) = result.unwrap();
+        assert!(group_by.is_some());
+        assert!(having.is_some());
+        
+        let (conditions, operators) = having.unwrap();
+        assert_eq!(conditions.len(), 2);
+        assert_eq!(conditions[0].0, "count(*)");
+        assert_eq!(conditions[0].1, ">");
+        assert_eq!(conditions[0].2, "2");
+        assert_eq!(conditions[1].0, "avg(id)");
+        assert_eq!(conditions[1].1, "<");
+        assert_eq!(conditions[1].2, "50");
+        assert_eq!(operators.len(), 1);
+        assert_eq!(operators[0], "AND");
+    }
+
+    #[test]
+    fn test_parse_select_with_having_or_operator() {
+        let result = parse_select("SELECT username, SUM(id) FROM users GROUP BY username HAVING sum(id) > 100 OR sum(id) < 10");
+        assert!(result.is_ok());
+        let (_, _, _, _, having, _, _, _) = result.unwrap();
+        assert!(having.is_some());
+        
+        let (conditions, operators) = having.unwrap();
+        assert_eq!(conditions.len(), 2);
+        assert_eq!(operators.len(), 1);
+        assert_eq!(operators[0], "OR");
+    }
+
+    #[test]
+    fn test_parse_select_with_having_equality() {
+        let result = parse_select("SELECT email, COUNT(*) FROM users GROUP BY email HAVING count(*) = 1");
+        assert!(result.is_ok());
+        let (_, _, _, _, having, _, _, _) = result.unwrap();
+        assert!(having.is_some());
+        
+        let (conditions, _) = having.unwrap();
+        assert_eq!(conditions[0].1, "=");
+    }
+
+    #[test]
+    fn test_parse_select_with_having_and_order_by() {
+        let result = parse_select("SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 1 ORDER BY username ASC");
+        assert!(result.is_ok());
+        let (_, _, _, group_by, having, order_by, _, _) = result.unwrap();
+        assert!(group_by.is_some());
+        assert!(having.is_some());
+        assert!(order_by.is_some());
+        
+        let (col, is_asc) = order_by.unwrap();
+        assert_eq!(col, "username");
+        assert!(is_asc);
+    }
+
+    #[test]
+    fn test_parse_select_with_having_and_limit() {
+        let result = parse_select("SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 1 LIMIT 5");
+        assert!(result.is_ok());
+        let (_, _, _, _, having, _, limit, _) = result.unwrap();
+        assert!(having.is_some());
+        assert_eq!(limit, Some(5));
+    }
+
+    #[test]
+    fn test_tokenize_having() {
+        let tokens = tokenize("HAVING count(*) > 2");
+        assert!(tokens.iter().any(|t| matches!(t, Token::Having)));
