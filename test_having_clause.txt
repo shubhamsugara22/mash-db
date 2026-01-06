@@ -1,0 +1,62 @@
+# HAVING Clause Test Commands
+
+# Setup: Insert test data
+INSERT 1 alice alice@example.com
+INSERT 2 bob bob@example.com
+INSERT 3 alice alice2@example.com
+INSERT 4 charlie charlie@example.com
+INSERT 5 bob bob2@example.com
+INSERT 6 bob bob3@example.com
+
+# Test 1: HAVING with COUNT(*) - show usernames with more than 1 entry
+SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 1
+
+# Expected: (alice, 2) and (bob, 3)
+
+# Test 2: HAVING with COUNT(*) equality - show usernames with exactly 1 entry
+SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) = 1
+
+# Expected: (charlie, 1)
+
+# Test 3: HAVING with SUM - show usernames where sum of IDs > 10
+SELECT username, SUM(id) FROM users GROUP BY username HAVING sum(id) > 10
+
+# Expected: (bob, 11) since bob has IDs 2, 5, 6
+
+# Test 4: HAVING with AVG - show usernames where average ID < 3
+SELECT username, AVG(id) FROM users GROUP BY username HAVING avg(id) < 3
+
+# Expected: (alice, 2.00) since alice has IDs 1, 3
+
+# Test 5: HAVING with multiple conditions using AND
+SELECT username, COUNT(*), SUM(id) FROM users GROUP BY username HAVING count(*) > 1 AND sum(id) < 10
+
+# Expected: (alice, 2, 4) since alice has count=2 and sum=4
+
+# Test 6: HAVING with multiple conditions using OR
+SELECT username, SUM(id) FROM users GROUP BY username HAVING sum(id) > 10 OR sum(id) = 4
+
+# Expected: (alice, 4) and (bob, 11)
+
+# Test 7: HAVING with ORDER BY
+SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 1 ORDER BY username ASC
+
+# Expected: (alice, 2) then (bob, 3) in alphabetical order
+
+# Test 8: HAVING with LIMIT
+SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 1 LIMIT 1
+
+# Expected: Only one result (either alice or bob depending on internal order)
+
+# Test 9: HAVING with WHERE clause
+SELECT username, COUNT(*) FROM users WHERE id > 2 GROUP BY username HAVING count(*) > 1
+
+# Expected: (bob, 2) since only bob has multiple entries with id > 2
+
+# Test 10: HAVING with MIN/MAX
+SELECT username, MIN(id), MAX(id) FROM users GROUP BY username HAVING max(id) > 4
+
+# Expected: (bob, 2, 6) since bob's max ID is 6
+
+# Cleanup
+DELETE ALL

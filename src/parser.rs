@@ -527,35 +527,121 @@ fn parse_select_tokens(
         let mut conditions = Vec::new();
         let mut operators = Vec::new();
 
-        // Parse first condition
-        if let Some(Token::Identifier(col)) = tokens.get(i) {
+        // Parse first condition - can be aggregate function or column
+        let col = if let Some(Token::Count) = tokens.get(i) {
             i += 1;
-            let op = match tokens.get(i) {
-                Some(Token::Eq) => "=",
-                Some(Token::Ne) => "!=",
-                Some(Token::Gt) => ">",
-                Some(Token::Lt) => "<",
-                Some(Token::Ge) => ">=",
-                Some(Token::Le) => "<=",
-                _ => return Err("Expected operator".to_string()),
-            };
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err("Expected ( after COUNT".to_string());
+            }
             i += 1;
-            let val = if let Some(Token::String(v)) = tokens.get(i) {
+            let col_str = if tokens.get(i) == Some(&Token::Star) {
                 i += 1;
-                v.clone()
-            } else if let Some(Token::Number(v)) = tokens.get(i) {
+                "count(*)".to_string()
+            } else if let Some(Token::Identifier(col_name)) = tokens.get(i) {
                 i += 1;
-                v.to_string()
-            } else if let Some(Token::Identifier(v)) = tokens.get(i) {
-                i += 1;
-                v.clone()
+                format!("count({})", col_name)
             } else {
-                return Err("Expected value".to_string());
+                return Err("Expected * or column after COUNT(".to_string());
             };
-            conditions.push((col.clone(), op.to_string(), val));
+            if tokens.get(i) != Some(&Token::RParen) {
+                return Err("Expected ) after COUNT".to_string());
+            }
+            i += 1;
+            col_str
+        } else if let Some(Token::Sum) = tokens.get(i) {
+            i += 1;
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err("Expected ( after SUM".to_string());
+            }
+            i += 1;
+            if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                i += 1;
+                if tokens.get(i) != Some(&Token::RParen) {
+                    return Err("Expected ) after SUM".to_string());
+                }
+                i += 1;
+                format!("sum({})", col_name)
+            } else {
+                return Err("Expected column after SUM(".to_string());
+            }
+        } else if let Some(Token::Avg) = tokens.get(i) {
+            i += 1;
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err("Expected ( after AVG".to_string());
+            }
+            i += 1;
+            if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                i += 1;
+                if tokens.get(i) != Some(&Token::RParen) {
+                    return Err("Expected ) after AVG".to_string());
+                }
+                i += 1;
+                format!("avg({})", col_name)
+            } else {
+                return Err("Expected column after AVG(".to_string());
+            }
+        } else if let Some(Token::Min) = tokens.get(i) {
+            i += 1;
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err("Expected ( after MIN".to_string());
+            }
+            i += 1;
+            if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                i += 1;
+                if tokens.get(i) != Some(&Token::RParen) {
+                    return Err("Expected ) after MIN".to_string());
+                }
+                i += 1;
+                format!("min({})", col_name)
+            } else {
+                return Err("Expected column after MIN(".to_string());
+            }
+        } else if let Some(Token::Max) = tokens.get(i) {
+            i += 1;
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err("Expected ( after MAX".to_string());
+            }
+            i += 1;
+            if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                i += 1;
+                if tokens.get(i) != Some(&Token::RParen) {
+                    return Err("Expected ) after MAX".to_string());
+                }
+                i += 1;
+                format!("max({})", col_name)
+            } else {
+                return Err("Expected column after MAX(".to_string());
+            }
+        } else if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+            i += 1;
+            col_name.clone()
         } else {
-            return Err("Expected column or aggregate function".to_string());
-        }
+            return Err("Expected column or aggregate function in HAVING".to_string());
+        };
+
+        let op = match tokens.get(i) {
+            Some(Token::Eq) => "=",
+            Some(Token::Ne) => "!=",
+            Some(Token::Gt) => ">",
+            Some(Token::Lt) => "<",
+            Some(Token::Ge) => ">=",
+            Some(Token::Le) => "<=",
+            _ => return Err("Expected operator in HAVING".to_string()),
+        };
+        i += 1;
+        let val = if let Some(Token::String(v)) = tokens.get(i) {
+            i += 1;
+            v.clone()
+        } else if let Some(Token::Number(v)) = tokens.get(i) {
+            i += 1;
+            v.to_string()
+        } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+            i += 1;
+            v.clone()
+        } else {
+            return Err("Expected value in HAVING".to_string());
+        };
+        conditions.push((col, op.to_string(), val));
 
         // Parse additional conditions with AND/OR
         while i < tokens.len() {
@@ -569,34 +655,121 @@ fn parse_select_tokens(
                 operators.push(logical_op);
                 i += 1;
 
-                if let Some(Token::Identifier(col)) = tokens.get(i) {
+                // Parse next condition - can be aggregate or column
+                let col = if let Some(Token::Count) = tokens.get(i) {
                     i += 1;
-                    let op = match tokens.get(i) {
-                        Some(Token::Eq) => "=",
-                        Some(Token::Ne) => "!=",
-                        Some(Token::Gt) => ">",
-                        Some(Token::Lt) => "<",
-                        Some(Token::Ge) => ">=",
-                        Some(Token::Le) => "<=",
-                        _ => return Err("Expected operator".to_string()),
-                    };
+                    if tokens.get(i) != Some(&Token::LParen) {
+                        return Err("Expected ( after COUNT".to_string());
+                    }
                     i += 1;
-                    let val = if let Some(Token::String(v)) = tokens.get(i) {
+                    let col_str = if tokens.get(i) == Some(&Token::Star) {
                         i += 1;
-                        v.clone()
-                    } else if let Some(Token::Number(v)) = tokens.get(i) {
+                        "count(*)".to_string()
+                    } else if let Some(Token::Identifier(col_name)) = tokens.get(i) {
                         i += 1;
-                        v.to_string()
-                    } else if let Some(Token::Identifier(v)) = tokens.get(i) {
-                        i += 1;
-                        v.clone()
+                        format!("count({})", col_name)
                     } else {
-                        return Err("Expected value".to_string());
+                        return Err("Expected * or column after COUNT(".to_string());
                     };
-                    conditions.push((col.clone(), op.to_string(), val));
+                    if tokens.get(i) != Some(&Token::RParen) {
+                        return Err("Expected ) after COUNT".to_string());
+                    }
+                    i += 1;
+                    col_str
+                } else if let Some(Token::Sum) = tokens.get(i) {
+                    i += 1;
+                    if tokens.get(i) != Some(&Token::LParen) {
+                        return Err("Expected ( after SUM".to_string());
+                    }
+                    i += 1;
+                    if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                        i += 1;
+                        if tokens.get(i) != Some(&Token::RParen) {
+                            return Err("Expected ) after SUM".to_string());
+                        }
+                        i += 1;
+                        format!("sum({})", col_name)
+                    } else {
+                        return Err("Expected column after SUM(".to_string());
+                    }
+                } else if let Some(Token::Avg) = tokens.get(i) {
+                    i += 1;
+                    if tokens.get(i) != Some(&Token::LParen) {
+                        return Err("Expected ( after AVG".to_string());
+                    }
+                    i += 1;
+                    if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                        i += 1;
+                        if tokens.get(i) != Some(&Token::RParen) {
+                            return Err("Expected ) after AVG".to_string());
+                        }
+                        i += 1;
+                        format!("avg({})", col_name)
+                    } else {
+                        return Err("Expected column after AVG(".to_string());
+                    }
+                } else if let Some(Token::Min) = tokens.get(i) {
+                    i += 1;
+                    if tokens.get(i) != Some(&Token::LParen) {
+                        return Err("Expected ( after MIN".to_string());
+                    }
+                    i += 1;
+                    if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                        i += 1;
+                        if tokens.get(i) != Some(&Token::RParen) {
+                            return Err("Expected ) after MIN".to_string());
+                        }
+                        i += 1;
+                        format!("min({})", col_name)
+                    } else {
+                        return Err("Expected column after MIN(".to_string());
+                    }
+                } else if let Some(Token::Max) = tokens.get(i) {
+                    i += 1;
+                    if tokens.get(i) != Some(&Token::LParen) {
+                        return Err("Expected ( after MAX".to_string());
+                    }
+                    i += 1;
+                    if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                        i += 1;
+                        if tokens.get(i) != Some(&Token::RParen) {
+                            return Err("Expected ) after MAX".to_string());
+                        }
+                        i += 1;
+                        format!("max({})", col_name)
+                    } else {
+                        return Err("Expected column after MAX(".to_string());
+                    }
+                } else if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                    i += 1;
+                    col_name.clone()
                 } else {
-                    return Err("Expected column after AND/OR".to_string());
-                }
+                    return Err("Expected column or aggregate after AND/OR in HAVING".to_string());
+                };
+
+                let op = match tokens.get(i) {
+                    Some(Token::Eq) => "=",
+                    Some(Token::Ne) => "!=",
+                    Some(Token::Gt) => ">",
+                    Some(Token::Lt) => "<",
+                    Some(Token::Ge) => ">=",
+                    Some(Token::Le) => "<=",
+                    _ => return Err("Expected operator".to_string()),
+                };
+                i += 1;
+                let val = if let Some(Token::String(v)) = tokens.get(i) {
+                    i += 1;
+                    v.clone()
+                } else if let Some(Token::Number(v)) = tokens.get(i) {
+                    i += 1;
+                    v.to_string()
+                } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                    i += 1;
+                    v.clone()
+                } else {
+                    return Err("Expected value".to_string());
+                };
+                conditions.push((col, op.to_string(), val));
             } else {
                 break;
             }
