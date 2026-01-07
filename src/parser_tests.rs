@@ -695,4 +695,65 @@ mod tests {
         let tokens = tokenize("HAVING count(*) > 2");
         assert!(tokens.iter().any(|t| matches!(t, Token::Having)));
     }
+
+    #[test]
+    fn test_parse_count_distinct_single() {
+        let result = parse_select("SELECT COUNT(DISTINCT username) FROM users");
+        assert!(result.is_ok());
+        let (distinct, cols, _, _, _, _, _, _) = result.unwrap();
+        assert!(!distinct);
+        assert_eq!(cols.len(), 1);
+        match &cols[0] {
+            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => {
+                assert_eq!(col, "distinct username");
+            }
+            _ => panic!("Expected COUNT(DISTINCT username)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_count_distinct_with_group_by() {
+        let result =
+            parse_select("SELECT email, COUNT(DISTINCT username) FROM users GROUP BY email");
+        assert!(result.is_ok());
+        let (_, cols, _, group_by, _, _, _, _) = result.unwrap();
+        assert_eq!(cols.len(), 2);
+        assert_eq!(group_by, Some(vec!["email".to_string()]));
+        match &cols[1] {
+            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => {
+                assert_eq!(col, "distinct username");
+            }
+            _ => panic!("Expected COUNT(DISTINCT username)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_count_distinct_multiple() {
+        let result =
+            parse_select("SELECT COUNT(DISTINCT username), COUNT(DISTINCT email) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols.len(), 2);
+        match &cols[0] {
+            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => {
+                assert_eq!(col, "distinct username");
+            }
+            _ => panic!("Expected COUNT(DISTINCT username)"),
+        }
+        match &cols[1] {
+            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => {
+                assert_eq!(col, "distinct email");
+            }
+            _ => panic!("Expected COUNT(DISTINCT email)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_count_distinct_star_should_fail() {
+        let result = parse_select("SELECT COUNT(DISTINCT *) FROM users");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("COUNT(DISTINCT *) is not supported"));
+    }
 }

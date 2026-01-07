@@ -13,6 +13,7 @@ use table::{Row, Table};
 enum AggregateColumn {
     Regular(String),
     Count(Option<String>), // None for COUNT(*), Some(col) for COUNT(col)
+    CountDistinct(String), // COUNT(DISTINCT col)
     Sum(String),
     Avg(String),
     Min(String),
@@ -25,6 +26,10 @@ impl AggregateColumn {
             let inner = &col[6..col.len() - 1];
             if inner == "*" {
                 AggregateColumn::Count(None)
+            } else if inner.starts_with("distinct ") {
+                // COUNT(DISTINCT col)
+                let col_name = &inner[9..]; // Skip "distinct "
+                AggregateColumn::CountDistinct(col_name.to_string())
             } else {
                 AggregateColumn::Count(Some(inner.to_string()))
             }
@@ -243,6 +248,29 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row]) -> String {
                 }
             }
         }
+        AggregateColumn::CountDistinct(col) => {
+            // COUNT(DISTINCT col) - count unique values
+            let mut unique_values = std::collections::HashSet::new();
+            for row in rows {
+                match col.as_str() {
+                    "id" => {
+                        unique_values.insert(row.id.to_string());
+                    }
+                    "username" => {
+                        if !row.username.is_empty() {
+                            unique_values.insert(row.username.clone());
+                        }
+                    }
+                    "email" => {
+                        if !row.email.is_empty() {
+                            unique_values.insert(row.email.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            unique_values.len().to_string()
+        }
         AggregateColumn::Sum(col) => {
             let sum: f64 = rows
                 .iter()
@@ -268,34 +296,60 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row]) -> String {
                 format!("{:.2}", avg)
             }
         }
-        AggregateColumn::Min(col) => {
-            let values: Vec<u32> = rows
-                .iter()
-                .filter_map(|row| match col.as_str() {
-                    "id" => Some(row.id),
-                    _ => None,
-                })
-                .collect();
-            if let Some(&min_val) = values.iter().min() {
-                min_val.to_string()
-            } else {
-                "NULL".to_string()
+        AggregateColumn::Min(col) => match col.as_str() {
+            "id" => {
+                let values: Vec<u32> = rows.iter().map(|row| row.id).collect();
+                if let Some(&min_val) = values.iter().min() {
+                    min_val.to_string()
+                } else {
+                    "NULL".to_string()
+                }
             }
-        }
-        AggregateColumn::Max(col) => {
-            let values: Vec<u32> = rows
-                .iter()
-                .filter_map(|row| match col.as_str() {
-                    "id" => Some(row.id),
-                    _ => None,
-                })
-                .collect();
-            if let Some(&max_val) = values.iter().max() {
-                max_val.to_string()
-            } else {
-                "NULL".to_string()
+            "username" => {
+                let values: Vec<&str> = rows.iter().map(|row| row.username.as_str()).collect();
+                if let Some(&min_val) = values.iter().min() {
+                    min_val.to_string()
+                } else {
+                    "NULL".to_string()
+                }
             }
-        }
+            "email" => {
+                let values: Vec<&str> = rows.iter().map(|row| row.email.as_str()).collect();
+                if let Some(&min_val) = values.iter().min() {
+                    min_val.to_string()
+                } else {
+                    "NULL".to_string()
+                }
+            }
+            _ => "NULL".to_string(),
+        },
+        AggregateColumn::Max(col) => match col.as_str() {
+            "id" => {
+                let values: Vec<u32> = rows.iter().map(|row| row.id).collect();
+                if let Some(&max_val) = values.iter().max() {
+                    max_val.to_string()
+                } else {
+                    "NULL".to_string()
+                }
+            }
+            "username" => {
+                let values: Vec<&str> = rows.iter().map(|row| row.username.as_str()).collect();
+                if let Some(&max_val) = values.iter().max() {
+                    max_val.to_string()
+                } else {
+                    "NULL".to_string()
+                }
+            }
+            "email" => {
+                let values: Vec<&str> = rows.iter().map(|row| row.email.as_str()).collect();
+                if let Some(&max_val) = values.iter().max() {
+                    max_val.to_string()
+                } else {
+                    "NULL".to_string()
+                }
+            }
+            _ => "NULL".to_string(),
+        },
     }
 }
 
@@ -312,6 +366,7 @@ fn evaluate_having_condition(
     let agg_idx = agg_cols.iter().position(|agg| match agg {
         AggregateColumn::Count(None) => col_lower == "count(*)",
         AggregateColumn::Count(Some(c)) => col_lower == format!("count({})", c),
+        AggregateColumn::CountDistinct(c) => col_lower == format!("count(distinct {})", c),
         AggregateColumn::Sum(c) => col_lower == format!("sum({})", c),
         AggregateColumn::Avg(c) => col_lower == format!("avg({})", c),
         AggregateColumn::Min(c) => col_lower == format!("min({})", c),

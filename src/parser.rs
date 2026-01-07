@@ -195,12 +195,23 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
 
+                        // Check for DISTINCT keyword
+                        let has_distinct = if tokens.get(*i) == Some(&Token::Distinct) {
+                            *i += 1;
+                            true
+                        } else {
+                            false
+                        };
+
                         if tokens.get(*i) == Some(&Token::Star) {
                             *i += 1;
                             if tokens.get(*i) != Some(&Token::RParen) {
                                 return Err("Expected ) after COUNT(*)".to_string());
                             }
                             *i += 1;
+                            if has_distinct {
+                                return Err("COUNT(DISTINCT *) is not supported".to_string());
+                            }
                             SelectColumn::Aggregate(AggregateFunc::Count(None))
                         } else if let Some(Token::Identifier(col)) = tokens.get(*i) {
                             let col_name = col.clone();
@@ -209,7 +220,15 @@ pub fn parse_select_columns(
                                 return Err("Expected ) after COUNT(col)".to_string());
                             }
                             *i += 1;
-                            SelectColumn::Aggregate(AggregateFunc::Count(Some(col_name)))
+                            if has_distinct {
+                                // Format as "count(distinct col)" for main.rs to parse
+                                SelectColumn::Aggregate(AggregateFunc::Count(Some(format!(
+                                    "distinct {}",
+                                    col_name
+                                ))))
+                            } else {
+                                SelectColumn::Aggregate(AggregateFunc::Count(Some(col_name)))
+                            }
                         } else {
                             return Err("Expected * or column after COUNT(".to_string());
                         }
