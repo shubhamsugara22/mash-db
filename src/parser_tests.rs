@@ -702,13 +702,10 @@ mod tests {
         assert!(result.is_ok());
         let (distinct, cols, _, _, _, _, _, _) = result.unwrap();
         assert!(!distinct);
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
         assert_eq!(cols.len(), 1);
-        match &cols[0] {
-            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => {
-                assert_eq!(col, "distinct username");
-            }
-            _ => panic!("Expected COUNT(DISTINCT username)"),
-        }
+        assert_eq!(cols[0], "count(distinct username)");
     }
 
     #[test]
@@ -717,14 +714,12 @@ mod tests {
             parse_select("SELECT email, COUNT(DISTINCT username) FROM users GROUP BY email");
         assert!(result.is_ok());
         let (_, cols, _, group_by, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
         assert_eq!(cols.len(), 2);
+        assert_eq!(cols[0], "email");
+        assert_eq!(cols[1], "count(distinct username)");
         assert_eq!(group_by, Some(vec!["email".to_string()]));
-        match &cols[1] {
-            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => {
-                assert_eq!(col, "distinct username");
-            }
-            _ => panic!("Expected COUNT(DISTINCT username)"),
-        }
     }
 
     #[test]
@@ -733,19 +728,11 @@ mod tests {
             parse_select("SELECT COUNT(DISTINCT username), COUNT(DISTINCT email) FROM users");
         assert!(result.is_ok());
         let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
         assert_eq!(cols.len(), 2);
-        match &cols[0] {
-            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => {
-                assert_eq!(col, "distinct username");
-            }
-            _ => panic!("Expected COUNT(DISTINCT username)"),
-        }
-        match &cols[1] {
-            SelectColumn::Aggregate(AggregateFunc::Count(Some(col))) => {
-                assert_eq!(col, "distinct email");
-            }
-            _ => panic!("Expected COUNT(DISTINCT email)"),
-        }
+        assert_eq!(cols[0], "count(distinct username)");
+        assert_eq!(cols[1], "count(distinct email)");
     }
 
     #[test]

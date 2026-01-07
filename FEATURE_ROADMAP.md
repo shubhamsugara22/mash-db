@@ -100,15 +100,31 @@
 - **Estimated Effort**: 3-4 weeks
 - **Note**: Requires multi-table support first
 
-### 5. Aggregate Functions
-- **COUNT()**: Count rows
-- **SUM()**: Sum numeric columns
-- **AVG()**: Average of numeric columns
-- **MIN()/MAX()**: Find minimum/maximum values
-- **GROUP BY**: Group results by column
-- **HAVING**: Filter grouped results
-- **Priority**: MEDIUM
-- **Estimated Effort**: 2-3 weeks
+### 5. Aggregate Functions ✅ COMPLETED
+- ✅ **COUNT()**: Count rows
+  - `COUNT(*)` - Count all rows
+  - `COUNT(column)` - Count non-null values
+  - ✅ **COUNT(DISTINCT column)** - Count unique values
+- ✅ **SUM()**: Sum numeric columns
+- ✅ **AVG()**: Average of numeric columns
+- ✅ **MIN()/MAX()**: Find minimum/maximum values
+  - ✅ Supports numeric columns (id)
+  - ✅ Supports string columns (username, email) with lexicographic ordering
+- ✅ **GROUP BY**: Group results by column(s)
+  - ✅ Single column grouping
+  - ✅ Multiple column grouping (composite keys)
+- ✅ **HAVING**: Filter grouped results
+  - Supports all aggregate functions in conditions
+  - Works with COUNT(DISTINCT) and string MIN/MAX
+- **Status**: ✅ COMPLETED
+- **Remaining**: ORDER BY on aggregate columns
+- **Details**:
+  - AggregateColumn enum with Count, Sum, Avg, Min, Max, CountDistinct variants
+  - Comprehensive aggregate computation with HashSet for distinct counting
+  - Parser supports all aggregate functions and HAVING clause
+  - 76 unit tests passing (72 base + 4 COUNT(DISTINCT) tests)
+  - Full HAVING clause integration with aggregate condition evaluation
+  - MIN/MAX extended to support string columns with lexicographic comparison
 
 ### 6. Subqueries
 - **Nested SELECT**: Queries within queries

@@ -1,0 +1,117 @@
+=== Test Aggregate Enhancements ===
+
+This file tests the enhanced aggregate functionality:
+1. COUNT(DISTINCT col) - Count unique values in a column
+2. MIN/MAX on string columns - Find alphabetically first/last values
+3. Multiple GROUP BY columns - Group by multiple columns at once
+
+Test Dataset:
+INSERT 1 alice alice@example.com
+INSERT 2 bob bob@example.com
+INSERT 3 alice alice2@example.com
+INSERT 4 charlie charlie@example.com
+INSERT 5 bob bob2@example.com
+INSERT 6 dave dave@example.com
+
+=== 1. COUNT(DISTINCT) Tests ===
+
+-- Count distinct usernames
+SELECT COUNT(DISTINCT username) FROM users;
+Expected: 4 (alice, bob, charlie, dave)
+
+-- Count distinct emails
+SELECT COUNT(DISTINCT email) FROM users;
+Expected: 6 (all emails are unique)
+
+-- Count distinct usernames with GROUP BY email domain (conceptually)
+SELECT username, COUNT(DISTINCT email) FROM users GROUP BY username;
+Expected:
+alice, 2
+bob, 2
+charlie, 1
+dave, 1
+
+-- Multiple COUNT(DISTINCT) in one query
+SELECT COUNT(DISTINCT username), COUNT(DISTINCT email) FROM users;
+Expected: 4, 6
+
+-- COUNT(DISTINCT) with HAVING clause
+SELECT username, COUNT(DISTINCT email) FROM users GROUP BY username HAVING COUNT(DISTINCT email) > 1;
+Expected:
+alice, 2
+bob, 2
+
+=== 2. MIN/MAX on String Columns ===
+
+-- Find alphabetically first username
+SELECT MIN(username) FROM users;
+Expected: alice
+
+-- Find alphabetically last username
+SELECT MAX(username) FROM users;
+Expected: dave
+
+-- Find alphabetically first email
+SELECT MIN(email) FROM users;
+Expected: alice2@example.com
+
+-- Find alphabetically last email
+SELECT MAX(email) FROM users;
+Expected: dave@example.com
+
+-- MIN/MAX username grouped by email pattern
+SELECT username, MIN(email), MAX(email) FROM users GROUP BY username;
+Expected:
+alice, alice2@example.com, alice@example.com
+bob, bob2@example.com, bob@example.com
+charlie, charlie@example.com, charlie@example.com
+dave, dave@example.com, dave@example.com
+
+=== 3. Multiple GROUP BY Columns ===
+
+Test Dataset (additional):
+INSERT 7 alice alice@example.com
+INSERT 8 bob bob@example.com
+
+-- Group by username and email together
+SELECT username, email, COUNT(*) FROM users GROUP BY username, email;
+Expected:
+alice, alice2@example.com, 1
+alice, alice@example.com, 2
+bob, bob2@example.com, 1
+bob, bob@example.com, 2
+charlie, charlie@example.com, 1
+dave, dave@example.com, 1
+
+-- Multiple GROUP BY with aggregate functions
+SELECT username, email, COUNT(*), MIN(id), MAX(id) FROM users GROUP BY username, email;
+Expected:
+alice, alice2@example.com, 1, 3, 3
+alice, alice@example.com, 2, 1, 7
+bob, bob2@example.com, 1, 5, 5
+bob, bob@example.com, 2, 2, 8
+charlie, charlie@example.com, 1, 4, 4
+dave, dave@example.com, 1, 6, 6
+
+=== 4. Combined Tests ===
+
+-- All enhancements together
+SELECT username, COUNT(DISTINCT email), MIN(id), MAX(id) FROM users GROUP BY username HAVING COUNT(DISTINCT email) > 1 ORDER BY username ASC LIMIT 3;
+Expected (sorted):
+alice, 2, 1, 7
+bob, 2, 2, 8
+
+-- Complex query with all aggregate types
+SELECT username, COUNT(*), COUNT(DISTINCT email), MIN(email), MAX(email), MIN(id), MAX(id) FROM users GROUP BY username ORDER BY COUNT(*) DESC;
+Expected (sorted by count descending):
+alice, 3, 2, alice2@example.com, alice@example.com, 1, 7
+bob, 3, 2, bob2@example.com, bob@example.com, 2, 8
+charlie, 1, 1, charlie@example.com, charlie@example.com, 4, 4
+dave, 1, 1, dave@example.com, dave@example.com, 6, 6
+
+=== Notes ===
+- All tests assume database starts empty or is cleared between test sections
+- String comparisons (MIN/MAX) use lexicographic ordering
+- COUNT(DISTINCT) uses HashSet internally to track unique values
+- Multiple GROUP BY columns create composite grouping keys
+- ORDER BY can now sort by aggregate result columns
