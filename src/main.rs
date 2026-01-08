@@ -27,8 +27,7 @@ impl AggregateColumn {
             if inner == "*" {
                 AggregateColumn::Count(None)
             } else if inner.starts_with("distinct ") {
-                // COUNT(DISTINCT col)
-                let col_name = &inner[9..]; // Skip "distinct "
+                let col_name = &inner[9..];
                 AggregateColumn::CountDistinct(col_name.to_string())
             } else {
                 AggregateColumn::Count(Some(inner.to_string()))
@@ -459,6 +458,57 @@ fn passes_having_filter(
 }
 
 fn execute_statement(statement: Statement, table: &mut Table) {
+    // Map a logical table name to a backing file path.
+    fn table_file_for(name: &str) -> String {
+        match name.to_lowercase().as_str() {
+            // Default primary table
+            "users" => "data.json".to_string(),
+            // Example secondary tables
+            "orders" => "orders.json".to_string(),
+            other => format!("{}.json", other),
+        }
+    }
+
+    // Load a table by name. If the requested name corresponds to the primary table (users), reuse it.
+    fn load_table_by_name(name: &str, primary: &Table) -> Table {
+        if name.eq_ignore_ascii_case("users") {
+            // Create a lightweight copy by saving and reloading to keep semantics uniform.
+            // For simplicity, we instantiate a new Table pointing to the same file.
+            Table::new(table_file_for("users"))
+        } else {
+            Table::new(table_file_for(name))
+        }
+    }
+
+    // Perform a simple INNER JOIN filter: keep left rows that have at least one matching right row on equality.
+    fn apply_inner_join<'a>(
+        left_rows: Vec<&'a Row>,
+        left_key: &str,
+        right_table: &Table,
+        right_key: &str,
+    ) -> Vec<&'a Row> {
+        let mut result = Vec::new();
+        for lr in left_rows {
+            // Extract left value as string for comparison
+            let left_val = match left_key {
+                "id" => lr.id.to_string(),
+                "username" => lr.username.clone(),
+                "email" => lr.email.clone(),
+                _ => "".to_string(),
+            };
+            if left_val.is_empty() {
+                continue;
+            }
+            // Query right table for matches
+            if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
+                if !rrs.is_empty() {
+                    result.push(lr);
+                }
+            }
+        }
+        result
+    }
+
     match statement {
         Statement::Insert {
             id,
@@ -477,6 +527,8 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         Statement::Select {
             distinct,
             columns,
+            from_table,
+            join,
             group_by,
             having,
             order_by,
@@ -484,7 +536,22 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             offset,
             ..
         } => {
-            let mut rows = table.select_all();
+            // Resolve left (from) table
+            let mut left_table_ref: Table = if let Some(ref ft) = from_table {
+                load_table_by_name(ft, table)
+            } else {
+                // Default to users
+                load_table_by_name("users", table)
+            };
+
+            let mut rows = left_table_ref.select_all();
+
+            // Apply INNER JOIN filter if present
+            if let Some(ref jc) = join {
+                // Determine right table
+                let right_table = load_table_by_name(&jc.table, table);
+                rows = apply_inner_join(rows, &jc.on_left, &right_table, &jc.on_right);
+            }
 
             // Check if columns contain any aggregates
             let has_aggregates = match &columns {
@@ -584,6 +651,8 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         Statement::SelectWhere {
             distinct,
             columns,
+            from_table,
+            join,
             conditions,
             operators,
             group_by,
@@ -592,104 +661,118 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             limit,
             offset,
             ..
-        } => match table.select_where_complex(&conditions, &operators) {
-            Ok(mut rows) => {
-                // Check if columns contain any aggregates
-                let has_aggregates = match &columns {
-                    Some(cols) => cols.iter().any(|c| {
-                        c.starts_with("count(")
-                            || c.starts_with("sum(")
-                            || c.starts_with("avg(")
-                            || c.starts_with("min(")
-                            || c.starts_with("max(")
-                    }),
-                    None => false,
-                };
+        } => {
+            // Resolve left (from) table
+            let mut left_table_ref: Table = if let Some(ref ft) = from_table {
+                load_table_by_name(ft, table)
+            } else {
+                load_table_by_name("users", table)
+            };
 
-                // Handle aggregates (with or without GROUP BY)
-                if has_aggregates {
-                    if let Some(ref group_cols) = group_by {
-                        // GROUP BY with aggregates
-                        let groups = group_rows_by_columns(rows, group_cols);
+            match left_table_ref.select_where_complex(&conditions, &operators) {
+                Ok(mut rows) => {
+                    // Apply INNER JOIN filter if present
+                    if let Some(ref jc) = join {
+                        let right_table = load_table_by_name(&jc.table, table);
+                        rows = apply_inner_join(rows, &jc.on_left, &right_table, &jc.on_right);
+                    }
+                    // Check if columns contain any aggregates
+                    let has_aggregates = match &columns {
+                        Some(cols) => cols.iter().any(|c| {
+                            c.starts_with("count(")
+                                || c.starts_with("sum(")
+                                || c.starts_with("avg(")
+                                || c.starts_with("min(")
+                                || c.starts_with("max(")
+                        }),
+                        None => false,
+                    };
 
-                        // Parse columns for aggregates
-                        let agg_cols: Vec<AggregateColumn> = match &columns {
-                            Some(cols) => cols
-                                .iter()
-                                .map(|c| AggregateColumn::from_col_string(c))
-                                .collect(),
-                            None => vec![],
-                        };
+                    // Handle aggregates (with or without GROUP BY)
+                    if has_aggregates {
+                        if let Some(ref group_cols) = group_by {
+                            // GROUP BY with aggregates
+                            let groups = group_rows_by_columns(rows, group_cols);
 
-                        // Compute aggregate results
-                        let mut result_rows = Vec::new();
-                        for (_, group_rows) in groups {
+                            // Parse columns for aggregates
+                            let agg_cols: Vec<AggregateColumn> = match &columns {
+                                Some(cols) => cols
+                                    .iter()
+                                    .map(|c| AggregateColumn::from_col_string(c))
+                                    .collect(),
+                                None => vec![],
+                            };
+
+                            // Compute aggregate results
+                            let mut result_rows = Vec::new();
+                            for (_, group_rows) in groups {
+                                let mut values = Vec::new();
+                                for agg in &agg_cols {
+                                    values.push(compute_aggregate(agg, &group_rows));
+                                }
+
+                                // Apply HAVING filter
+                                if passes_having_filter(&having, &agg_cols, &values) {
+                                    result_rows.push(values);
+                                }
+                            }
+
+                            // Display results
+                            for values in result_rows {
+                                println!("({})", values.join(", "));
+                            }
+                        } else {
+                            // Aggregates without GROUP BY - compute over all filtered rows
+                            rows = apply_sorting(rows, order_by);
+                            rows = apply_distinct(rows, distinct);
+                            rows = apply_offset_limit(rows, offset, limit);
+
+                            // Parse columns for aggregates
+                            let agg_cols: Vec<AggregateColumn> = match &columns {
+                                Some(cols) => cols
+                                    .iter()
+                                    .map(|c| AggregateColumn::from_col_string(c))
+                                    .collect(),
+                                None => vec![],
+                            };
+
+                            // Compute aggregates over filtered rows
                             let mut values = Vec::new();
                             for agg in &agg_cols {
-                                values.push(compute_aggregate(agg, &group_rows));
+                                values.push(compute_aggregate(agg, &rows));
                             }
-
-                            // Apply HAVING filter
-                            if passes_having_filter(&having, &agg_cols, &values) {
-                                result_rows.push(values);
-                            }
-                        }
-
-                        // Display results
-                        for values in result_rows {
                             println!("({})", values.join(", "));
                         }
+                        println!("Executed.");
                     } else {
-                        // Aggregates without GROUP BY - compute over all filtered rows
+                        // Regular SELECT WHERE without aggregates
                         rows = apply_sorting(rows, order_by);
                         rows = apply_distinct(rows, distinct);
                         rows = apply_offset_limit(rows, offset, limit);
 
-                        // Parse columns for aggregates
-                        let agg_cols: Vec<AggregateColumn> = match &columns {
-                            Some(cols) => cols
-                                .iter()
-                                .map(|c| AggregateColumn::from_col_string(c))
-                                .collect(),
-                            None => vec![],
-                        };
-
-                        // Compute aggregates over filtered rows
-                        let mut values = Vec::new();
-                        for agg in &agg_cols {
-                            values.push(compute_aggregate(agg, &rows));
-                        }
-                        println!("({})", values.join(", "));
-                    }
-                    println!("Executed.");
-                } else {
-                    // Regular SELECT WHERE without aggregates
-                    rows = apply_sorting(rows, order_by);
-                    rows = apply_distinct(rows, distinct);
-                    rows = apply_offset_limit(rows, offset, limit);
-
-                    for row in rows {
-                        match &columns {
-                            None => println!("({}, {}, {})", row.id, row.username, row.email),
-                            Some(cols) => {
-                                let mut values = Vec::new();
-                                for col in cols {
-                                    match col.as_str() {
-                                        "id" => values.push(row.id.to_string()),
-                                        "username" => values.push(row.username.clone()),
-                                        "email" => values.push(row.email.clone()),
-                                        other => values.push(format!("NULL({})", other)),
+                        for row in rows {
+                            match &columns {
+                                None => println!("({}, {}, {})", row.id, row.username, row.email),
+                                Some(cols) => {
+                                    let mut values = Vec::new();
+                                    for col in cols {
+                                        match col.as_str() {
+                                            "id" => values.push(row.id.to_string()),
+                                            "username" => values.push(row.username.clone()),
+                                            "email" => values.push(row.email.clone()),
+                                            other => values.push(format!("NULL({})", other)),
+                                        }
                                     }
+                                    println!("({})", values.join(", "));
                                 }
-                                println!("({})", values.join(", "));
                             }
                         }
+                        println!("Executed.");
                     }
-                    println!("Executed.");
                 }
+                Err(e) => println!("Error: {}", e),
             }
-            Err(e) => println!("Error: {}", e),
-        },
+        }
         Statement::Update { id, column, value } => match table.update(id, &column, &value) {
             Ok(()) => {
                 table.save().unwrap();
@@ -776,6 +859,21 @@ fn apply_distinct(rows: Vec<&Row>, distinct: bool) -> Vec<&Row> {
 
 fn main() {
     let mut table = Table::new("data.json".to_string());
+
+    // Optional: seed a secondary table for JOIN demos if empty
+    {
+        let mut orders = Table::new("orders.json".to_string());
+        if orders.select_all().is_empty() {
+            let _ = orders
+                .insert(Row::new(1, "alice".to_string(), "alice@orders.com".to_string()).unwrap());
+            let _ = orders
+                .insert(Row::new(2, "bob".to_string(), "bob@orders.com".to_string()).unwrap());
+            let _ = orders.insert(
+                Row::new(3, "charlie".to_string(), "charlie@orders.com".to_string()).unwrap(),
+            );
+            let _ = orders.save();
+        }
+    }
 
     loop {
         print_prompt();

@@ -736,6 +736,36 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_with_from_and_inner_join() {
+        let result = parse_select("SELECT * FROM users JOIN orders ON id = id");
+        assert!(result.is_ok());
+        let (distinct, cols, from_table, join, _, _, _, _, _, _) = result.unwrap();
+        assert!(!distinct);
+        assert!(cols.is_none());
+        assert_eq!(from_table, Some("users".to_string()));
+        assert!(join.is_some());
+        let jc = join.unwrap();
+        assert_eq!(jc.table, "orders");
+        assert_eq!(jc.on_left, "id");
+        assert_eq!(jc.on_right, "id");
+        assert_eq!(jc.join_type, crate::parser::JoinType::Inner);
+    }
+
+    #[test]
+    fn test_parse_select_with_left_join() {
+        let result = parse_select("SELECT * FROM users LEFT JOIN orders ON username = username");
+        assert!(result.is_ok());
+        let (_, _, from_table, join, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(from_table, Some("users".to_string()));
+        assert!(join.is_some());
+        let jc = join.unwrap();
+        assert_eq!(jc.table, "orders");
+        assert_eq!(jc.on_left, "username");
+        assert_eq!(jc.on_right, "username");
+        assert_eq!(jc.join_type, crate::parser::JoinType::Left);
+    }
+
+    #[test]
     fn test_parse_count_distinct_star_should_fail() {
         let result = parse_select("SELECT COUNT(DISTINCT *) FROM users");
         assert!(result.is_err());
