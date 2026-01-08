@@ -23,6 +23,11 @@ pub enum Token {
     Avg,
     Min,
     Max,
+    Join,
+    Inner,
+    Left,
+    Right,
+    On,
     Eq,
     Ne,
     Gt,
@@ -35,9 +40,27 @@ pub enum Token {
     LParen,
     RParen,
     Star,
+    Dot, // For table.column syntax
     Identifier(String),
     String(String),
     Number(u32),
+}
+
+// JOIN type representation
+#[derive(Debug, Clone, PartialEq)]
+pub enum JoinType {
+    Inner,
+    Left,
+    Right,
+}
+
+// JOIN clause representation
+#[derive(Debug, Clone)]
+pub struct JoinClause {
+    pub join_type: JoinType,
+    pub table: String,
+    pub on_left: String,  // left_table.column
+    pub on_right: String, // right_table.column
 }
 
 // Aggregate function representation
@@ -103,6 +126,11 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "AVG" => Token::Avg,
                     "MIN" => Token::Min,
                     "MAX" => Token::Max,
+                    "JOIN" => Token::Join,
+                    "INNER" => Token::Inner,
+                    "LEFT" => Token::Left,
+                    "RIGHT" => Token::Right,
+                    "ON" => Token::On,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     _ => Token::Identifier(ident),
@@ -136,6 +164,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             '(' => tokens.push(Token::LParen),
             ')' => tokens.push(Token::RParen),
             '*' => tokens.push(Token::Star),
+            '.' => tokens.push(Token::Dot),
             '>' => {
                 if chars.peek() == Some(&'=') {
                     chars.next();
@@ -333,6 +362,8 @@ pub fn parse_select(
     (
         bool,                                                 // distinct
         Option<Vec<String>>, // columns (keeping as String for backward compat)
+        Option<String>,      // from_table - explicit table name
+        Option<JoinClause>,  // join clause
         Option<(Vec<(String, String, String)>, Vec<String>)>, // where clause
         Option<Vec<String>>, // group by columns
         Option<(Vec<(String, String, String)>, Vec<String>)>, // having clause
@@ -352,6 +383,8 @@ fn parse_select_tokens(
     (
         bool,
         Option<Vec<String>>,
+        Option<String>,
+        Option<JoinClause>,
         Option<(Vec<(String, String, String)>, Vec<String>)>,
         Option<Vec<String>>,
         Option<(Vec<(String, String, String)>, Vec<String>)>,
@@ -418,12 +451,107 @@ fn parse_select_tokens(
         }
         _ => return Err("Expected column list, *, or WHERE".to_string()),
     };
-    if tokens.get(i) == Some(&Token::From) {
+
+    // Parse FROM clause
+    let from_table = if tokens.get(i) == Some(&Token::From) {
         i += 1;
-        if let Some(Token::Identifier(_)) = tokens.get(i) {
+        if let Some(Token::Identifier(table_name)) = tokens.get(i) {
+            let table = table_name.clone();
             i += 1;
+            Some(table)
+        } else {
+            return Err("Expected table name after FROM".to_string());
         }
-    }
+    } else {
+        None
+    };
+
+    // Parse JOIN clause
+    let join = if matches!(
+        tokens.get(i),
+        Some(Token::Join) | Some(Token::Inner) | Some(Token::Left) | Some(Token::Right)
+    ) {
+        let join_type = match tokens.get(i) {
+            Some(Token::Join) => {
+                i += 1;
+                JoinType::Inner // JOIN is treated as INNER JOIN
+            }
+            Some(Token::Inner) => {
+                i += 1;
+                if tokens.get(i) != Some(&Token::Join) {
+                    return Err("Expected JOIN after INNER".to_string());
+                }
+                i += 1;
+                JoinType::Inner
+            }
+            Some(Token::Left) => {
+                i += 1;
+                if tokens.get(i) != Some(&Token::Join) {
+                    return Err("Expected JOIN after LEFT".to_string());
+                }
+                i += 1;
+                JoinType::Left
+            }
+            Some(Token::Right) => {
+                i += 1;
+                if tokens.get(i) != Some(&Token::Join) {
+                    return Err("Expected JOIN after RIGHT".to_string());
+                }
+                i += 1;
+                JoinType::Right
+            }
+            _ => return Err("Unexpected JOIN token".to_string()),
+        };
+
+        // Parse table name
+        let join_table = if let Some(Token::Identifier(table)) = tokens.get(i) {
+            let t = table.clone();
+            i += 1;
+            t
+        } else {
+            return Err("Expected table name after JOIN".to_string());
+        };
+
+        // Parse ON clause
+        if tokens.get(i) != Some(&Token::On) {
+            return Err("Expected ON after JOIN table".to_string());
+        }
+        i += 1;
+
+        // Parse left side (table.column)
+        let on_left = if let Some(Token::Identifier(left)) = tokens.get(i) {
+            let l = left.clone();
+            i += 1;
+            l
+        } else {
+            return Err("Expected column reference in ON clause".to_string());
+        };
+
+        // Expect = operator
+        if tokens.get(i) != Some(&Token::Eq) {
+            return Err("Expected = in ON clause".to_string());
+        }
+        i += 1;
+
+        // Parse right side (table.column)
+        let on_right = if let Some(Token::Identifier(right)) = tokens.get(i) {
+            let r = right.clone();
+            i += 1;
+            r
+        } else {
+            return Err("Expected column reference in ON clause".to_string());
+        };
+
+        Some(JoinClause {
+            join_type,
+            table: join_table,
+            on_left,
+            on_right,
+        })
+    } else {
+        None
+    };
+
     let where_clause = if tokens.get(i) == Some(&Token::Where) {
         i += 1;
         let mut conditions = Vec::new();
@@ -854,6 +982,8 @@ fn parse_select_tokens(
     Ok((
         distinct,
         columns,
+        from_table,
+        join,
         where_clause,
         group_by,
         having,

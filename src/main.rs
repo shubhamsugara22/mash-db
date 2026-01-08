@@ -70,6 +70,8 @@ enum Statement {
     Select {
         distinct: bool,
         columns: Option<Vec<String>>,
+        from_table: Option<String>,       // Added for explicit table name
+        join: Option<parser::JoinClause>, // Added for JOIN support
         group_by: Option<Vec<String>>,
         having: Option<(Vec<(String, String, String)>, Vec<String>)>,
         order_by: Option<(String, bool)>, // (column, is_asc)
@@ -79,6 +81,8 @@ enum Statement {
     SelectWhere {
         distinct: bool,
         columns: Option<Vec<String>>,
+        from_table: Option<String>,       // Added for explicit table name
+        join: Option<parser::JoinClause>, // Added for JOIN support
         conditions: Vec<(String, String, String)>,
         operators: Vec<String>,
         group_by: Option<Vec<String>>,
@@ -135,20 +139,33 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if input.to_uppercase().starts_with("SELECT") {
         match parser::parse_select(input) {
-            Ok((distinct, cols, None, group_by, having, order_by, limit, offset)) => {
-                PrepareResult::Success(Statement::Select {
-                    distinct,
-                    columns: cols,
-                    group_by,
-                    having,
-                    order_by,
-                    limit,
-                    offset,
-                })
-            }
             Ok((
                 distinct,
                 cols,
+                from_table,
+                join,
+                None,
+                group_by,
+                having,
+                order_by,
+                limit,
+                offset,
+            )) => PrepareResult::Success(Statement::Select {
+                distinct,
+                columns: cols,
+                from_table,
+                join,
+                group_by,
+                having,
+                order_by,
+                limit,
+                offset,
+            }),
+            Ok((
+                distinct,
+                cols,
+                from_table,
+                join,
                 Some((conditions, operators)),
                 group_by,
                 having,
@@ -158,6 +175,8 @@ fn prepare_statement(input: &str) -> PrepareResult {
             )) => PrepareResult::Success(Statement::SelectWhere {
                 distinct,
                 columns: cols,
+                from_table,
+                join,
                 conditions,
                 operators,
                 group_by,
