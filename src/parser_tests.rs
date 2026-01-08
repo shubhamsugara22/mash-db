@@ -43,7 +43,7 @@ mod tests {
     fn test_parse_select_with_columns() {
         let result = parse_select("SELECT id, username FROM users");
         assert!(result.is_ok());
-        let (distinct, cols, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(!distinct);
         assert!(cols.is_some());
         assert_eq!(cols.unwrap().len(), 2);
@@ -57,7 +57,7 @@ mod tests {
     fn test_parse_select_where_simple() {
         let result = parse_select("SELECT * WHERE id = 1");
         assert!(result.is_ok());
-        let (distinct, cols, where_clause, _, _, _, _, _) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, _, _, _) = result.unwrap();
         assert!(!distinct);
         assert!(cols.is_none());
         assert!(where_clause.is_some());
@@ -70,7 +70,7 @@ mod tests {
     fn test_parse_select_where_and() {
         let result = parse_select("SELECT WHERE id > 1 AND username = alice");
         assert!(result.is_ok());
-        let (_, _, where_clause, _, _, _, _, _) = result.unwrap();
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
         assert!(where_clause.is_some());
         let (conditions, operators) = where_clause.unwrap();
         assert_eq!(conditions.len(), 2);
@@ -82,7 +82,7 @@ mod tests {
     fn test_parse_select_where_or() {
         let result = parse_select("SELECT WHERE id = 1 OR username = bob");
         assert!(result.is_ok());
-        let (_, _, where_clause, _, _, _, _, _) = result.unwrap();
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
         let (_, operators) = where_clause.unwrap();
         assert_eq!(operators[0], "OR");
     }
@@ -91,7 +91,7 @@ mod tests {
     fn test_parse_select_where_mixed() {
         let result = parse_select("SELECT WHERE id > 2 AND username = alice OR id = 3");
         assert!(result.is_ok());
-        let (_, _, where_clause, _, _, _, _, _) = result.unwrap();
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
         let (conditions, operators) = where_clause.unwrap();
         assert_eq!(conditions.len(), 3);
         assert_eq!(operators.len(), 2);
@@ -159,7 +159,7 @@ mod tests {
     fn test_parse_select_with_order_by_asc() {
         let result = parse_select("SELECT * WHERE id > 1 ORDER BY username ASC");
         assert!(result.is_ok());
-        let (_, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (_, _, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(where_clause.is_some());
         assert!(order_by.is_some());
         let (col, is_asc) = order_by.unwrap();
@@ -173,7 +173,7 @@ mod tests {
     fn test_parse_select_with_order_by_desc() {
         let result = parse_select("SELECT * ORDER BY id DESC");
         assert!(result.is_ok());
-        let (_, _, _, _, _, order_by, _, _) = result.unwrap();
+        let (_, _, _, _, _, _, _, order_by, _, _) = result.unwrap();
         assert!(order_by.is_some());
         let (col, is_asc) = order_by.unwrap();
         assert_eq!(col, "id");
@@ -184,7 +184,7 @@ mod tests {
     fn test_parse_select_with_limit() {
         let result = parse_select("SELECT * ORDER BY username LIMIT 10");
         assert!(result.is_ok());
-        let (_, _, _, _, _, order_by, limit, offset) = result.unwrap();
+        let (_, _, _, _, _, _, _, order_by, limit, offset) = result.unwrap();
         assert!(order_by.is_some());
         assert_eq!(limit, Some(10));
         assert!(offset.is_none());
@@ -194,7 +194,7 @@ mod tests {
     fn test_parse_select_with_offset() {
         let result = parse_select("SELECT * LIMIT 5 OFFSET 20");
         assert!(result.is_ok());
-        let (_, _, _, _, _, _, limit, offset) = result.unwrap();
+        let (_, _, _, _, _, _, _, _, limit, offset) = result.unwrap();
         assert_eq!(limit, Some(5));
         assert_eq!(offset, Some(20));
     }
@@ -203,7 +203,7 @@ mod tests {
     fn test_parse_select_full_clause() {
         let result = parse_select("SELECT id, username WHERE email = test@test.com ORDER BY username DESC LIMIT 15 OFFSET 5");
         assert!(result.is_ok());
-        let (distinct, cols, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(!distinct);
         assert!(cols.is_some());
         assert!(where_clause.is_some());
@@ -219,7 +219,7 @@ mod tests {
     fn test_parse_select_distinct_star() {
         let result = parse_select("SELECT DISTINCT * FROM users");
         assert!(result.is_ok());
-        let (distinct, cols, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(distinct);
         assert!(cols.is_none());
         assert!(where_clause.is_none());
@@ -232,7 +232,7 @@ mod tests {
     fn test_parse_select_distinct_columns() {
         let result = parse_select("SELECT DISTINCT username, email FROM users");
         assert!(result.is_ok());
-        let (distinct, cols, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(distinct);
         assert!(cols.is_some());
         let columns = cols.unwrap();
@@ -247,7 +247,7 @@ mod tests {
     fn test_parse_select_distinct_with_where() {
         let result = parse_select("SELECT DISTINCT id WHERE username = alice");
         assert!(result.is_ok());
-        let (distinct, cols, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(distinct);
         assert!(cols.is_some());
         assert!(where_clause.is_some());
@@ -258,7 +258,7 @@ mod tests {
         let result =
             parse_select("SELECT DISTINCT username WHERE id > 5 ORDER BY username ASC LIMIT 10");
         assert!(result.is_ok());
-        let (distinct, cols, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(distinct);
         assert!(cols.is_some());
         assert!(where_clause.is_some());
@@ -270,7 +270,7 @@ mod tests {
     fn test_parse_select_group_by_single() {
         let result = parse_select("SELECT username GROUP BY username");
         assert!(result.is_ok());
-        let (_, cols, _, group_by, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, group_by, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         assert!(group_by.is_some());
         let groups = group_by.unwrap();
@@ -282,7 +282,7 @@ mod tests {
     fn test_parse_select_group_by_multiple() {
         let result = parse_select("SELECT username, email GROUP BY username, email");
         assert!(result.is_ok());
-        let (_, cols, _, group_by, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, group_by, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         assert!(group_by.is_some());
         let groups = group_by.unwrap();
@@ -295,7 +295,7 @@ mod tests {
     fn test_parse_select_group_by_with_where() {
         let result = parse_select("SELECT username WHERE id > 1 GROUP BY username");
         assert!(result.is_ok());
-        let (_, cols, where_clause, group_by, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, where_clause, group_by, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         assert!(where_clause.is_some());
         assert!(group_by.is_some());
@@ -305,7 +305,7 @@ mod tests {
     fn test_parse_select_group_by_with_order() {
         let result = parse_select("SELECT username GROUP BY username ORDER BY username");
         assert!(result.is_ok());
-        let (_, _, _, group_by, _, order_by, _, _) = result.unwrap();
+        let (_, _, _, _, _, group_by, _, order_by, _, _) = result.unwrap();
         assert!(group_by.is_some());
         assert!(order_by.is_some());
     }
@@ -500,7 +500,7 @@ mod tests {
     fn test_parse_select_with_count_star() {
         let result = parse_select("SELECT COUNT(*) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 1);
@@ -511,7 +511,7 @@ mod tests {
     fn test_parse_select_with_count_column() {
         let result = parse_select("SELECT COUNT(id) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 1);
@@ -522,7 +522,7 @@ mod tests {
     fn test_parse_select_with_sum() {
         let result = parse_select("SELECT SUM(age) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 1);
@@ -533,7 +533,7 @@ mod tests {
     fn test_parse_select_with_avg() {
         let result = parse_select("SELECT AVG(salary) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 1);
@@ -544,7 +544,7 @@ mod tests {
     fn test_parse_select_with_min() {
         let result = parse_select("SELECT MIN(score) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 1);
@@ -555,7 +555,7 @@ mod tests {
     fn test_parse_select_with_max() {
         let result = parse_select("SELECT MAX(score) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 1);
@@ -566,7 +566,7 @@ mod tests {
     fn test_parse_select_mixed_regular_and_aggregate() {
         let result = parse_select("SELECT username, COUNT(*) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 2);
@@ -578,7 +578,7 @@ mod tests {
     fn test_parse_select_multiple_aggregates() {
         let result = parse_select("SELECT COUNT(*), SUM(age), AVG(salary) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let col_vec = cols.unwrap();
         assert_eq!(col_vec.len(), 3);
@@ -591,7 +591,7 @@ mod tests {
     fn test_parse_select_with_aggregate_and_group_by() {
         let result = parse_select("SELECT username, COUNT(*) FROM users GROUP BY username");
         assert!(result.is_ok());
-        let (_, cols, _, group_by, having, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, group_by, having, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         assert!(group_by.is_some());
         assert!(having.is_none());
@@ -607,7 +607,7 @@ mod tests {
             "SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 2",
         );
         assert!(result.is_ok());
-        let (_, cols, _, group_by, having, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, group_by, having, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         assert!(group_by.is_some());
         assert!(having.is_some());
@@ -624,7 +624,7 @@ mod tests {
     fn test_parse_select_with_having_multiple_conditions() {
         let result = parse_select("SELECT username, COUNT(*), AVG(id) FROM users GROUP BY username HAVING count(*) > 2 AND avg(id) < 50");
         assert!(result.is_ok());
-        let (_, _, _, group_by, having, _, _, _) = result.unwrap();
+        let (_, _, _, _, _, group_by, having, _, _, _) = result.unwrap();
         assert!(group_by.is_some());
         assert!(having.is_some());
 
@@ -644,7 +644,7 @@ mod tests {
     fn test_parse_select_with_having_or_operator() {
         let result = parse_select("SELECT username, SUM(id) FROM users GROUP BY username HAVING sum(id) > 100 OR sum(id) < 10");
         assert!(result.is_ok());
-        let (_, _, _, _, having, _, _, _) = result.unwrap();
+        let (_, _, _, _, _, _, having, _, _, _) = result.unwrap();
         assert!(having.is_some());
 
         let (conditions, operators) = having.unwrap();
@@ -658,7 +658,7 @@ mod tests {
         let result =
             parse_select("SELECT email, COUNT(*) FROM users GROUP BY email HAVING count(*) = 1");
         assert!(result.is_ok());
-        let (_, _, _, _, having, _, _, _) = result.unwrap();
+        let (_, _, _, _, _, _, having, _, _, _) = result.unwrap();
         assert!(having.is_some());
 
         let (conditions, _) = having.unwrap();
@@ -669,7 +669,7 @@ mod tests {
     fn test_parse_select_with_having_and_order_by() {
         let result = parse_select("SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 1 ORDER BY username ASC");
         assert!(result.is_ok());
-        let (_, _, _, group_by, having, order_by, _, _) = result.unwrap();
+        let (_, _, _, _, _, group_by, having, order_by, _, _) = result.unwrap();
         assert!(group_by.is_some());
         assert!(having.is_some());
         assert!(order_by.is_some());
@@ -685,7 +685,7 @@ mod tests {
             "SELECT username, COUNT(*) FROM users GROUP BY username HAVING count(*) > 1 LIMIT 5",
         );
         assert!(result.is_ok());
-        let (_, _, _, _, having, _, limit, _) = result.unwrap();
+        let (_, _, _, _, _, _, having, _, limit, _) = result.unwrap();
         assert!(having.is_some());
         assert_eq!(limit, Some(5));
     }
@@ -700,7 +700,7 @@ mod tests {
     fn test_parse_count_distinct_single() {
         let result = parse_select("SELECT COUNT(DISTINCT username) FROM users");
         assert!(result.is_ok());
-        let (distinct, cols, _, _, _, _, _, _) = result.unwrap();
+        let (distinct, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(!distinct);
         assert!(cols.is_some());
         let cols = cols.unwrap();
@@ -713,7 +713,7 @@ mod tests {
         let result =
             parse_select("SELECT email, COUNT(DISTINCT username) FROM users GROUP BY email");
         assert!(result.is_ok());
-        let (_, cols, _, group_by, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, group_by, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let cols = cols.unwrap();
         assert_eq!(cols.len(), 2);
@@ -727,7 +727,7 @@ mod tests {
         let result =
             parse_select("SELECT COUNT(DISTINCT username), COUNT(DISTINCT email) FROM users");
         assert!(result.is_ok());
-        let (_, cols, _, _, _, _, _, _) = result.unwrap();
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let cols = cols.unwrap();
         assert_eq!(cols.len(), 2);
