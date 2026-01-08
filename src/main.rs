@@ -909,3 +909,99 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_inner_join_basic() {
+        // Create and seed two tables: users and orders
+        let mut users = Table::new("test_users.json".to_string());
+        users.clear();
+
+        // Insert test users
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(2, "bob".to_string(), "bob@example.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(3, "charlie".to_string(), "charlie@example.com".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut orders = Table::new("test_orders.json".to_string());
+        orders.clear();
+
+        // Insert test orders with matching IDs
+        assert!(orders
+            .insert(Row::new(1, "alice".to_string(), "alice@orders.com".to_string()).unwrap())
+            .is_ok());
+        assert!(orders
+            .insert(Row::new(2, "bob".to_string(), "bob@orders.com".to_string()).unwrap())
+            .is_ok());
+        orders.save().unwrap();
+
+        // Load tables
+        let users_loaded = users.select_all();
+        let orders_loaded = orders.select_all();
+
+        // Verify both tables have correct rows
+        assert_eq!(users_loaded.len(), 3);
+        assert_eq!(orders_loaded.len(), 2);
+    }
+
+    #[test]
+    fn test_join_clause_parsing() {
+        let input = "SELECT * FROM users INNER JOIN orders ON id = id";
+        let result = parser::parse_select(input);
+
+        assert!(result.is_ok());
+        let (_, _, from_table, join, _, _, _, _, _, _) = result.unwrap();
+
+        assert_eq!(from_table, Some("users".to_string()));
+        assert!(join.is_some());
+
+        let jc = join.unwrap();
+        assert_eq!(jc.table, "orders");
+        assert_eq!(jc.on_left, "id");
+        assert_eq!(jc.on_right, "id");
+        assert_eq!(jc.join_type, parser::JoinType::Inner);
+    }
+
+    #[test]
+    fn test_left_join_parsing() {
+        let input = "SELECT * FROM users LEFT JOIN orders ON username = username";
+        let result = parser::parse_select(input);
+
+        assert!(result.is_ok());
+        let (_, _, from_table, join, _, _, _, _, _, _) = result.unwrap();
+
+        assert_eq!(from_table, Some("users".to_string()));
+        assert!(join.is_some());
+
+        let jc = join.unwrap();
+        assert_eq!(jc.table, "orders");
+        assert_eq!(jc.join_type, parser::JoinType::Left);
+    }
+
+    #[test]
+    fn test_select_with_from_clause() {
+        let input = "SELECT id, username FROM users";
+        let result = parser::parse_select(input);
+
+        assert!(result.is_ok());
+        let (_, cols, from_table, join, _, _, _, _, _, _) = result.unwrap();
+
+        assert!(from_table.is_some());
+        assert!(join.is_none());
+        assert!(cols.is_some());
+
+        let col_list = cols.unwrap();
+        assert_eq!(col_list.len(), 2);
+        assert_eq!(col_list[0], "id");
+        assert_eq!(col_list[1], "username");
+    }
+}
