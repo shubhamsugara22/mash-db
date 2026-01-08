@@ -482,6 +482,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             order_by,
             limit,
             offset,
+            ..
         } => {
             let mut rows = table.select_all();
 
@@ -590,6 +591,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             order_by,
             limit,
             offset,
+            ..
         } => match table.select_where_complex(&conditions, &operators) {
             Ok(mut rows) => {
                 // Check if columns contain any aggregates
