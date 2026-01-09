@@ -1,0 +1,45 @@
+# JOIN Operations Test Commands
+# Test suite for INNER, LEFT, and RIGHT JOIN functionality
+
+# Test 1: Basic INNER JOIN
+# Should return only users that have matching orders
+SELECT * FROM users INNER JOIN orders ON id = id
+
+# Test 2: LEFT JOIN - Keep all left table rows
+# Should return all users, even those without orders
+SELECT * FROM users LEFT JOIN orders ON id = id
+
+# Test 3: RIGHT JOIN - Simplified implementation
+# Should return only users that have matching orders
+SELECT * FROM users RIGHT JOIN orders ON id = id
+
+# Test 4: INNER JOIN with WHERE clause
+# Should filter before joining
+SELECT * FROM users INNER JOIN orders ON id = id WHERE username = 'alice'
+
+# Test 5: LEFT JOIN with column selection
+# Should project specific columns after LEFT JOIN
+SELECT id, username FROM users LEFT JOIN orders ON id = id
+
+# Test 6: JOIN with ORDER BY
+# Should sort results after joining
+SELECT * FROM users INNER JOIN orders ON id = id ORDER BY username ASC
+
+# Test 7: JOIN with LIMIT
+# Should limit results after joining
+SELECT * FROM users INNER JOIN orders ON id = id LIMIT 2
+
+# Test 8: JOIN with aggregates (if supported)
+# Should count joined results
+SELECT COUNT(*) FROM users INNER JOIN orders ON id = id
+
+# Test 9: JOIN on username field
+# Should join on different column
+SELECT * FROM users INNER JOIN orders ON username = username
+
+# Test 10: LEFT JOIN with DISTINCT
+# Should remove duplicates after LEFT JOIN
+SELECT DISTINCT * FROM users LEFT JOIN orders ON id = id
+
+# Note: Current implementation filters rows based on join conditions
+# Future enhancement: Combine row data from both tables in output

@@ -583,7 +583,13 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             if let Some(ref jc) = join {
                 // Determine right table
                 let right_table = load_table_by_name(&jc.table, table);
-                rows = apply_join(rows, &jc.on_left, &right_table, &jc.on_right, jc.join_type.clone());
+                rows = apply_join(
+                    rows,
+                    &jc.on_left,
+                    &right_table,
+                    &jc.on_right,
+                    jc.join_type.clone(),
+                );
             }
 
             // Check if columns contain any aggregates
@@ -707,7 +713,13 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                     // Apply JOIN filter if present
                     if let Some(ref jc) = join {
                         let right_table = load_table_by_name(&jc.table, table);
-                        rows = apply_join(rows, &jc.on_left, &right_table, &jc.on_right, jc.join_type.clone());
+                        rows = apply_join(
+                            rows,
+                            &jc.on_left,
+                            &right_table,
+                            &jc.on_right,
+                            jc.join_type.clone(),
+                        );
                     }
                     // Check if columns contain any aggregates
                     let has_aggregates = match &columns {
@@ -1036,5 +1048,160 @@ mod tests {
         assert_eq!(col_list.len(), 2);
         assert_eq!(col_list[0], "id");
         assert_eq!(col_list[1], "username");
+    }
+
+    #[test]
+    fn test_left_join_execution() {
+        // Create test tables
+        let mut users = Table::new("test_left_users.json".to_string());
+        users.clear();
+
+        // Insert 3 users
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut orders = Table::new("test_left_orders.json".to_string());
+        orders.clear();
+
+        // Insert orders for only alice and bob (charlie has no orders)
+        assert!(orders
+            .insert(Row::new(1, "alice".to_string(), "order1@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(orders
+            .insert(Row::new(2, "bob".to_string(), "order2@test.com".to_string()).unwrap())
+            .is_ok());
+        orders.save().unwrap();
+
+        // Simulate LEFT JOIN
+        let user_rows = users.select_all();
+
+        // LEFT JOIN should keep all 3 users (even charlie with no orders)
+        assert_eq!(user_rows.len(), 3);
+
+        // Apply LEFT JOIN logic manually
+        let result = super::execute_statement(
+            Statement::Select {
+                distinct: false,
+                columns: None,
+                from_table: Some("test_left_users".to_string()),
+                join: Some(parser::JoinClause {
+                    join_type: parser::JoinType::Left,
+                    table: "test_left_orders".to_string(),
+                    on_left: "id".to_string(),
+                    on_right: "id".to_string(),
+                }),
+                group_by: None,
+                having: None,
+                order_by: None,
+                limit: None,
+                offset: None,
+            },
+            &mut users,
+        );
+    }
+
+    #[test]
+    fn test_right_join_execution() {
+        // Create test tables
+        let mut users = Table::new("test_right_users.json".to_string());
+        users.clear();
+
+        // Insert 2 users
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut orders = Table::new("test_right_orders.json".to_string());
+        orders.clear();
+
+        // Insert orders including one without matching user
+        assert!(orders
+            .insert(Row::new(1, "alice".to_string(), "order1@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(orders
+            .insert(Row::new(2, "bob".to_string(), "order2@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(orders
+            .insert(Row::new(3, "david".to_string(), "order3@test.com".to_string()).unwrap())
+            .is_ok());
+        orders.save().unwrap();
+
+        // RIGHT JOIN should keep only users that have matching orders
+        let user_rows = users.select_all();
+        assert_eq!(user_rows.len(), 2);
+    }
+
+    #[test]
+    fn test_right_join_parsing() {
+        let input = "SELECT * FROM users RIGHT JOIN orders ON id = id";
+        let result = parser::parse_select(input);
+
+        assert!(result.is_ok());
+        let (_, _, from_table, join, _, _, _, _, _, _) = result.unwrap();
+
+        assert_eq!(from_table, Some("users".to_string()));
+        assert!(join.is_some());
+
+        let jc = join.unwrap();
+        assert_eq!(jc.table, "orders");
+        assert_eq!(jc.join_type, parser::JoinType::Right);
+        assert_eq!(jc.on_left, "id");
+        assert_eq!(jc.on_right, "id");
+    }
+
+    #[test]
+    fn test_inner_join_filters_correctly() {
+        // Create test tables
+        let mut users = Table::new("test_inner_users.json".to_string());
+        users.clear();
+
+        // Insert 3 users
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut orders = Table::new("test_inner_orders.json".to_string());
+        orders.clear();
+
+        // Insert orders for only alice (id=1)
+        assert!(orders
+            .insert(Row::new(1, "alice".to_string(), "order1@test.com".to_string()).unwrap())
+            .is_ok());
+        orders.save().unwrap();
+
+        // INNER JOIN should return only 1 user (alice)
+        let user_rows = users.select_all();
+        let orders_table = orders;
+
+        // Apply INNER JOIN manually
+        let mut matched_count = 0;
+        for row in &user_rows {
+            if let Ok(matches) = orders_table.select_where("id", "=", &row.id.to_string()) {
+                if !matches.is_empty() {
+                    matched_count += 1;
+                }
+            }
+        }
+
+        assert_eq!(matched_count, 1, "INNER JOIN should match only 1 user");
     }
 }

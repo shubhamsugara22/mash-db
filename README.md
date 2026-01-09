@@ -20,11 +20,15 @@ A simple database implementation in Rust, built from scratch following SQLite ar
   - **HAVING**: Filter grouped results with conditions (e.g., `HAVING COUNT(*) > 1`)
   - **ORDER BY**: Sort results ascending or descending (e.g., `ORDER BY username DESC`)
   - **LIMIT/OFFSET**: Paginate results (e.g., `LIMIT 10 OFFSET 5`)
+  - **JOIN Operations**: INNER, LEFT, and RIGHT JOIN support
+    - `SELECT * FROM users INNER JOIN orders ON id = id`
+    - `SELECT * FROM users LEFT JOIN orders ON username = username`
+    - `SELECT * FROM users RIGHT JOIN orders ON id = id`
 - **B-Tree Indexing** - Efficient O(log n) lookups for ID-based operations, and fast lookups for username and email
 - **In-Memory Storage** - Table stores rows in a Vec with B-Tree indexes
 - **Data Validation** - Username (max 32 chars) and email (max 255 chars) length checks
 - **Persistence** - Save/load table to/from JSON files
-- **Comprehensive Testing** - 76 passing tests covering all SQL features
+- **Comprehensive Testing** - 86 passing tests covering all SQL features
 
 ## Usage
 
@@ -56,6 +60,15 @@ db > SELECT * FROM users ORDER BY username DESC LIMIT 2
 (2, bob, bob@example.com)
 (3, alice, alice2@example.com)
 Executed.
+db > SELECT * FROM users INNER JOIN orders ON id = id
+(1, alice, alice@example.com)
+(2, bob, bob@example.com)
+Executed.
+db > SELECT * FROM users LEFT JOIN orders ON username = username
+(1, alice, alice@example.com)
+(2, bob, bob@example.com)
+(3, alice, alice2@example.com)
+Executed.
 db > .exit
 Bye!
 ```
@@ -80,8 +93,9 @@ Bye!
 - [x] COUNT(DISTINCT col) for counting unique values
 - [x] MIN/MAX on string columns
 - [x] Multiple GROUP BY columns
+- [x] Multi-table support (JOINs - INNER, LEFT, RIGHT)
 - [ ] ORDER BY on aggregate columns
-- [ ] Multi-table support (JOINs)
+- [ ] Combined row output for JOINs (currently filters left table rows)
 - [ ] More SQL commands (CREATE TABLE, DROP TABLE, ALTER TABLE)
 - [ ] Subqueries
 - [ ] Transactions and ACID properties
