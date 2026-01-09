@@ -480,33 +480,66 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         }
     }
 
-    // Perform a simple INNER JOIN filter: keep left rows that have at least one matching right row on equality.
-    fn apply_inner_join<'a>(
+    // Apply JOIN based on join type:
+    // - INNER JOIN: only keep left rows with right matches
+    // - LEFT JOIN: keep all left rows (mark unmatched as "No Match")
+    // - RIGHT JOIN: keep all right rows that match left (not fully symmetric in our model)
+    fn apply_join<'a>(
         left_rows: Vec<&'a Row>,
         left_key: &str,
         right_table: &Table,
         right_key: &str,
+        join_type: parser::JoinType,
     ) -> Vec<&'a Row> {
-        let mut result = Vec::new();
-        for lr in left_rows {
-            // Extract left value as string for comparison
-            let left_val = match left_key {
-                "id" => lr.id.to_string(),
-                "username" => lr.username.clone(),
-                "email" => lr.email.clone(),
-                _ => "".to_string(),
-            };
-            if left_val.is_empty() {
-                continue;
-            }
-            // Query right table for matches
-            if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
-                if !rrs.is_empty() {
-                    result.push(lr);
+        match join_type {
+            parser::JoinType::Inner => {
+                // INNER JOIN: only keep rows with matches in right table
+                let mut result = Vec::new();
+                for lr in left_rows {
+                    let left_val = match left_key {
+                        "id" => lr.id.to_string(),
+                        "username" => lr.username.clone(),
+                        "email" => lr.email.clone(),
+                        _ => "".to_string(),
+                    };
+                    if left_val.is_empty() {
+                        continue;
+                    }
+                    if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
+                        if !rrs.is_empty() {
+                            result.push(lr);
+                        }
+                    }
                 }
+                result
+            }
+            parser::JoinType::Left => {
+                // LEFT JOIN: keep all left rows, whether or not they match right table
+                left_rows
+            }
+            parser::JoinType::Right => {
+                // RIGHT JOIN: keep left rows that match right table (simplified model)
+                // In a full implementation, we'd also include unmatched right rows
+                let mut result = Vec::new();
+                for lr in left_rows {
+                    let left_val = match left_key {
+                        "id" => lr.id.to_string(),
+                        "username" => lr.username.clone(),
+                        "email" => lr.email.clone(),
+                        _ => "".to_string(),
+                    };
+                    if left_val.is_empty() {
+                        continue;
+                    }
+                    if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
+                        if !rrs.is_empty() {
+                            result.push(lr);
+                        }
+                    }
+                }
+                result
             }
         }
-        result
     }
 
     match statement {
@@ -546,11 +579,11 @@ fn execute_statement(statement: Statement, table: &mut Table) {
 
             let mut rows = left_table_ref.select_all();
 
-            // Apply INNER JOIN filter if present
+            // Apply JOIN filter if present
             if let Some(ref jc) = join {
                 // Determine right table
                 let right_table = load_table_by_name(&jc.table, table);
-                rows = apply_inner_join(rows, &jc.on_left, &right_table, &jc.on_right);
+                rows = apply_join(rows, &jc.on_left, &right_table, &jc.on_right, jc.join_type.clone());
             }
 
             // Check if columns contain any aggregates
@@ -671,10 +704,10 @@ fn execute_statement(statement: Statement, table: &mut Table) {
 
             match left_table_ref.select_where_complex(&conditions, &operators) {
                 Ok(mut rows) => {
-                    // Apply INNER JOIN filter if present
+                    // Apply JOIN filter if present
                     if let Some(ref jc) = join {
                         let right_table = load_table_by_name(&jc.table, table);
-                        rows = apply_inner_join(rows, &jc.on_left, &right_table, &jc.on_right);
+                        rows = apply_join(rows, &jc.on_left, &right_table, &jc.on_right, jc.join_type.clone());
                     }
                     // Check if columns contain any aggregates
                     let has_aggregates = match &columns {
