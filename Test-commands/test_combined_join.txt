@@ -1,0 +1,3 @@
+SELECT * FROM users INNER JOIN orders ON users.id = orders.id;
+SELECT * FROM users LEFT JOIN orders ON users.id = orders.id;
+.exit

@@ -515,6 +515,15 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         }
     }
 
+    // Extract column name from qualified name (e.g., "users.id" -> "id")
+    fn extract_column_name(qualified: &str) -> &str {
+        if let Some(idx) = qualified.rfind('.') {
+            &qualified[idx + 1..]
+        } else {
+            qualified
+        }
+    }
+
     // Apply JOIN based on join type and return combined rows
     fn apply_join(
         left_rows: Vec<&Row>,
@@ -525,11 +534,15 @@ fn execute_statement(statement: Statement, table: &mut Table) {
     ) -> Vec<JoinedRow> {
         let mut result = Vec::new();
 
+        // Extract actual column names from qualified names
+        let left_col = extract_column_name(left_key);
+        let right_col = extract_column_name(right_key);
+
         match join_type {
             parser::JoinType::Inner => {
                 // INNER JOIN: only rows with matches in right table
                 for lr in left_rows {
-                    let left_val = match left_key {
+                    let left_val = match left_col {
                         "id" => lr.id.to_string(),
                         "username" => lr.username.clone(),
                         "email" => lr.email.clone(),
@@ -538,7 +551,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                     if left_val.is_empty() {
                         continue;
                     }
-                    if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
+                    if let Ok(rrs) = right_table.select_where(right_col, "=", &left_val) {
                         for rr in rrs {
                             result.push(JoinedRow::from_both(lr, rr));
                         }
@@ -548,7 +561,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             parser::JoinType::Left => {
                 // LEFT JOIN: all left rows, with right data if available
                 for lr in left_rows {
-                    let left_val = match left_key {
+                    let left_val = match left_col {
                         "id" => lr.id.to_string(),
                         "username" => lr.username.clone(),
                         "email" => lr.email.clone(),
@@ -557,7 +570,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
 
                     let mut found_match = false;
                     if !left_val.is_empty() {
-                        if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
+                        if let Ok(rrs) = right_table.select_where(right_col, "=", &left_val) {
                             for rr in rrs {
                                 result.push(JoinedRow::from_both(lr, rr));
                                 found_match = true;
@@ -573,7 +586,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             parser::JoinType::Right => {
                 // RIGHT JOIN: only left rows that match right table
                 for lr in left_rows {
-                    let left_val = match left_key {
+                    let left_val = match left_col {
                         "id" => lr.id.to_string(),
                         "username" => lr.username.clone(),
                         "email" => lr.email.clone(),
@@ -582,7 +595,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                     if left_val.is_empty() {
                         continue;
                     }
-                    if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
+                    if let Ok(rrs) = right_table.select_where(right_col, "=", &left_val) {
                         for rr in rrs {
                             result.push(JoinedRow::from_both(lr, rr));
                         }
