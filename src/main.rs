@@ -8,6 +8,41 @@ mod table;
 
 use table::{Row, Table};
 
+// Struct to represent a joined row with data from both tables
+#[derive(Debug, Clone)]
+struct JoinedRow {
+    left_id: u32,
+    left_username: String,
+    left_email: String,
+    right_id: Option<u32>,
+    right_username: Option<String>,
+    right_email: Option<String>,
+}
+
+impl JoinedRow {
+    fn from_left_only(left: &Row) -> Self {
+        JoinedRow {
+            left_id: left.id,
+            left_username: left.username.clone(),
+            left_email: left.email.clone(),
+            right_id: None,
+            right_username: None,
+            right_email: None,
+        }
+    }
+
+    fn from_both(left: &Row, right: &Row) -> Self {
+        JoinedRow {
+            left_id: left.id,
+            left_username: left.username.clone(),
+            left_email: left.email.clone(),
+            right_id: Some(right.id),
+            right_username: Some(right.username.clone()),
+            right_email: Some(right.email.clone()),
+        }
+    }
+}
+
 // Helper struct to represent aggregate functions and their values
 #[derive(Debug, Clone)]
 enum AggregateColumn {
@@ -480,21 +515,19 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         }
     }
 
-    // Apply JOIN based on join type:
-    // - INNER JOIN: only keep left rows with right matches
-    // - LEFT JOIN: keep all left rows (mark unmatched as "No Match")
-    // - RIGHT JOIN: keep all right rows that match left (not fully symmetric in our model)
-    fn apply_join<'a>(
-        left_rows: Vec<&'a Row>,
+    // Apply JOIN based on join type and return combined rows
+    fn apply_join(
+        left_rows: Vec<&Row>,
         left_key: &str,
         right_table: &Table,
         right_key: &str,
         join_type: parser::JoinType,
-    ) -> Vec<&'a Row> {
+    ) -> Vec<JoinedRow> {
+        let mut result = Vec::new();
+
         match join_type {
             parser::JoinType::Inner => {
-                // INNER JOIN: only keep rows with matches in right table
-                let mut result = Vec::new();
+                // INNER JOIN: only rows with matches in right table
                 for lr in left_rows {
                     let left_val = match left_key {
                         "id" => lr.id.to_string(),
@@ -506,21 +539,39 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                         continue;
                     }
                     if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
-                        if !rrs.is_empty() {
-                            result.push(lr);
+                        for rr in rrs {
+                            result.push(JoinedRow::from_both(lr, rr));
                         }
                     }
                 }
-                result
             }
             parser::JoinType::Left => {
-                // LEFT JOIN: keep all left rows, whether or not they match right table
-                left_rows
+                // LEFT JOIN: all left rows, with right data if available
+                for lr in left_rows {
+                    let left_val = match left_key {
+                        "id" => lr.id.to_string(),
+                        "username" => lr.username.clone(),
+                        "email" => lr.email.clone(),
+                        _ => "".to_string(),
+                    };
+
+                    let mut found_match = false;
+                    if !left_val.is_empty() {
+                        if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
+                            for rr in rrs {
+                                result.push(JoinedRow::from_both(lr, rr));
+                                found_match = true;
+                            }
+                        }
+                    }
+
+                    if !found_match {
+                        result.push(JoinedRow::from_left_only(lr));
+                    }
+                }
             }
             parser::JoinType::Right => {
-                // RIGHT JOIN: keep left rows that match right table (simplified model)
-                // In a full implementation, we'd also include unmatched right rows
-                let mut result = Vec::new();
+                // RIGHT JOIN: only left rows that match right table
                 for lr in left_rows {
                     let left_val = match left_key {
                         "id" => lr.id.to_string(),
@@ -532,14 +583,15 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                         continue;
                     }
                     if let Ok(rrs) = right_table.select_where(right_key, "=", &left_val) {
-                        if !rrs.is_empty() {
-                            result.push(lr);
+                        for rr in rrs {
+                            result.push(JoinedRow::from_both(lr, rr));
                         }
                     }
                 }
-                result
             }
         }
+
+        result
     }
 
     match statement {
@@ -577,20 +629,63 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                 load_table_by_name("users", table)
             };
 
-            let mut rows = left_table_ref.select_all();
+            let rows = left_table_ref.select_all();
 
-            // Apply JOIN filter if present
+            // Handle JOIN case separately to avoid ownership issues
             if let Some(ref jc) = join {
-                // Determine right table
                 let right_table = load_table_by_name(&jc.table, table);
-                rows = apply_join(
+                let jrows = apply_join(
                     rows,
                     &jc.on_left,
                     &right_table,
                     &jc.on_right,
                     jc.join_type.clone(),
                 );
+                // Simple display of joined rows (no aggregates/grouping support yet with joins)
+                for jrow in jrows {
+                    match &columns {
+                        None => {
+                            // SELECT * - show all columns from both tables
+                            if let (Some(rid), Some(rusername), Some(remail)) =
+                                (&jrow.right_id, &jrow.right_username, &jrow.right_email)
+                            {
+                                println!(
+                                    "({}, {}, {} | {}, {}, {})",
+                                    jrow.left_id,
+                                    jrow.left_username,
+                                    jrow.left_email,
+                                    rid,
+                                    rusername,
+                                    remail
+                                );
+                            } else {
+                                println!(
+                                    "({}, {}, {} | NULL, NULL, NULL)",
+                                    jrow.left_id, jrow.left_username, jrow.left_email
+                                );
+                            }
+                        }
+                        Some(cols) => {
+                            // Show selected columns
+                            let mut values: Vec<String> = Vec::new();
+                            for col in cols.iter() {
+                                match col.as_str() {
+                                    "id" => values.push(jrow.left_id.to_string()),
+                                    "username" => values.push(jrow.left_username.clone()),
+                                    "email" => values.push(jrow.left_email.clone()),
+                                    other => values.push(format!("NULL({})", other)),
+                                }
+                            }
+                            println!("({})", values.join(", "));
+                        }
+                    }
+                }
+                println!("Executed.");
+                return;
             }
+
+            // No JOIN - handle as before
+            let mut rows = rows;
 
             // Check if columns contain any aggregates
             let has_aggregates = match &columns {
@@ -709,18 +804,61 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             };
 
             match left_table_ref.select_where_complex(&conditions, &operators) {
-                Ok(mut rows) => {
-                    // Apply JOIN filter if present
+                Ok(rows) => {
+                    // Handle JOIN case separately to avoid ownership issues
                     if let Some(ref jc) = join {
                         let right_table = load_table_by_name(&jc.table, table);
-                        rows = apply_join(
+                        let jrows = apply_join(
                             rows,
                             &jc.on_left,
                             &right_table,
                             &jc.on_right,
                             jc.join_type.clone(),
                         );
+
+                        // Display joined results
+                        for jrow in jrows {
+                            match &columns {
+                                None => {
+                                    if let (Some(rid), Some(rusername), Some(remail)) =
+                                        (&jrow.right_id, &jrow.right_username, &jrow.right_email)
+                                    {
+                                        println!(
+                                            "({}, {}, {} | {}, {}, {})",
+                                            jrow.left_id,
+                                            jrow.left_username,
+                                            jrow.left_email,
+                                            rid,
+                                            rusername,
+                                            remail
+                                        );
+                                    } else {
+                                        println!(
+                                            "({}, {}, {} | NULL, NULL, NULL)",
+                                            jrow.left_id, jrow.left_username, jrow.left_email
+                                        );
+                                    }
+                                }
+                                Some(cols) => {
+                                    let mut values: Vec<String> = Vec::new();
+                                    for col in cols.iter() {
+                                        match col.as_str() {
+                                            "id" => values.push(jrow.left_id.to_string()),
+                                            "username" => values.push(jrow.left_username.clone()),
+                                            "email" => values.push(jrow.left_email.clone()),
+                                            other => values.push(format!("NULL({})", other)),
+                                        }
+                                    }
+                                    println!("({})", values.join(", "));
+                                }
+                            }
+                        }
+                        println!("Executed.");
+                        return;
                     }
+
+                    // No JOIN - handle as before
+                    let mut rows = rows;
                     // Check if columns contain any aggregates
                     let has_aggregates = match &columns {
                         Some(cols) => cols.iter().any(|c| {
