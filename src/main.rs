@@ -1075,9 +1075,14 @@ fn main() {
         print_prompt();
 
         let mut input = String::new();
-        io::stdin()
+        let bytes_read = io::stdin()
             .read_line(&mut input)
             .expect("Failed to read line");
+
+        // Exit on EOF (e.g., from piped input or Ctrl+D)
+        if bytes_read == 0 {
+            break;
+        }
 
         let input = input.trim();
 
