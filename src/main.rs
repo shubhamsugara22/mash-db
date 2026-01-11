@@ -607,6 +607,107 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         result
     }
 
+    // Evaluate a single condition against a JoinedRow, supporting qualified names
+    fn eval_joined_condition(
+        jrow: &JoinedRow,
+        condition: &(String, String, String),
+        left_table_name: &str,
+        right_table_name: &str,
+    ) -> bool {
+        let (column, operator, value) = condition;
+        let (target_table, col_name) = if let Some(idx) = column.find('.') {
+            (column[..idx].to_lowercase(), extract_column_name(column))
+        } else {
+            (left_table_name.to_string(), extract_column_name(column))
+        };
+
+        // Helpers for comparisons
+        fn cmp_u32(val: u32, op: &str, rhs: &str) -> bool {
+            let r = rhs.parse::<i64>().unwrap_or(0);
+            let l = val as i64;
+            match op {
+                "=" => l == r,
+                "!=" => l != r,
+                ">" => l > r,
+                "<" => l < r,
+                ">=" => l >= r,
+                "<=" => l <= r,
+                _ => false,
+            }
+        }
+        fn cmp_str(val: &str, op: &str, rhs: &str) -> bool {
+            match op {
+                "=" => val == rhs,
+                _ => false,
+            }
+        }
+        fn cmp_opt_u32(val: Option<u32>, op: &str, rhs: &str) -> bool {
+            match val {
+                Some(v) => cmp_u32(v, op, rhs),
+                None => false,
+            }
+        }
+        fn cmp_opt_str(val: Option<&String>, op: &str, rhs: &str) -> bool {
+            match val {
+                Some(v) => cmp_str(v, op, rhs),
+                None => false,
+            }
+        }
+
+        if target_table == left_table_name {
+            match col_name {
+                "id" => cmp_u32(jrow.left_id, operator.as_str(), value),
+                "username" => cmp_str(&jrow.left_username, operator.as_str(), value),
+                "email" => cmp_str(&jrow.left_email, operator.as_str(), value),
+                _ => false,
+            }
+        } else if target_table == right_table_name {
+            match col_name {
+                "id" => cmp_opt_u32(jrow.right_id, operator.as_str(), value),
+                "username" => cmp_opt_str(jrow.right_username.as_ref(), operator.as_str(), value),
+                "email" => cmp_opt_str(jrow.right_email.as_ref(), operator.as_str(), value),
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+
+    // Filter joined rows using complex conditions with AND/OR precedence
+    fn filter_joined_rows(
+        jrows: Vec<JoinedRow>,
+        conditions: &[(String, String, String)],
+        operators: &[String],
+        left_table_name: &str,
+        right_table_name: &str,
+    ) -> Vec<JoinedRow> {
+        if conditions.is_empty() {
+            return jrows;
+        }
+        let mut result = Vec::new();
+        for j in jrows.into_iter() {
+            let mut matches = eval_joined_condition(
+                &j,
+                &conditions[conditions.len() - 1],
+                left_table_name,
+                right_table_name,
+            );
+            for i in (0..operators.len()).rev() {
+                let cond_res =
+                    eval_joined_condition(&j, &conditions[i], left_table_name, right_table_name);
+                match operators[i].as_str() {
+                    "AND" => matches = cond_res && matches,
+                    "OR" => matches = cond_res || matches,
+                    _ => {}
+                }
+            }
+            if matches {
+                result.push(j);
+            }
+        }
+        result
+    }
+
     match statement {
         Statement::Insert {
             id,
@@ -869,6 +970,24 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                             &jc.on_right,
                             jc.join_type.clone(),
                         );
+
+                        // Apply WHERE filters across joined rows, supporting qualified names
+                        let left_table_name = from_table
+                            .as_ref()
+                            .map(|s| s.to_lowercase())
+                            .unwrap_or_else(|| "users".to_string());
+                        let right_table_name = jc.table.to_lowercase();
+                        let jrows = if !conditions.is_empty() {
+                            filter_joined_rows(
+                                jrows,
+                                &conditions,
+                                &operators,
+                                &left_table_name,
+                                &right_table_name,
+                            )
+                        } else {
+                            jrows
+                        };
 
                         // Display joined results
                         for jrow in jrows {
