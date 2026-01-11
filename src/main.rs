@@ -679,14 +679,54 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                             }
                         }
                         Some(cols) => {
-                            // Show selected columns
+                            // Show selected columns with support for qualified names
+                            let left_table_name = from_table
+                                .as_ref()
+                                .map(|s| s.to_lowercase())
+                                .unwrap_or_else(|| "users".to_string());
+                            let right_table_name = jc.table.to_lowercase();
                             let mut values: Vec<String> = Vec::new();
                             for col in cols.iter() {
-                                match col.as_str() {
-                                    "id" => values.push(jrow.left_id.to_string()),
-                                    "username" => values.push(jrow.left_username.clone()),
-                                    "email" => values.push(jrow.left_email.clone()),
-                                    other => values.push(format!("NULL({})", other)),
+                                if let Some(dot_idx) = col.find('.') {
+                                    let tbl = col[..dot_idx].to_lowercase();
+                                    let col_name = extract_column_name(col);
+                                    if tbl == left_table_name {
+                                        match col_name {
+                                            "id" => values.push(jrow.left_id.to_string()),
+                                            "username" => values.push(jrow.left_username.clone()),
+                                            "email" => values.push(jrow.left_email.clone()),
+                                            other => values.push(format!("NULL({})", other)),
+                                        }
+                                    } else if tbl == right_table_name {
+                                        match col_name {
+                                            "id" => values.push(
+                                                jrow.right_id
+                                                    .map(|v| v.to_string())
+                                                    .unwrap_or("NULL".to_string()),
+                                            ),
+                                            "username" => values.push(
+                                                jrow.right_username
+                                                    .clone()
+                                                    .unwrap_or("NULL".to_string()),
+                                            ),
+                                            "email" => values.push(
+                                                jrow.right_email
+                                                    .clone()
+                                                    .unwrap_or("NULL".to_string()),
+                                            ),
+                                            other => values.push(format!("NULL({})", other)),
+                                        }
+                                    } else {
+                                        values.push(format!("NULL({})", col));
+                                    }
+                                } else {
+                                    let col_name = extract_column_name(col);
+                                    match col_name {
+                                        "id" => values.push(jrow.left_id.to_string()),
+                                        "username" => values.push(jrow.left_username.clone()),
+                                        "email" => values.push(jrow.left_email.clone()),
+                                        other => values.push(format!("NULL({})", other)),
+                                    }
                                 }
                             }
                             println!("({})", values.join(", "));
@@ -781,7 +821,8 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                         Some(cols) => {
                             let mut values: Vec<String> = Vec::new();
                             for col in cols.iter() {
-                                match col.as_str() {
+                                let col_name = extract_column_name(col);
+                                match col_name {
                                     "id" => values.push(row.id.to_string()),
                                     "username" => values.push(row.username.clone()),
                                     "email" => values.push(row.email.clone()),
@@ -853,13 +894,62 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                                     }
                                 }
                                 Some(cols) => {
+                                    // Show selected columns with support for qualified names
+                                    let left_table_name = from_table
+                                        .as_ref()
+                                        .map(|s| s.to_lowercase())
+                                        .unwrap_or_else(|| "users".to_string());
+                                    let right_table_name = jc.table.to_lowercase();
                                     let mut values: Vec<String> = Vec::new();
                                     for col in cols.iter() {
-                                        match col.as_str() {
-                                            "id" => values.push(jrow.left_id.to_string()),
-                                            "username" => values.push(jrow.left_username.clone()),
-                                            "email" => values.push(jrow.left_email.clone()),
-                                            other => values.push(format!("NULL({})", other)),
+                                        if let Some(dot_idx) = col.find('.') {
+                                            let tbl = col[..dot_idx].to_lowercase();
+                                            let col_name = extract_column_name(col);
+                                            if tbl == left_table_name {
+                                                match col_name {
+                                                    "id" => values.push(jrow.left_id.to_string()),
+                                                    "username" => {
+                                                        values.push(jrow.left_username.clone())
+                                                    }
+                                                    "email" => values.push(jrow.left_email.clone()),
+                                                    other => {
+                                                        values.push(format!("NULL({})", other))
+                                                    }
+                                                }
+                                            } else if tbl == right_table_name {
+                                                match col_name {
+                                                    "id" => values.push(
+                                                        jrow.right_id
+                                                            .map(|v| v.to_string())
+                                                            .unwrap_or("NULL".to_string()),
+                                                    ),
+                                                    "username" => values.push(
+                                                        jrow.right_username
+                                                            .clone()
+                                                            .unwrap_or("NULL".to_string()),
+                                                    ),
+                                                    "email" => values.push(
+                                                        jrow.right_email
+                                                            .clone()
+                                                            .unwrap_or("NULL".to_string()),
+                                                    ),
+                                                    other => {
+                                                        values.push(format!("NULL({})", other))
+                                                    }
+                                                }
+                                            } else {
+                                                values.push(format!("NULL({})", col));
+                                            }
+                                        } else {
+                                            let col_name = extract_column_name(col);
+                                            match col_name {
+                                                "id" => values.push(jrow.left_id.to_string()),
+                                                "username" => {
+                                                    values.push(jrow.left_username.clone())
+                                                }
+                                                "email" => values.push(jrow.left_email.clone()),
+                                                other => values.push(format!("NULL({})", other)),
+                                            }
                                         }
                                     }
                                     println!("({})", values.join(", "));
@@ -952,7 +1042,8 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                                 Some(cols) => {
                                     let mut values = Vec::new();
                                     for col in cols {
-                                        match col.as_str() {
+                                        let col_name = extract_column_name(col);
+                                        match col_name {
                                             "id" => values.push(row.id.to_string()),
                                             "username" => values.push(row.username.clone()),
                                             "email" => values.push(row.email.clone()),
