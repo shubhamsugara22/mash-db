@@ -755,6 +755,14 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                     &jc.on_right,
                     jc.join_type.clone(),
                 );
+                // Apply ORDER BY for joined rows (supports qualified names)
+                let left_table_name = from_table
+                    .as_ref()
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_else(|| "users".to_string());
+                let right_table_name = jc.table.to_lowercase();
+                let jrows =
+                    apply_joined_sorting(jrows, order_by, &left_table_name, &right_table_name);
                 // Simple display of joined rows (no aggregates/grouping support yet with joins)
                 for jrow in jrows {
                     match &columns {
@@ -989,6 +997,14 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                             jrows
                         };
 
+                        // Apply ORDER BY for joined rows (supports qualified names)
+                        let jrows = apply_joined_sorting(
+                            jrows,
+                            order_by,
+                            &left_table_name,
+                            &right_table_name,
+                        );
+
                         // Display joined results
                         for jrow in jrows {
                             match &columns {
@@ -1211,8 +1227,13 @@ fn execute_statement(statement: Statement, table: &mut Table) {
 // Sort rows based on ORDER BY clause
 fn apply_sorting(mut rows: Vec<&Row>, order_by: Option<(String, bool)>) -> Vec<&Row> {
     if let Some((column, is_asc)) = order_by {
+        let col_name: &str = if let Some(idx) = column.rfind('.') {
+            &column[idx + 1..]
+        } else {
+            &column
+        };
         rows.sort_by(|a, b| {
-            let cmp = match column.as_str() {
+            let cmp = match col_name {
                 "id" => a.id.cmp(&b.id),
                 "username" => a.username.cmp(&b.username),
                 "email" => a.email.cmp(&b.email),
@@ -1226,6 +1247,65 @@ fn apply_sorting(mut rows: Vec<&Row>, order_by: Option<(String, bool)>) -> Vec<&
         });
     }
     rows
+}
+
+// Sort joined rows based on ORDER BY clause (supports qualified names)
+fn apply_joined_sorting(
+    mut jrows: Vec<JoinedRow>,
+    order_by: Option<(String, bool)>,
+    left_table_name: &str,
+    right_table_name: &str,
+) -> Vec<JoinedRow> {
+    if let Some((column, is_asc)) = order_by {
+        let (target_table, col_name): (String, &str) = if let Some(idx) = column.find('.') {
+            (column[..idx].to_lowercase(), &column[idx + 1..])
+        } else {
+            (left_table_name.to_string(), &column)
+        };
+
+        fn ord_opt_u32(a: &Option<u32>, b: &Option<u32>) -> std::cmp::Ordering {
+            match (a, b) {
+                (Some(av), Some(bv)) => av.cmp(bv),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        }
+        fn ord_opt_str(a: &Option<String>, b: &Option<String>) -> std::cmp::Ordering {
+            match (a, b) {
+                (Some(av), Some(bv)) => av.cmp(bv),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        }
+
+        jrows.sort_by(|a, b| {
+            let cmp = if target_table == left_table_name {
+                match col_name {
+                    "id" => a.left_id.cmp(&b.left_id),
+                    "username" => a.left_username.cmp(&b.left_username),
+                    "email" => a.left_email.cmp(&b.left_email),
+                    _ => std::cmp::Ordering::Equal,
+                }
+            } else if target_table == right_table_name {
+                match col_name {
+                    "id" => ord_opt_u32(&a.right_id, &b.right_id),
+                    "username" => ord_opt_str(&a.right_username, &b.right_username),
+                    "email" => ord_opt_str(&a.right_email, &b.right_email),
+                    _ => std::cmp::Ordering::Equal,
+                }
+            } else {
+                std::cmp::Ordering::Equal
+            };
+            if is_asc {
+                cmp
+            } else {
+                cmp.reverse()
+            }
+        });
+    }
+    jrows
 }
 
 // Apply LIMIT and OFFSET to results
