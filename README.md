@@ -18,12 +18,12 @@ A simple database implementation in Rust, built from scratch following SQLite ar
   - **Aggregate Functions**: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`
   - **GROUP BY**: Group results by one or multiple columns (e.g., `GROUP BY username, email`)
   - **HAVING**: Filter grouped results with conditions (e.g., `HAVING COUNT(*) > 1`)
-  - **ORDER BY**: Sort results ascending or descending (e.g., `ORDER BY username DESC`)
-  - **LIMIT/OFFSET**: Paginate results (e.g., `LIMIT 10 OFFSET 5`)
-  - **JOIN Operations**: INNER, LEFT, and RIGHT JOIN support
-    - `SELECT * FROM users INNER JOIN orders ON id = id`
-    - `SELECT * FROM users LEFT JOIN orders ON username = username`
-    - `SELECT * FROM users RIGHT JOIN orders ON id = id`
+  - **ORDER BY (qualified)**: Sort results ASC/DESC with optional table qualifiers (e.g., `ORDER BY users.username DESC`)
+  - **LIMIT/OFFSET**: Paginate results (e.g., `LIMIT 10 OFFSET 5`) — works on joined outputs too
+  - **JOIN Operations**: `INNER`, `LEFT`, `RIGHT` with `ON left.col = right.col`
+    - `SELECT * FROM users INNER JOIN orders ON users.id = orders.id`
+    - `SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id`
+    - `SELECT users.username, orders.id FROM users LEFT JOIN orders ON users.id = orders.id`
 - **B-Tree Indexing** - Efficient O(log n) lookups for ID-based operations, and fast lookups for username and email
 - **In-Memory Storage** - Table stores rows in a Vec with B-Tree indexes
 - **Data Validation** - Username (max 32 chars) and email (max 255 chars) length checks
@@ -60,14 +60,13 @@ db > SELECT * FROM users ORDER BY username DESC LIMIT 2
 (2, bob, bob@example.com)
 (3, alice, alice2@example.com)
 Executed.
-db > SELECT * FROM users INNER JOIN orders ON id = id
-(1, alice, alice@example.com)
-(2, bob, bob@example.com)
+db > SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id
+(1, 1)
+(2, 2)
 Executed.
-db > SELECT * FROM users LEFT JOIN orders ON username = username
-(1, alice, alice@example.com)
-(2, bob, bob@example.com)
-(3, alice, alice2@example.com)
+db > SELECT users.username, orders.id FROM users LEFT JOIN orders ON users.id = orders.id ORDER BY orders.id ASC LIMIT 2
+(alice, 1)
+(bob, 2)
 Executed.
 db > .exit
 Bye!
@@ -95,7 +94,9 @@ Bye!
 - [x] Multiple GROUP BY columns
 - [x] Multi-table support (JOINs - INNER, LEFT, RIGHT)
 - [ ] ORDER BY on aggregate columns
-- [ ] Combined row output for JOINs (currently filters left table rows)
+- [x] Combined row output for JOINs
+- [ ] Table alias support (e.g., `users u`, `orders o`)
+- [ ] WHERE `IS NULL` / `IS NOT NULL`
 - [ ] More SQL commands (CREATE TABLE, DROP TABLE, ALTER TABLE)
 - [ ] Subqueries
 - [ ] Transactions and ACID properties

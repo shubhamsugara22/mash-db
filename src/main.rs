@@ -763,6 +763,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                 let right_table_name = jc.table.to_lowercase();
                 let jrows =
                     apply_joined_sorting(jrows, order_by, &left_table_name, &right_table_name);
+                let jrows = apply_joined_offset_limit(jrows, offset, limit);
                 // Simple display of joined rows (no aggregates/grouping support yet with joins)
                 for jrow in jrows {
                     match &columns {
@@ -1004,6 +1005,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                             &left_table_name,
                             &right_table_name,
                         );
+                        let jrows = apply_joined_offset_limit(jrows, offset, limit);
 
                         // Display joined results
                         for jrow in jrows {
@@ -1306,6 +1308,25 @@ fn apply_joined_sorting(
         });
     }
     jrows
+}
+
+// Apply LIMIT and OFFSET to joined results
+fn apply_joined_offset_limit(
+    jrows: Vec<JoinedRow>,
+    offset: Option<u32>,
+    limit: Option<u32>,
+) -> Vec<JoinedRow> {
+    let start = offset.unwrap_or(0) as usize;
+    let end = if let Some(lim) = limit {
+        start + lim as usize
+    } else {
+        jrows.len()
+    };
+    jrows
+        .into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
 }
 
 // Apply LIMIT and OFFSET to results
