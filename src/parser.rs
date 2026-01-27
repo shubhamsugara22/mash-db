@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Select,
@@ -394,6 +396,7 @@ fn parse_select_tokens(
     ),
     String,
 > {
+    let mut alias_map: HashMap<String, String> = HashMap::new();
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Select) {
         return Err("Expected SELECT".to_string());
@@ -406,6 +409,23 @@ fn parse_select_tokens(
         true
     } else {
         false
+    };
+
+    let resolve_alias = |name: &str, alias_map: &HashMap<String, String>| -> String {
+        if let Some(idx) = name.find('.') {
+            let (prefix, rest) = name.split_at(idx);
+            let prefix_l = prefix.to_lowercase();
+            let rest = &rest[1..];
+            if let Some(real) = alias_map.get(&prefix_l) {
+                return format!("{}.{}", real, rest);
+            }
+        } else {
+            let name_l = name.to_lowercase();
+            if let Some(real) = alias_map.get(&name_l) {
+                return real.clone();
+            }
+        }
+        name.to_string()
     };
 
     let columns = match tokens.get(i) {
@@ -452,12 +472,16 @@ fn parse_select_tokens(
         _ => return Err("Expected column list, *, or WHERE".to_string()),
     };
 
-    // Parse FROM clause
+    // Parse FROM clause (with optional alias)
     let from_table = if tokens.get(i) == Some(&Token::From) {
         i += 1;
         if let Some(Token::Identifier(table_name)) = tokens.get(i) {
             let table = table_name.clone();
             i += 1;
+            if let Some(Token::Identifier(alias)) = tokens.get(i) {
+                alias_map.insert(alias.to_lowercase(), table.clone());
+                i += 1;
+            }
             Some(table)
         } else {
             return Err("Expected table name after FROM".to_string());
@@ -507,6 +531,10 @@ fn parse_select_tokens(
         let join_table = if let Some(Token::Identifier(table)) = tokens.get(i) {
             let t = table.clone();
             i += 1;
+            if let Some(Token::Identifier(alias)) = tokens.get(i) {
+                alias_map.insert(alias.to_lowercase(), t.clone());
+                i += 1;
+            }
             t
         } else {
             return Err("Expected table name after JOIN".to_string());
@@ -520,7 +548,7 @@ fn parse_select_tokens(
 
         // Parse left side (table.column)
         let on_left = if let Some(Token::Identifier(left)) = tokens.get(i) {
-            let l = left.clone();
+            let l = resolve_alias(left, &alias_map);
             i += 1;
             l
         } else {
@@ -535,7 +563,7 @@ fn parse_select_tokens(
 
         // Parse right side (table.column)
         let on_right = if let Some(Token::Identifier(right)) = tokens.get(i) {
-            let r = right.clone();
+            let r = resolve_alias(right, &alias_map);
             i += 1;
             r
         } else {
@@ -582,7 +610,8 @@ fn parse_select_tokens(
             } else {
                 return Err("Expected value".to_string());
             };
-            conditions.push((col.clone(), op.to_string(), val));
+            let norm_col = resolve_alias(col, &alias_map);
+            conditions.push((norm_col, op.to_string(), val));
         } else {
             return Err("Expected column".to_string());
         }
@@ -623,7 +652,8 @@ fn parse_select_tokens(
                     } else {
                         return Err("Expected value".to_string());
                     };
-                    conditions.push((col.clone(), op.to_string(), val));
+                    let norm_col = resolve_alias(col, &alias_map);
+                    conditions.push((norm_col, op.to_string(), val));
                 } else {
                     return Err("Expected column after AND/OR".to_string());
                 }
@@ -647,14 +677,14 @@ fn parse_select_tokens(
 
         let mut columns = Vec::new();
         if let Some(Token::Identifier(col)) = tokens.get(i) {
-            columns.push(col.clone());
+            columns.push(resolve_alias(col, &alias_map));
             i += 1;
 
             // Parse additional columns separated by commas
             while tokens.get(i) == Some(&Token::Comma) {
                 i += 1;
                 if let Some(Token::Identifier(col)) = tokens.get(i) {
-                    columns.push(col.clone());
+                    columns.push(resolve_alias(col, &alias_map));
                     i += 1;
                 } else {
                     return Err("Expected column after comma in GROUP BY".to_string());
@@ -686,7 +716,7 @@ fn parse_select_tokens(
                 "count(*)".to_string()
             } else if let Some(Token::Identifier(col_name)) = tokens.get(i) {
                 i += 1;
-                format!("count({})", col_name)
+                format!("count({})", resolve_alias(col_name, &alias_map))
             } else {
                 return Err("Expected * or column after COUNT(".to_string());
             };
@@ -707,7 +737,7 @@ fn parse_select_tokens(
                     return Err("Expected ) after SUM".to_string());
                 }
                 i += 1;
-                format!("sum({})", col_name)
+                format!("sum({})", resolve_alias(col_name, &alias_map))
             } else {
                 return Err("Expected column after SUM(".to_string());
             }
@@ -723,7 +753,7 @@ fn parse_select_tokens(
                     return Err("Expected ) after AVG".to_string());
                 }
                 i += 1;
-                format!("avg({})", col_name)
+                format!("avg({})", resolve_alias(col_name, &alias_map))
             } else {
                 return Err("Expected column after AVG(".to_string());
             }
@@ -739,7 +769,7 @@ fn parse_select_tokens(
                     return Err("Expected ) after MIN".to_string());
                 }
                 i += 1;
-                format!("min({})", col_name)
+                format!("min({})", resolve_alias(col_name, &alias_map))
             } else {
                 return Err("Expected column after MIN(".to_string());
             }
@@ -814,7 +844,7 @@ fn parse_select_tokens(
                         "count(*)".to_string()
                     } else if let Some(Token::Identifier(col_name)) = tokens.get(i) {
                         i += 1;
-                        format!("count({})", col_name)
+                        format!("count({})", resolve_alias(col_name, &alias_map))
                     } else {
                         return Err("Expected * or column after COUNT(".to_string());
                     };
@@ -835,7 +865,7 @@ fn parse_select_tokens(
                             return Err("Expected ) after SUM".to_string());
                         }
                         i += 1;
-                        format!("sum({})", col_name)
+                        format!("sum({})", resolve_alias(col_name, &alias_map))
                     } else {
                         return Err("Expected column after SUM(".to_string());
                     }
@@ -851,7 +881,7 @@ fn parse_select_tokens(
                             return Err("Expected ) after AVG".to_string());
                         }
                         i += 1;
-                        format!("avg({})", col_name)
+                        format!("avg({})", resolve_alias(col_name, &alias_map))
                     } else {
                         return Err("Expected column after AVG(".to_string());
                     }
@@ -867,7 +897,7 @@ fn parse_select_tokens(
                             return Err("Expected ) after MIN".to_string());
                         }
                         i += 1;
-                        format!("min({})", col_name)
+                        format!("min({})", resolve_alias(col_name, &alias_map))
                     } else {
                         return Err("Expected column after MIN(".to_string());
                     }
@@ -883,13 +913,13 @@ fn parse_select_tokens(
                             return Err("Expected ) after MAX".to_string());
                         }
                         i += 1;
-                        format!("max({})", col_name)
+                        format!("max({})", resolve_alias(col_name, &alias_map))
                     } else {
                         return Err("Expected column after MAX(".to_string());
                     }
                 } else if let Some(Token::Identifier(col_name)) = tokens.get(i) {
                     i += 1;
-                    col_name.clone()
+                    resolve_alias(col_name, &alias_map)
                 } else {
                     return Err("Expected column or aggregate after AND/OR in HAVING".to_string());
                 };
@@ -945,7 +975,7 @@ fn parse_select_tokens(
             } else {
                 true // Default to ASC if not specified
             };
-            Some((col.clone(), is_asc))
+            Some((resolve_alias(col, &alias_map), is_asc))
         } else {
             return Err("Expected column after ORDER BY".to_string());
         }
@@ -978,6 +1008,21 @@ fn parse_select_tokens(
     } else {
         None
     };
+
+    let columns = columns.map(|cols| {
+        cols.into_iter()
+            .map(|c| {
+                let mut out = c.clone();
+                for (alias, real) in alias_map.iter() {
+                    let pat = format!("{}.", alias);
+                    if out.contains(&pat) {
+                        out = out.replace(&pat, &format!("{}.", real));
+                    }
+                }
+                out
+            })
+            .collect()
+    });
 
     Ok((
         distinct,
