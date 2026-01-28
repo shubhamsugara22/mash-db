@@ -621,6 +621,27 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             (left_table_name.to_string(), extract_column_name(column))
         };
 
+        // Handle IS NULL / IS NOT NULL
+        if operator == "IS NULL" || operator == "IS NOT NULL" {
+            let is_null = if target_table == left_table_name {
+                false // Left side never NULL in joined row
+            } else if target_table == right_table_name {
+                match col_name {
+                    "id" => jrow.right_id.is_none(),
+                    "username" => jrow.right_username.is_none(),
+                    "email" => jrow.right_email.is_none(),
+                    _ => false,
+                }
+            } else {
+                false
+            };
+            return if operator == "IS NULL" {
+                is_null
+            } else {
+                !is_null
+            };
+        }
+
         // Helpers for comparisons
         fn cmp_u32(val: u32, op: &str, rhs: &str) -> bool {
             let r = rhs.parse::<i64>().unwrap_or(0);

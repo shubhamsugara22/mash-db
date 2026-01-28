@@ -218,6 +218,15 @@ impl Table {
 
     fn evaluate_condition(&self, row: &Row, condition: &(String, String, String)) -> bool {
         let (column, operator, value) = condition;
+
+        // Handle IS NULL / IS NOT NULL (always false for non-joined rows since all fields exist)
+        if operator == "IS NULL" {
+            return false; // Single table rows never have NULL fields
+        }
+        if operator == "IS NOT NULL" {
+            return true; // Single table rows always have non-NULL fields
+        }
+
         match column.as_str() {
             "id" => {
                 let row_id = row.id as i64;

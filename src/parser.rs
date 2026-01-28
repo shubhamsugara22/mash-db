@@ -38,6 +38,9 @@ pub enum Token {
     Le,
     And,
     Or,
+    Is,
+    Not,
+    Null,
     Comma,
     LParen,
     RParen,
@@ -135,6 +138,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "ON" => Token::On,
                     "AND" => Token::And,
                     "OR" => Token::Or,
+                    "IS" => Token::Is,
+                    "NOT" => Token::Not,
+                    "NULL" => Token::Null,
                     _ => Token::Identifier(ident),
                 };
                 tokens.push(token);
@@ -588,30 +594,48 @@ fn parse_select_tokens(
         // Parse first condition
         if let Some(Token::Identifier(col)) = tokens.get(i) {
             i += 1;
-            let op = match tokens.get(i) {
-                Some(Token::Eq) => "=",
-                Some(Token::Ne) => "!=",
-                Some(Token::Gt) => ">",
-                Some(Token::Lt) => "<",
-                Some(Token::Ge) => ">=",
-                Some(Token::Le) => "<=",
-                _ => return Err("Expected operator".to_string()),
-            };
-            i += 1;
-            let val = if let Some(Token::String(v)) = tokens.get(i) {
+            // Check for IS NULL / IS NOT NULL
+            if tokens.get(i) == Some(&Token::Is) {
                 i += 1;
-                v.clone()
-            } else if let Some(Token::Number(v)) = tokens.get(i) {
+                let is_not = if tokens.get(i) == Some(&Token::Not) {
+                    i += 1;
+                    true
+                } else {
+                    false
+                };
+                if tokens.get(i) != Some(&Token::Null) {
+                    return Err("Expected NULL after IS [NOT]".to_string());
+                }
                 i += 1;
-                v.to_string()
-            } else if let Some(Token::Identifier(v)) = tokens.get(i) {
-                i += 1;
-                v.clone()
+                let norm_col = resolve_alias(col, &alias_map);
+                let op = if is_not { "IS NOT NULL" } else { "IS NULL" };
+                conditions.push((norm_col, op.to_string(), String::new()));
             } else {
-                return Err("Expected value".to_string());
-            };
-            let norm_col = resolve_alias(col, &alias_map);
-            conditions.push((norm_col, op.to_string(), val));
+                let op = match tokens.get(i) {
+                    Some(Token::Eq) => "=",
+                    Some(Token::Ne) => "!=",
+                    Some(Token::Gt) => ">",
+                    Some(Token::Lt) => "<",
+                    Some(Token::Ge) => ">=",
+                    Some(Token::Le) => "<=",
+                    _ => return Err("Expected operator".to_string()),
+                };
+                i += 1;
+                let val = if let Some(Token::String(v)) = tokens.get(i) {
+                    i += 1;
+                    v.clone()
+                } else if let Some(Token::Number(v)) = tokens.get(i) {
+                    i += 1;
+                    v.to_string()
+                } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                    i += 1;
+                    v.clone()
+                } else {
+                    return Err("Expected value".to_string());
+                };
+                let norm_col = resolve_alias(col, &alias_map);
+                conditions.push((norm_col, op.to_string(), val));
+            }
         } else {
             return Err("Expected column".to_string());
         }
@@ -630,30 +654,48 @@ fn parse_select_tokens(
 
                 if let Some(Token::Identifier(col)) = tokens.get(i) {
                     i += 1;
-                    let op = match tokens.get(i) {
-                        Some(Token::Eq) => "=",
-                        Some(Token::Ne) => "!=",
-                        Some(Token::Gt) => ">",
-                        Some(Token::Lt) => "<",
-                        Some(Token::Ge) => ">=",
-                        Some(Token::Le) => "<=",
-                        _ => return Err("Expected operator".to_string()),
-                    };
-                    i += 1;
-                    let val = if let Some(Token::String(v)) = tokens.get(i) {
+                    // Check for IS NULL / IS NOT NULL
+                    if tokens.get(i) == Some(&Token::Is) {
                         i += 1;
-                        v.clone()
-                    } else if let Some(Token::Number(v)) = tokens.get(i) {
+                        let is_not = if tokens.get(i) == Some(&Token::Not) {
+                            i += 1;
+                            true
+                        } else {
+                            false
+                        };
+                        if tokens.get(i) != Some(&Token::Null) {
+                            return Err("Expected NULL after IS [NOT]".to_string());
+                        }
                         i += 1;
-                        v.to_string()
-                    } else if let Some(Token::Identifier(v)) = tokens.get(i) {
-                        i += 1;
-                        v.clone()
+                        let norm_col = resolve_alias(col, &alias_map);
+                        let op = if is_not { "IS NOT NULL" } else { "IS NULL" };
+                        conditions.push((norm_col, op.to_string(), String::new()));
                     } else {
-                        return Err("Expected value".to_string());
-                    };
-                    let norm_col = resolve_alias(col, &alias_map);
-                    conditions.push((norm_col, op.to_string(), val));
+                        let op = match tokens.get(i) {
+                            Some(Token::Eq) => "=",
+                            Some(Token::Ne) => "!=",
+                            Some(Token::Gt) => ">",
+                            Some(Token::Lt) => "<",
+                            Some(Token::Ge) => ">=",
+                            Some(Token::Le) => "<=",
+                            _ => return Err("Expected operator".to_string()),
+                        };
+                        i += 1;
+                        let val = if let Some(Token::String(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else if let Some(Token::Number(v)) = tokens.get(i) {
+                            i += 1;
+                            v.to_string()
+                        } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else {
+                            return Err("Expected value".to_string());
+                        };
+                        let norm_col = resolve_alias(col, &alias_map);
+                        conditions.push((norm_col, op.to_string(), val));
+                    }
                 } else {
                     return Err("Expected column after AND/OR".to_string());
                 }
