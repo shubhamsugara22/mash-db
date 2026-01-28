@@ -20,6 +20,8 @@ A simple database implementation in Rust, built from scratch following SQLite ar
   - **HAVING**: Filter grouped results with conditions (e.g., `HAVING COUNT(*) > 1`)
   - **ORDER BY (qualified)**: Sort results ASC/DESC with optional table qualifiers (e.g., `ORDER BY users.username DESC`)
   - **LIMIT/OFFSET**: Paginate results (e.g., `LIMIT 10 OFFSET 5`) — works on joined outputs too
+  - **WHERE with NULL checks**: `IS NULL` and `IS NOT NULL` predicates for filtering (especially useful with LEFT/RIGHT joins)
+  - **Table Aliases**: Simplified references using aliases (e.g., `FROM users u`, `JOIN orders o`)
   - **JOIN Operations**: `INNER`, `LEFT`, `RIGHT` with `ON left.col = right.col`
     - `SELECT * FROM users INNER JOIN orders ON users.id = orders.id`
     - `SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id`
@@ -68,6 +70,9 @@ db > SELECT users.username, orders.id FROM users LEFT JOIN orders ON users.id = 
 (alice, 1)
 (bob, 2)
 Executed.
+db > SELECT u.username FROM users u LEFT JOIN orders o ON u.id = o.id WHERE o.id IS NULL
+(charlie)
+Executed.
 db > .exit
 Bye!
 ```
@@ -95,8 +100,8 @@ Bye!
 - [x] Multi-table support (JOINs - INNER, LEFT, RIGHT)
 - [ ] ORDER BY on aggregate columns
 - [x] Combined row output for JOINs
-- [ ] Table alias support (e.g., `users u`, `orders o`)
-- [ ] WHERE `IS NULL` / `IS NOT NULL`
+- [x] Table alias support (e.g., `users u`, `orders o`)
+- [x] WHERE `IS NULL` / `IS NOT NULL`
 - [ ] More SQL commands (CREATE TABLE, DROP TABLE, ALTER TABLE)
 - [ ] Subqueries
 - [ ] Transactions and ACID properties
