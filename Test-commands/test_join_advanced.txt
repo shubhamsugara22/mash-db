@@ -1,0 +1,114 @@
+# Advanced JOIN Tests: WHERE + ORDER BY + Aliases + IS NULL
+# Tests comprehensive JOIN functionality with filtering, ordering, aliases, and NULL predicates
+
+# Setup test data
+INSERT INTO users VALUES (1, 'alice', 'alice@example.com')
+INSERT INTO users VALUES (2, 'bob', 'bob@example.com')
+INSERT INTO users VALUES (3, 'charlie', 'charlie@example.com')
+INSERT INTO users VALUES (4, 'diana', 'diana@example.com')
+
+# Create orders table with some matching and non-matching records
+# Assuming orders.json exists with: id, user_id, amount, etc.
+# For this test, we assume orders table has records for users 1, 2, 3 (but not 4)
+
+# Test 1: Basic INNER JOIN with qualified columns
+SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id
+
+# Test 2: LEFT JOIN - shows all users, NULL for users without orders
+SELECT users.id, users.username, orders.id FROM users LEFT JOIN orders ON users.id = orders.id
+
+# Test 3: RIGHT JOIN - shows all orders and matching users
+SELECT users.id, users.username, orders.id FROM users RIGHT JOIN orders ON users.id = orders.id
+
+# Test 4: JOIN with WHERE on left table (qualified)
+SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id WHERE users.id > 1
+
+# Test 5: JOIN with WHERE on right table (qualified)
+SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id WHERE orders.id >= 2
+
+# Test 6: JOIN with WHERE on both tables (AND)
+SELECT users.username, orders.id FROM users INNER JOIN orders ON users.id = orders.id WHERE users.id >= 2 AND orders.id < 4
+
+# Test 7: JOIN with WHERE using OR
+SELECT users.username, orders.id FROM users INNER JOIN orders ON users.id = orders.id WHERE users.id = 1 OR orders.id = 3
+
+# Test 8: JOIN with ORDER BY on left table column
+SELECT users.username, orders.id FROM users INNER JOIN orders ON users.id = orders.id ORDER BY users.username ASC
+
+# Test 9: JOIN with ORDER BY on right table column
+SELECT users.username, orders.id FROM users INNER JOIN orders ON users.id = orders.id ORDER BY orders.id DESC
+
+# Test 10: JOIN with ORDER BY and LIMIT
+SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id ORDER BY orders.id ASC LIMIT 2
+
+# Test 11: JOIN with ORDER BY, LIMIT, and OFFSET
+SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id ORDER BY orders.id DESC LIMIT 2 OFFSET 1
+
+# Test 12: Table aliases - basic
+SELECT u.id, u.username FROM users u
+
+# Test 13: Table aliases with JOIN
+SELECT u.id, o.id FROM users u INNER JOIN orders o ON u.id = o.id
+
+# Test 14: Table aliases with WHERE
+SELECT u.username, o.id FROM users u INNER JOIN orders o ON u.id = o.id WHERE u.id > 1
+
+# Test 15: Table aliases with ORDER BY
+SELECT u.username, o.id FROM users u LEFT JOIN orders o ON u.id = o.id ORDER BY o.id ASC
+
+# Test 16: IS NULL - find users without orders (LEFT JOIN)
+SELECT u.username FROM users u LEFT JOIN orders o ON u.id = o.id WHERE o.id IS NULL
+
+# Test 17: IS NOT NULL - find users with orders (LEFT JOIN)
+SELECT u.username FROM users u LEFT JOIN orders o ON u.id = o.id WHERE o.id IS NOT NULL
+
+# Test 18: IS NULL with multiple columns
+SELECT u.id, u.username FROM users u LEFT JOIN orders o ON u.id = o.id WHERE o.username IS NULL
+
+# Test 19: IS NULL combined with other WHERE conditions
+SELECT u.id, u.username FROM users u LEFT JOIN orders o ON u.id = o.id WHERE u.id > 2 AND o.id IS NULL
+
+# Test 20: IS NOT NULL with ORDER BY
+SELECT u.username, o.id FROM users u LEFT JOIN orders o ON u.id = o.id WHERE o.id IS NOT NULL ORDER BY o.id DESC
+
+# Test 21: Complex query - aliases, WHERE, ORDER BY, LIMIT
+SELECT u.username, o.id FROM users u INNER JOIN orders o ON u.id = o.id WHERE u.id >= 2 AND o.id < 10 ORDER BY o.id DESC LIMIT 3
+
+# Test 22: LEFT JOIN with IS NULL, ORDER BY, and LIMIT
+SELECT u.id, u.username FROM users u LEFT JOIN orders o ON u.id = o.id WHERE o.id IS NULL ORDER BY u.id ASC LIMIT 5
+
+# Test 23: Column projection with aliases
+SELECT u.id, u.email, o.id FROM users u INNER JOIN orders o ON u.id = o.id
+
+# Test 24: Unqualified column in WHERE (defaults to left table)
+SELECT users.username, orders.id FROM users INNER JOIN orders ON users.id = orders.id WHERE id > 1
+
+# Test 25: Mix qualified and unqualified columns
+SELECT u.username, o.id FROM users u INNER JOIN orders o ON u.id = o.id WHERE id = 2 OR o.id = 3
+
+# Test 26: ORDER BY with unqualified column (defaults to left table)
+SELECT u.username, o.id FROM users u INNER JOIN orders o ON u.id = o.id ORDER BY username ASC
+
+# Test 27: LEFT JOIN showing NULLs explicitly
+SELECT * FROM users LEFT JOIN orders ON users.id = orders.id
+
+# Test 28: RIGHT JOIN with WHERE filter
+SELECT users.username, orders.id FROM users RIGHT JOIN orders ON users.id = orders.id WHERE orders.id > 1
+
+# Test 29: Multiple WHERE conditions with IS NULL
+SELECT u.username FROM users u LEFT JOIN orders o ON u.id = o.id WHERE u.username != 'alice' AND o.id IS NULL
+
+# Test 30: Combined test - all features
+SELECT u.id, u.username, o.id FROM users u LEFT JOIN orders o ON u.id = o.id WHERE u.id >= 1 ORDER BY u.id ASC, o.id DESC LIMIT 10 OFFSET 0
+
+# Cleanup notes:
+# These tests assume orders.json has appropriate test data
+# Expected behavior:
+# - INNER JOIN: Only matching rows
+# - LEFT JOIN: All left rows, NULL for unmatched right
+# - RIGHT JOIN: All right rows, NULL for unmatched left
+# - IS NULL: Filters for unmatched right-side rows in LEFT JOIN
+# - IS NOT NULL: Filters for matched rows
+# - Aliases work transparently and resolve to real table names
+# - ORDER BY supports qualified names and sorts NULLs last (ASC) or first (DESC)
+# - LIMIT/OFFSET work on final joined result set
