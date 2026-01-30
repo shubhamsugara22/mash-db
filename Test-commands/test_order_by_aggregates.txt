@@ -1,0 +1,77 @@
+# Tests for ORDER BY on Aggregate Columns
+# Tests sorting of GROUP BY results by aggregate functions
+
+# Setup: Insert test data
+INSERT INTO users VALUES (1, 'alice', 'alice@example.com')
+INSERT INTO users VALUES (2, 'bob', 'bob@example.com')
+INSERT INTO users VALUES (3, 'charlie', 'charlie@example.com')
+INSERT INTO users VALUES (4, 'diana', 'diana@example.com')
+INSERT INTO users VALUES (5, 'eve', 'eve@example.com')
+
+# Test 1: GROUP BY with ORDER BY COUNT(*) ASC
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) ASC
+
+# Test 2: GROUP BY with ORDER BY COUNT(*) DESC (highest counts first)
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC
+
+# Test 3: GROUP BY with ORDER BY on regular column (username)
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY username ASC
+
+# Test 4: GROUP BY with ORDER BY on aggregate in descending order
+SELECT id, SUM(id) FROM orders GROUP BY id ORDER BY SUM(id) DESC
+
+# Test 5: GROUP BY with ORDER BY COUNT(DISTINCT)
+SELECT username, COUNT(DISTINCT id) FROM orders GROUP BY username ORDER BY COUNT(DISTINCT id) ASC
+
+# Test 6: Multiple aggregates with ORDER BY on specific aggregate
+SELECT username, COUNT(*), MAX(id) FROM orders GROUP BY username ORDER BY MAX(id) DESC
+
+# Test 7: GROUP BY with LIMIT after ORDER BY on aggregate
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC LIMIT 3
+
+# Test 8: GROUP BY with OFFSET and LIMIT after ORDER BY aggregate
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC LIMIT 2 OFFSET 1
+
+# Test 9: ORDER BY on MIN aggregate
+SELECT username, MIN(id) FROM orders GROUP BY username ORDER BY MIN(id) ASC
+
+# Test 10: ORDER BY on AVG (requires numeric column)
+SELECT id, AVG(id) FROM orders GROUP BY id ORDER BY AVG(id) DESC
+
+# Test 11: Complex - multiple aggregates with different ORDER BY
+SELECT username, COUNT(*), SUM(id) FROM orders GROUP BY username ORDER BY SUM(id) DESC
+
+# Test 12: ORDER BY on COUNT with WHERE clause
+SELECT username, COUNT(*) FROM orders WHERE id > 2 GROUP BY username ORDER BY COUNT(*) ASC
+
+# Test 13: ORDER BY on aggregate with HAVING filter
+SELECT username, COUNT(*) FROM orders GROUP BY username HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC
+
+# Test 14: ORDER BY with fully numeric aggregates
+SELECT id, SUM(id) FROM orders GROUP BY id ORDER BY SUM(id) DESC LIMIT 5
+
+# Test 15: GROUP BY single user and check ordering
+SELECT id, COUNT(*) FROM users GROUP BY id ORDER BY COUNT(*) DESC
+
+# Test 16: Complex GROUP BY with multiple ORDER BY conditions
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY username ASC LIMIT 10
+
+# Test 17: Verify ORDER BY DESC on COUNT puts highest values first
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC LIMIT 1
+
+# Test 18: ORDER BY on aggregate with no GROUP BY (single row result)
+SELECT COUNT(*), SUM(id) FROM orders ORDER BY COUNT(*) ASC
+
+# Test 19: MIN with ORDER BY DESC (largest minimum first)
+SELECT username, MIN(id) FROM orders GROUP BY username ORDER BY MIN(id) DESC
+
+# Test 20: Multiple aggregates with ORDER BY on first column
+SELECT username, COUNT(*), MIN(id) FROM orders GROUP BY username ORDER BY COUNT(*) ASC
+
+# Cleanup notes:
+# Expected behavior:
+# - ORDER BY on aggregates should sort grouped results by the aggregate value
+# - Numeric aggregates (COUNT, SUM, AVG, MIN, MAX) should be sorted numerically
+# - ORDER BY should work with LIMIT/OFFSET
+# - ORDER BY should work with HAVING filters
+# - ASC should put smallest values first, DESC puts largest values first

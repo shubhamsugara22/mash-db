@@ -999,28 +999,84 @@ fn parse_select_tokens(
         None
     };
 
-    // Parse ORDER BY clause
+    // Parse ORDER BY clause (supports both column names and aggregate functions)
     let order_by = if tokens.get(i) == Some(&Token::Order) {
         i += 1;
         if tokens.get(i) != Some(&Token::By) {
             return Err("Expected BY after ORDER".to_string());
         }
         i += 1;
-        if let Some(Token::Identifier(col)) = tokens.get(i) {
-            i += 1;
-            let is_asc = if tokens.get(i) == Some(&Token::Asc) {
-                i += 1;
-                true
-            } else if tokens.get(i) == Some(&Token::Desc) {
-                i += 1;
-                false
-            } else {
-                true // Default to ASC if not specified
+
+        // Check if ORDER BY is on an aggregate function
+        let col = if matches!(
+            tokens.get(i),
+            Some(Token::Count)
+                | Some(Token::Sum)
+                | Some(Token::Avg)
+                | Some(Token::Min)
+                | Some(Token::Max)
+        ) {
+            // Parse aggregate function: COUNT(...), SUM(...), etc.
+            let agg_start = i;
+            let func_name = match tokens.get(i) {
+                Some(Token::Count) => "count",
+                Some(Token::Sum) => "sum",
+                Some(Token::Avg) => "avg",
+                Some(Token::Min) => "min",
+                Some(Token::Max) => "max",
+                _ => unreachable!(),
             };
-            Some((resolve_alias(col, &alias_map), is_asc))
+            i += 1;
+
+            // Expect '(' token
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err(format!("Expected ( after {}", func_name));
+            }
+            i += 1;
+
+            // Handle COUNT(*), COUNT(DISTINCT col), or COUNT(col)
+            let inner = if func_name == "count" && tokens.get(i) == Some(&Token::Star) {
+                i += 1;
+                "*".to_string()
+            } else if tokens.get(i) == Some(&Token::Distinct) {
+                i += 1;
+                if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                    i += 1;
+                    format!("distinct {}", col_name)
+                } else {
+                    return Err("Expected column after DISTINCT".to_string());
+                }
+            } else if let Some(Token::Identifier(col_name)) = tokens.get(i) {
+                i += 1;
+                col_name.clone()
+            } else {
+                return Err(format!("Expected column or * in {}", func_name));
+            };
+
+            // Expect ')' token
+            if tokens.get(i) != Some(&Token::RParen) {
+                return Err(format!("Expected ) after {}(...)", func_name));
+            }
+            i += 1;
+
+            format!("{}({})", func_name, inner)
+        } else if let Some(Token::Identifier(col)) = tokens.get(i) {
+            i += 1;
+            resolve_alias(col, &alias_map)
         } else {
-            return Err("Expected column after ORDER BY".to_string());
-        }
+            return Err("Expected column or aggregate function after ORDER BY".to_string());
+        };
+
+        let is_asc = if tokens.get(i) == Some(&Token::Asc) {
+            i += 1;
+            true
+        } else if tokens.get(i) == Some(&Token::Desc) {
+            i += 1;
+            false
+        } else {
+            true // Default to ASC if not specified
+        };
+        Some((col, is_asc))
     } else {
         None
     };
