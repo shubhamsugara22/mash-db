@@ -16,10 +16,11 @@ A simple database implementation in Rust, built from scratch following SQLite ar
   - `DELETE FROM table WHERE column = 'value'` - Delete rows with WHERE condition
 - **Advanced SQL Features**:
   - **Aggregate Functions**: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`
+    - ✅ **ORDER BY on aggregates**: Sort grouped results by aggregate values (e.g., `ORDER BY COUNT(*) DESC`, `ORDER BY SUM(amount) ASC`)
   - **GROUP BY**: Group results by one or multiple columns (e.g., `GROUP BY username, email`)
   - **HAVING**: Filter grouped results with conditions (e.g., `HAVING COUNT(*) > 1`)
   - **ORDER BY (qualified)**: Sort results ASC/DESC with optional table qualifiers (e.g., `ORDER BY users.username DESC`)
-  - **LIMIT/OFFSET**: Paginate results (e.g., `LIMIT 10 OFFSET 5`) — works on joined outputs too
+  - **LIMIT/OFFSET**: Paginate results (e.g., `LIMIT 10 OFFSET 5`) — works on joined outputs and grouped aggregates
   - **WHERE with NULL checks**: `IS NULL` and `IS NOT NULL` predicates for filtering (especially useful with LEFT/RIGHT joins)
   - **Table Aliases**: Simplified references using aliases (e.g., `FROM users u`, `JOIN orders o`)
   - **JOIN Operations**: `INNER`, `LEFT`, `RIGHT` with `ON left.col = right.col`
@@ -73,8 +74,50 @@ Executed.
 db > SELECT u.username FROM users u LEFT JOIN orders o ON u.id = o.id WHERE o.id IS NULL
 (charlie)
 Executed.
+db > SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC LIMIT 2
+(alice, 2)
+(bob, 1)
+Executed.
+db > SELECT id, SUM(id) FROM orders GROUP BY id ORDER BY SUM(id) DESC
+(3, 3)
+(2, 2)
+Executed.
 db > .exit
 Bye!
+```
+
+## Examples - Advanced Usage
+
+### ORDER BY on Aggregate Functions
+```sql
+-- Count orders per user, sorted by highest count first
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC
+
+-- Sum amounts per user, sorted by total spending (lowest first)
+SELECT username, SUM(amount) FROM orders GROUP BY username ORDER BY SUM(amount) ASC
+
+-- Find users with most distinct order IDs
+SELECT username, COUNT(DISTINCT id) FROM orders GROUP BY username ORDER BY COUNT(DISTINCT id) DESC
+```
+
+### GROUP BY with LIMIT/OFFSET on Aggregates
+```sql
+-- Top 3 users by order count
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC LIMIT 3
+
+-- Skip first 2 users, get next 3 by count
+SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC LIMIT 3 OFFSET 2
+```
+
+### Complex Queries Combining All Features
+```sql
+-- High-value orders for users with multiple orders, sorted by total
+SELECT username, COUNT(*), SUM(amount) FROM orders 
+WHERE amount > 100 
+GROUP BY username 
+HAVING COUNT(*) > 1 
+ORDER BY SUM(amount) DESC 
+LIMIT 5
 ```
 
 ## Architecture
@@ -98,11 +141,12 @@ Bye!
 - [x] MIN/MAX on string columns
 - [x] Multiple GROUP BY columns
 - [x] Multi-table support (JOINs - INNER, LEFT, RIGHT)
-- [ ] ORDER BY on aggregate columns
+- [x] ORDER BY on aggregate columns
 - [x] Combined row output for JOINs
 - [x] Table alias support (e.g., `users u`, `orders o`)
 - [x] WHERE `IS NULL` / `IS NOT NULL`
 - [ ] More SQL commands (CREATE TABLE, DROP TABLE, ALTER TABLE)
+- [ ] LIKE operator for pattern matching
 - [ ] Subqueries
 - [ ] Transactions and ACID properties
 
