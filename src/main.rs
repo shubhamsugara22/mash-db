@@ -912,8 +912,23 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                         }
                     }
 
-                    // Sort, apply distinct, offset/limit
-                    // Note: Simplified - just display results
+                    // Sort aggregate results by ORDER BY, then apply LIMIT/OFFSET
+                    result_rows = apply_sorting_to_aggregates(result_rows, order_by, &agg_cols);
+
+                    // Apply LIMIT/OFFSET to aggregate results
+                    let start = offset.unwrap_or(0) as usize;
+                    let end = if let Some(lim) = limit {
+                        start + lim as usize
+                    } else {
+                        result_rows.len()
+                    };
+                    result_rows = result_rows
+                        .into_iter()
+                        .skip(start)
+                        .take(end.saturating_sub(start))
+                        .collect();
+
+                    // Display results
                     for values in result_rows {
                         println!("({})", values.join(", "));
                     }
@@ -1161,6 +1176,23 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                                 }
                             }
 
+                            // Sort aggregate results by ORDER BY, then apply LIMIT/OFFSET
+                            result_rows =
+                                apply_sorting_to_aggregates(result_rows, order_by, &agg_cols);
+
+                            // Apply LIMIT/OFFSET to aggregate results
+                            let start = offset.unwrap_or(0) as usize;
+                            let end = if let Some(lim) = limit {
+                                start + lim as usize
+                            } else {
+                                result_rows.len()
+                            };
+                            result_rows = result_rows
+                                .into_iter()
+                                .skip(start)
+                                .take(end.saturating_sub(start))
+                                .collect();
+
                             // Display results
                             for values in result_rows {
                                 println!("({})", values.join(", "));
@@ -1329,6 +1361,76 @@ fn apply_joined_sorting(
         });
     }
     jrows
+}
+
+// Sort aggregate results by ORDER BY column
+// Maps aggregate function names in ORDER BY to their result column indices
+fn apply_sorting_to_aggregates(
+    mut result_rows: Vec<Vec<String>>,
+    order_by: Option<(String, bool)>,
+    agg_cols: &[AggregateColumn],
+) -> Vec<Vec<String>> {
+    if let Some((column, is_asc)) = order_by {
+        // Find the index of the column to sort by
+        let sort_index = if column.starts_with("count(")
+            || column.starts_with("sum(")
+            || column.starts_with("avg(")
+            || column.starts_with("min(")
+            || column.starts_with("max(")
+        {
+            // ORDER BY aggregate function - match by function name
+            agg_cols.iter().position(|agg| {
+                let agg_str = match agg {
+                    AggregateColumn::Count(None) => "count(*)".to_string(),
+                    AggregateColumn::Count(Some(col)) => format!("count({})", col),
+                    AggregateColumn::CountDistinct(col) => format!("count(distinct {})", col),
+                    AggregateColumn::Sum(col) => format!("sum({})", col),
+                    AggregateColumn::Avg(col) => format!("avg({})", col),
+                    AggregateColumn::Min(col) => format!("min({})", col),
+                    AggregateColumn::Max(col) => format!("max({})", col),
+                    AggregateColumn::Regular(_) => String::new(),
+                };
+                agg_str.to_lowercase() == column.to_lowercase()
+            })
+        } else {
+            // ORDER BY regular column - match by column name
+            agg_cols.iter().position(|agg| match agg {
+                AggregateColumn::Regular(col) => col.to_lowercase() == column.to_lowercase(),
+                _ => false,
+            })
+        };
+
+        if let Some(idx) = sort_index {
+            result_rows.sort_by(|a, b| {
+                let cmp = if idx < a.len() && idx < b.len() {
+                    // Try to parse as numbers first (for aggregates)
+                    let a_num = a[idx].parse::<f64>();
+                    let b_num = b[idx].parse::<f64>();
+                    match (a_num, b_num) {
+                        (Ok(an), Ok(bn)) => {
+                            // Compare as numbers
+                            if an < bn {
+                                std::cmp::Ordering::Less
+                            } else if an > bn {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Equal
+                            }
+                        }
+                        _ => a[idx].cmp(&b[idx]), // Fall back to string comparison
+                    }
+                } else {
+                    std::cmp::Ordering::Equal
+                };
+                if is_asc {
+                    cmp
+                } else {
+                    cmp.reverse()
+                }
+            });
+        }
+    }
+    result_rows
 }
 
 // Apply LIMIT and OFFSET to joined results
