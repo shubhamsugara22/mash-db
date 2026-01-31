@@ -241,22 +241,69 @@ impl Table {
                     _ => false,
                 }
             }
-            "username" => {
-                if operator == "=" {
-                    row.username == *value
-                } else {
-                    false // Only = supported for strings
-                }
-            }
-            "email" => {
-                if operator == "=" {
-                    row.email == *value
-                } else {
-                    false // Only = supported for strings
-                }
-            }
+            "username" => match operator.as_str() {
+                "=" => row.username == *value,
+                "LIKE" => Self::pattern_match(&row.username, value),
+                _ => false,
+            },
+            "email" => match operator.as_str() {
+                "=" => row.email == *value,
+                "LIKE" => Self::pattern_match(&row.email, value),
+                _ => false,
+            },
             _ => false,
         }
+    }
+
+    /// Pattern matching for LIKE operator
+    /// Supports % (zero or more characters) and _ (single character) wildcards
+    fn pattern_match(text: &str, pattern: &str) -> bool {
+        let mut text_chars: Vec<char> = text.chars().collect();
+        let mut pattern_chars: Vec<char> = pattern.chars().collect();
+
+        Self::pattern_match_recursive(&text_chars, &pattern_chars, 0, 0)
+    }
+
+    fn pattern_match_recursive(
+        text: &[char],
+        pattern: &[char],
+        t_idx: usize,
+        p_idx: usize,
+    ) -> bool {
+        // Both exhausted - match
+        if p_idx >= pattern.len() && t_idx >= text.len() {
+            return true;
+        }
+
+        // Pattern exhausted but text remains - no match
+        if p_idx >= pattern.len() {
+            return false;
+        }
+
+        // Check for % wildcard
+        if pattern[p_idx] == '%' {
+            // Try matching % with zero characters (skip % in pattern)
+            if Self::pattern_match_recursive(text, pattern, t_idx, p_idx + 1) {
+                return true;
+            }
+            // Try matching % with one or more characters
+            if t_idx < text.len() {
+                return Self::pattern_match_recursive(text, pattern, t_idx + 1, p_idx);
+            }
+            return false;
+        }
+
+        // Text exhausted but pattern has non-% characters - no match
+        if t_idx >= text.len() {
+            return false;
+        }
+
+        // Check for _ wildcard or exact character match
+        if pattern[p_idx] == '_' || pattern[p_idx] == text[t_idx] {
+            return Self::pattern_match_recursive(text, pattern, t_idx + 1, p_idx + 1);
+        }
+
+        false
     }
 
     /// Update a row by id.

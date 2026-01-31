@@ -41,6 +41,7 @@ pub enum Token {
     Is,
     Not,
     Null,
+    Like,
     Comma,
     LParen,
     RParen,
@@ -141,6 +142,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "IS" => Token::Is,
                     "NOT" => Token::Not,
                     "NULL" => Token::Null,
+                    "LIKE" => Token::Like,
                     _ => Token::Identifier(ident),
                 };
                 tokens.push(token);
@@ -618,6 +620,7 @@ fn parse_select_tokens(
                     Some(Token::Lt) => "<",
                     Some(Token::Ge) => ">=",
                     Some(Token::Le) => "<=",
+                    Some(Token::Like) => "LIKE",
                     _ => return Err("Expected operator".to_string()),
                 };
                 i += 1;
@@ -678,6 +681,7 @@ fn parse_select_tokens(
                             Some(Token::Lt) => "<",
                             Some(Token::Ge) => ">=",
                             Some(Token::Le) => "<=",
+                            Some(Token::Like) => "LIKE",
                             _ => return Err("Expected operator".to_string()),
                         };
                         i += 1;

@@ -659,6 +659,7 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         fn cmp_str(val: &str, op: &str, rhs: &str) -> bool {
             match op {
                 "=" => val == rhs,
+                "LIKE" => pattern_match(val, rhs),
                 _ => false,
             }
         }
@@ -673,6 +674,40 @@ fn execute_statement(statement: Statement, table: &mut Table) {
                 Some(v) => cmp_str(v, op, rhs),
                 None => false,
             }
+        }
+        fn pattern_match(text: &str, pattern: &str) -> bool {
+            let text_chars: Vec<char> = text.chars().collect();
+            let pattern_chars: Vec<char> = pattern.chars().collect();
+            pattern_match_recursive(&text_chars, &pattern_chars, 0, 0)
+        }
+        fn pattern_match_recursive(
+            text: &[char],
+            pattern: &[char],
+            t_idx: usize,
+            p_idx: usize,
+        ) -> bool {
+            if p_idx >= pattern.len() && t_idx >= text.len() {
+                return true;
+            }
+            if p_idx >= pattern.len() {
+                return false;
+            }
+            if pattern[p_idx] == '%' {
+                if pattern_match_recursive(text, pattern, t_idx, p_idx + 1) {
+                    return true;
+                }
+                if t_idx < text.len() {
+                    return pattern_match_recursive(text, pattern, t_idx + 1, p_idx);
+                }
+                return false;
+            }
+            if t_idx >= text.len() {
+                return false;
+            }
+            if pattern[p_idx] == '_' || pattern[p_idx] == text[t_idx] {
+                return pattern_match_recursive(text, pattern, t_idx + 1, p_idx + 1);
+            }
+            false
         }
 
         if target_table == left_table_name {
