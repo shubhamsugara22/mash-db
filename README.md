@@ -21,6 +21,7 @@ A simple database implementation in Rust, built from scratch following SQLite ar
   - **HAVING**: Filter grouped results with conditions (e.g., `HAVING COUNT(*) > 1`)
   - **ORDER BY (qualified)**: Sort results ASC/DESC with optional table qualifiers (e.g., `ORDER BY users.username DESC`)
   - **LIMIT/OFFSET**: Paginate results (e.g., `LIMIT 10 OFFSET 5`) — works on joined outputs and grouped aggregates
+  - **LIKE Operator**: Pattern matching with `%` (any length) and `_` (single char) wildcards
   - **WHERE with NULL checks**: `IS NULL` and `IS NOT NULL` predicates for filtering (especially useful with LEFT/RIGHT joins)
   - **Table Aliases**: Simplified references using aliases (e.g., `FROM users u`, `JOIN orders o`)
   - **JOIN Operations**: `INNER`, `LEFT`, `RIGHT` with `ON left.col = right.col`
@@ -82,6 +83,9 @@ db > SELECT id, SUM(id) FROM orders GROUP BY id ORDER BY SUM(id) DESC
 (3, 3)
 (2, 2)
 Executed.
+db > SELECT username FROM users WHERE username LIKE 'al%'
+(alice)
+Executed.
 db > .exit
 Bye!
 ```
@@ -120,6 +124,21 @@ ORDER BY SUM(amount) DESC
 LIMIT 5
 ```
 
+### LIKE Pattern Matching
+```sql
+-- Starts with 'al'
+SELECT username FROM users WHERE username LIKE 'al%'
+
+-- Ends with '@example.com'
+SELECT email FROM users WHERE email LIKE '%@example.com'
+
+-- Contains 'li'
+SELECT username FROM users WHERE username LIKE '%li%'
+
+-- Single character wildcard
+SELECT username FROM users WHERE username LIKE 'b_b'
+```
+
 ## Architecture
 
 - `main.rs` - REPL loop, command parsing, and statement execution
@@ -146,7 +165,7 @@ LIMIT 5
 - [x] Table alias support (e.g., `users u`, `orders o`)
 - [x] WHERE `IS NULL` / `IS NOT NULL`
 - [ ] More SQL commands (CREATE TABLE, DROP TABLE, ALTER TABLE)
-- [ ] LIKE operator for pattern matching
+- [x] LIKE operator for pattern matching
 - [ ] Subqueries
 - [ ] Transactions and ACID properties
 
