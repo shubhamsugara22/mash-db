@@ -1,0 +1,70 @@
+# Tests for LIKE Operator Pattern Matching
+# Tests % (zero or more chars) and _ (single char) wildcards
+
+# Test 1: LIKE with prefix pattern (starts with 'al')
+SELECT * FROM users WHERE username LIKE 'al%'
+
+# Test 2: LIKE with suffix pattern (ends with '@example.com')
+SELECT * FROM users WHERE email LIKE '%@example.com'
+
+# Test 3: LIKE with contains pattern (contains 'li')
+SELECT * FROM users WHERE username LIKE '%li%'
+
+# Test 4: LIKE with single character wildcard (b_b matches 'bob')
+SELECT * FROM users WHERE username LIKE 'b_b'
+
+# Test 5: LIKE with exact match (no wildcards)
+SELECT * FROM users WHERE username LIKE 'alice'
+
+# Test 6: LIKE with multiple % wildcards
+SELECT * FROM users WHERE email LIKE '%@%'
+
+# Test 7: LIKE with _ and % combined
+SELECT * FROM users WHERE username LIKE '_li%'
+
+# Test 8: LIKE that matches nothing
+SELECT * FROM users WHERE username LIKE 'xyz%'
+
+# Test 9: LIKE with OR condition
+SELECT username FROM users WHERE username LIKE 'a%' OR username LIKE 'b%'
+
+# Test 10: LIKE with AND condition
+SELECT username FROM users WHERE username LIKE '%li%' AND email LIKE '%example%'
+
+# Test 11: LIKE on email column (prefix)
+SELECT email FROM users WHERE email LIKE 'alice%'
+
+# Test 12: LIKE with ORDER BY
+SELECT username FROM users WHERE username LIKE '%' ORDER BY username ASC
+
+# Test 13: LIKE with LIMIT
+SELECT username FROM users WHERE email LIKE '%@example.com' LIMIT 3
+
+# Test 14: Multiple _ wildcards
+SELECT username FROM users WHERE username LIKE '___'
+
+# Test 15: LIKE matching all (%)
+SELECT username FROM users WHERE username LIKE '%'
+
+# Test 16: Complex pattern with multiple wildcards
+SELECT username FROM users WHERE username LIKE '%a%i%'
+
+# Test 17: LIKE with empty pattern edge case
+SELECT username FROM users WHERE username LIKE ''
+
+# Test 18: Case sensitivity test
+SELECT * FROM users WHERE username LIKE 'ALICE'
+
+# Test 19: LIKE with special pattern at start
+SELECT * FROM users WHERE username LIKE '%ob'
+
+# Test 20: LIKE with DISTINCT
+SELECT DISTINCT username FROM users WHERE username LIKE '%'
+
+# Expected behaviors:
+# - % matches zero or more characters
+# - _ matches exactly one character
+# - Patterns are case-sensitive
+# - Can combine multiple wildcards
+# - Works with WHERE, ORDER BY, LIMIT
+# - Works with AND/OR logical operators
