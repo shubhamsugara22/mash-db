@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{self, Write};
 
 mod column;
@@ -138,6 +139,13 @@ enum Statement {
         value: String,
     },
     DeleteAll,
+    CreateTable {
+        table_name: String,
+        columns: Vec<String>,
+    },
+    DropTable {
+        table_name: String,
+    },
 }
 
 fn print_prompt() {
@@ -236,6 +244,19 @@ fn prepare_statement(input: &str) -> PrepareResult {
                 Ok(id) => PrepareResult::Success(Statement::Delete { id }),
                 Err(_) => PrepareResult::UnrecognizedStatement,
             }
+        }
+    } else if input.to_uppercase().starts_with("CREATE TABLE") {
+        match parser::parse_create_table(input) {
+            Ok((table_name, columns)) => PrepareResult::Success(Statement::CreateTable {
+                table_name,
+                columns,
+            }),
+            Err(_) => PrepareResult::UnrecognizedStatement,
+        }
+    } else if input.to_uppercase().starts_with("DROP TABLE") {
+        match parser::parse_drop_table(input) {
+            Ok(table_name) => PrepareResult::Success(Statement::DropTable { table_name }),
+            Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else {
         PrepareResult::UnrecognizedStatement
@@ -492,7 +513,7 @@ fn passes_having_filter(
     }
 }
 
-fn execute_statement(statement: Statement, table: &mut Table) {
+fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) {
     // Map a logical table name to a backing file path.
     fn table_file_for(name: &str) -> String {
         match name.to_lowercase().as_str() {
@@ -504,15 +525,12 @@ fn execute_statement(statement: Statement, table: &mut Table) {
         }
     }
 
-    // Load a table by name. If the requested name corresponds to the primary table (users), reuse it.
-    fn load_table_by_name(name: &str, primary: &Table) -> Table {
-        if name.eq_ignore_ascii_case("users") {
-            // Create a lightweight copy by saving and reloading to keep semantics uniform.
-            // For simplicity, we instantiate a new Table pointing to the same file.
-            Table::new(table_file_for("users"))
-        } else {
-            Table::new(table_file_for(name))
-        }
+    // Load a table by name from the registry, or create it if it doesn't exist
+    fn load_table_by_name(name: &str, tables: &mut HashMap<String, Table>) -> &mut Table {
+        let name_lower = name.to_lowercase();
+        tables
+            .entry(name_lower.clone())
+            .or_insert_with(|| Table::new(table_file_for(&name_lower)))
     }
 
     // Extract column name from qualified name (e.g., "users.id" -> "id")
@@ -1307,9 +1325,60 @@ fn execute_statement(statement: Statement, table: &mut Table) {
             Err(e) => println!("Error: {}", e),
         },
         Statement::DeleteAll => {
+            // Get the default table (users) for backward compatibility
+            let table = tables.entry("users".to_string()).or_insert_with(|| {
+                Table::new(table_file_for("users"))
+            });
             let count = table.clear();
             table.save().unwrap();
             println!("Deleted {} rows.", count);
+        }
+        Statement::CreateTable { table_name, columns } => {
+            let table_name_lower = table_name.to_lowercase();
+            
+            // Check if table already exists
+            if tables.contains_key(&table_name_lower) {
+                println!("Error: Table '{}' already exists", table_name);
+                return;
+            }
+            
+            // Create new table file
+            let file_path = table_file_for(&table_name_lower);
+            let new_table = Table::new(file_path);
+            
+            // Store table columns metadata (for future schema validation)
+            // For now, we'll just create an empty table
+            tables.insert(table_name_lower.clone(), new_table);
+            
+            println!("Table '{}' created with columns: {}", table_name, columns.join(", "));
+        }
+        Statement::DropTable { table_name } => {
+            let table_name_lower = table_name.to_lowercase();
+            
+            // Check if table exists
+            if !tables.contains_key(&table_name_lower) {
+                println!("Error: Table '{}' does not exist", table_name);
+                return;
+            }
+            
+            // Don't allow dropping the default users table
+            if table_name_lower == "users" {
+                println!("Error: Cannot drop default table 'users'");
+                return;
+            }
+            
+            // Remove table from registry
+            tables.remove(&table_name_lower);
+            
+            // Optionally delete the JSON file
+            let file_path = table_file_for(&table_name_lower);
+            if std::path::Path::new(&file_path).exists() {
+                if let Err(e) = std::fs::remove_file(&file_path) {
+                    println!("Warning: Could not delete table file '{}': {}", file_path, e);
+                }
+            }
+            
+            println!("Table '{}' dropped", table_name);
         }
     }
 }

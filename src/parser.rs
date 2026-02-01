@@ -12,6 +12,9 @@ pub enum Token {
     Update,
     Set,
     Delete,
+    Create,
+    Drop,
+    Table,
     Order,
     By,
     Asc,
@@ -119,6 +122,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "UPDATE" => Token::Update,
                     "SET" => Token::Set,
                     "DELETE" => Token::Delete,
+                    "CREATE" => Token::Create,
+                    "DROP" => Token::Drop,
+                    "TABLE" => Token::Table,
                     "ORDER" => Token::Order,
                     "BY" => Token::By,
                     "ASC" => Token::Asc,
@@ -1362,4 +1368,100 @@ fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(String, String), Strin
         return Err("Extra tokens".to_string());
     }
     Ok((column, value))
+}
+
+// Parse CREATE TABLE statement
+// Syntax: CREATE TABLE table_name (column1 type, column2 type, ...)
+// For now, simplified: CREATE TABLE table_name (id, username, email)
+pub fn parse_create_table(input: &str) -> Result<(String, Vec<String>), String> {
+    let tokens = tokenize(input);
+    parse_create_table_tokens(&tokens)
+}
+
+fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>), String> {
+    if tokens.len() < 5 {
+        return Err("CREATE TABLE requires table name and columns".to_string());
+    }
+
+    let mut i = 0;
+    if tokens.get(i) != Some(&Token::Create) {
+        return Err("Expected CREATE".to_string());
+    }
+    i += 1;
+
+    if tokens.get(i) != Some(&Token::Table) {
+        return Err("Expected TABLE after CREATE".to_string());
+    }
+    i += 1;
+
+    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        name.clone()
+    } else {
+        return Err("Expected table name".to_string());
+    };
+    i += 1;
+
+    if tokens.get(i) != Some(&Token::LParen) {
+        return Err("Expected ( after table name".to_string());
+    }
+    i += 1;
+
+    let mut columns = Vec::new();
+    loop {
+        if let Some(Token::Identifier(col)) = tokens.get(i) {
+            columns.push(col.clone());
+            i += 1;
+
+            // Check for comma or closing paren
+            if tokens.get(i) == Some(&Token::Comma) {
+                i += 1;
+                continue;
+            } else if tokens.get(i) == Some(&Token::RParen) {
+                i += 1;
+                break;
+            } else {
+                return Err("Expected , or ) in column list".to_string());
+            }
+        } else {
+            return Err("Expected column name".to_string());
+        }
+    }
+
+    if columns.is_empty() {
+        return Err("CREATE TABLE requires at least one column".to_string());
+    }
+
+    Ok((table_name, columns))
+}
+
+// Parse DROP TABLE statement
+// Syntax: DROP TABLE table_name
+pub fn parse_drop_table(input: &str) -> Result<String, String> {
+    let tokens = tokenize(input);
+    parse_drop_table_tokens(&tokens)
+}
+
+fn parse_drop_table_tokens(tokens: &[Token]) -> Result<String, String> {
+    if tokens.len() != 3 {
+        return Err("DROP TABLE requires table name".to_string());
+    }
+
+    let mut i = 0;
+    if tokens.get(i) != Some(&Token::Drop) {
+        return Err("Expected DROP".to_string());
+    }
+    i += 1;
+
+    if tokens.get(i) != Some(&Token::Table) {
+        return Err("Expected TABLE after DROP".to_string());
+    }
+    i += 1;
+
+    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        name.clone()
+    } else {
+        return Err("Expected table name".to_string());
+    };
+
+    Ok(table_name)
 }
