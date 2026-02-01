@@ -1,0 +1,25 @@
+# Comprehensive CREATE/DROP TABLE Test
+
+# Create a products table
+CREATE TABLE products (id, name, price)
+
+# Create an inventory table
+CREATE TABLE inventory (id, product_id, quantity)
+
+# Test that we can create another table
+CREATE TABLE customers (id, name, email)
+
+# Drop the inventory table
+DROP TABLE inventory
+
+# Drop the customers table
+DROP TABLE customers
+
+# Try to create a table that already exists (should succeed - table was dropped)
+CREATE TABLE customers (id, name, address)
+
+# Clean up
+DROP TABLE customers
+DROP TABLE products
+
+.exit

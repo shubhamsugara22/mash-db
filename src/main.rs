@@ -526,11 +526,16 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
     }
 
     // Load a table by name from the registry, or create it if it doesn't exist
-    fn load_table_by_name(name: &str, tables: &mut HashMap<String, Table>) -> &mut Table {
+    fn load_table_by_name<'a>(name: &str, tables: &'a mut HashMap<String, Table>) -> &'a mut Table {
         let name_lower = name.to_lowercase();
         tables
             .entry(name_lower.clone())
             .or_insert_with(|| Table::new(table_file_for(&name_lower)))
+    }
+
+    // Get default table for backward compatibility with existing code
+    fn get_default_table<'a>(tables: &'a mut HashMap<String, Table>) -> &'a mut Table {
+        load_table_by_name("users", tables)
     }
 
     // Extract column name from qualified name (e.g., "users.id" -> "id")
@@ -787,16 +792,19 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             id,
             username,
             email,
-        } => match Row::new(id, username, email) {
-            Ok(row) => match table.insert(row) {
-                Ok(()) => {
-                    table.save().unwrap();
-                    println!("Executed.");
-                }
+        } => {
+            let table = get_default_table(tables);
+            match Row::new(id, username, email) {
+                Ok(row) => match table.insert(row) {
+                    Ok(()) => {
+                        table.save().unwrap();
+                        println!("Executed.");
+                    }
+                    Err(e) => println!("Error: {}", e),
+                },
                 Err(e) => println!("Error: {}", e),
-            },
-            Err(e) => println!("Error: {}", e),
-        },
+            }
+        }
         Statement::Select {
             distinct,
             columns,
@@ -809,19 +817,19 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             offset,
             ..
         } => {
-            // Resolve left (from) table
-            let mut left_table_ref: Table = if let Some(ref ft) = from_table {
-                load_table_by_name(ft, table)
-            } else {
-                // Default to users
-                load_table_by_name("users", table)
+            // Resolve left (from) table - get a cloned copy to avoid borrowing issues
+            let table_name = from_table.as_deref().unwrap_or("users");
+            let left_table_clone = {
+                let tbl = load_table_by_name(table_name, tables);
+                // Create a new Table instance pointing to the same file to avoid borrowing issues
+                Table::new(table_file_for(table_name))
             };
 
-            let rows = left_table_ref.select_all();
+            let rows = left_table_clone.select_all();
 
             // Handle JOIN case separately to avoid ownership issues
             if let Some(ref jc) = join {
-                let right_table = load_table_by_name(&jc.table, table);
+                let right_table = Table::new(table_file_for(&jc.table));
                 let jrows = apply_join(
                     rows,
                     &jc.on_left,
@@ -1049,18 +1057,15 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             offset,
             ..
         } => {
-            // Resolve left (from) table
-            let mut left_table_ref: Table = if let Some(ref ft) = from_table {
-                load_table_by_name(ft, table)
-            } else {
-                load_table_by_name("users", table)
-            };
+            // Resolve left (from) table - get a cloned copy to avoid borrowing issues
+            let table_name = from_table.as_deref().unwrap_or("users");
+            let left_table_clone = Table::new(table_file_for(table_name));
 
-            match left_table_ref.select_where_complex(&conditions, &operators) {
+            match left_table_clone.select_where_complex(&conditions, &operators) {
                 Ok(rows) => {
                     // Handle JOIN case separately to avoid ownership issues
                     if let Some(ref jc) = join {
-                        let right_table = load_table_by_name(&jc.table, table);
+                        let right_table = Table::new(table_file_for(&jc.table));
                         let jrows = apply_join(
                             rows,
                             &jc.on_left,
@@ -1303,81 +1308,100 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                 Err(e) => println!("Error: {}", e),
             }
         }
-        Statement::Update { id, column, value } => match table.update(id, &column, &value) {
-            Ok(()) => {
-                table.save().unwrap();
-                println!("Executed.");
+        Statement::Update { id, column, value } => {
+            let table = get_default_table(tables);
+            match table.update(id, &column, &value) {
+                Ok(()) => {
+                    table.save().unwrap();
+                    println!("Executed.");
+                }
+                Err(e) => println!("Error: {}", e),
             }
-            Err(e) => println!("Error: {}", e),
-        },
-        Statement::Delete { id } => match table.delete(id) {
-            Ok(()) => {
-                table.save().unwrap();
-                println!("Executed.");
+        }
+        Statement::Delete { id } => {
+            let table = get_default_table(tables);
+            match table.delete(id) {
+                Ok(()) => {
+                    table.save().unwrap();
+                    println!("Executed.");
+                }
+                Err(e) => println!("Error: {}", e),
             }
-            Err(e) => println!("Error: {}", e),
-        },
-        Statement::DeleteWhere { column, value } => match table.delete_where(&column, &value) {
-            Ok(count) => {
-                table.save().unwrap();
-                println!("Deleted {} rows.", count);
+        }
+        Statement::DeleteWhere { column, value } => {
+            let table = get_default_table(tables);
+            match table.delete_where(&column, &value) {
+                Ok(count) => {
+                    table.save().unwrap();
+                    println!("Deleted {} rows.", count);
+                }
+                Err(e) => println!("Error: {}", e),
             }
-            Err(e) => println!("Error: {}", e),
-        },
+        }
         Statement::DeleteAll => {
             // Get the default table (users) for backward compatibility
-            let table = tables.entry("users".to_string()).or_insert_with(|| {
-                Table::new(table_file_for("users"))
-            });
+            let table = tables
+                .entry("users".to_string())
+                .or_insert_with(|| Table::new(table_file_for("users")));
             let count = table.clear();
             table.save().unwrap();
             println!("Deleted {} rows.", count);
         }
-        Statement::CreateTable { table_name, columns } => {
+        Statement::CreateTable {
+            table_name,
+            columns,
+        } => {
             let table_name_lower = table_name.to_lowercase();
-            
+
             // Check if table already exists
             if tables.contains_key(&table_name_lower) {
                 println!("Error: Table '{}' already exists", table_name);
                 return;
             }
-            
+
             // Create new table file
             let file_path = table_file_for(&table_name_lower);
             let new_table = Table::new(file_path);
-            
+
             // Store table columns metadata (for future schema validation)
             // For now, we'll just create an empty table
             tables.insert(table_name_lower.clone(), new_table);
-            
-            println!("Table '{}' created with columns: {}", table_name, columns.join(", "));
+
+            println!(
+                "Table '{}' created with columns: {}",
+                table_name,
+                columns.join(", ")
+            );
         }
         Statement::DropTable { table_name } => {
             let table_name_lower = table_name.to_lowercase();
-            
+
             // Check if table exists
             if !tables.contains_key(&table_name_lower) {
                 println!("Error: Table '{}' does not exist", table_name);
                 return;
             }
-            
+
             // Don't allow dropping the default users table
             if table_name_lower == "users" {
                 println!("Error: Cannot drop default table 'users'");
                 return;
             }
-            
+
             // Remove table from registry
             tables.remove(&table_name_lower);
-            
+
             // Optionally delete the JSON file
             let file_path = table_file_for(&table_name_lower);
             if std::path::Path::new(&file_path).exists() {
                 if let Err(e) = std::fs::remove_file(&file_path) {
-                    println!("Warning: Could not delete table file '{}': {}", file_path, e);
+                    println!(
+                        "Warning: Could not delete table file '{}': {}",
+                        file_path, e
+                    );
                 }
             }
-            
+
             println!("Table '{}' dropped", table_name);
         }
     }
@@ -1592,7 +1616,9 @@ fn apply_distinct(rows: Vec<&Row>, distinct: bool) -> Vec<&Row> {
 }
 
 fn main() {
-    let mut table = Table::new("data.json".to_string());
+    // Initialize table registry with default "users" table
+    let mut tables: HashMap<String, Table> = HashMap::new();
+    tables.insert("users".to_string(), Table::new("data.json".to_string()));
 
     // Optional: seed a secondary table for JOIN demos if empty
     {
@@ -1607,6 +1633,7 @@ fn main() {
             );
             let _ = orders.save();
         }
+        tables.insert("orders".to_string(), orders);
     }
 
     loop {
@@ -1629,7 +1656,9 @@ fn main() {
         }
 
         if input.starts_with('.') {
-            match do_meta_command(input, &mut table) {
+            // Get the default users table for meta commands
+            let table = tables.get_mut("users").expect("Users table not found");
+            match do_meta_command(input, table) {
                 MetaCommandResult::Success => continue,
                 MetaCommandResult::UnrecognizedCommand => {
                     println!("Unrecognized command '{}'", input);
@@ -1640,7 +1669,7 @@ fn main() {
 
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
-                execute_statement(statement, &mut table);
+                execute_statement(statement, &mut tables);
             }
             PrepareResult::UnrecognizedStatement => {
                 println!("Unrecognized keyword at start of '{}'", input);

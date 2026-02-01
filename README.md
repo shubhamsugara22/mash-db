@@ -14,6 +14,9 @@ A simple database implementation in Rust, built from scratch following SQLite ar
   - `UPDATE table SET column = 'value' WHERE id = number` - Update a row
   - `DELETE FROM table WHERE id = number` - Delete a row by ID
   - `DELETE FROM table WHERE column = 'value'` - Delete rows with WHERE condition
+- **DDL Commands**:
+  - `CREATE TABLE table_name (col1, col2, col3)` - Create a new table with specified columns
+  - `DROP TABLE table_name` - Drop an existing table (removes from registry and deletes .json file)
 - **Advanced SQL Features**:
   - **Aggregate Functions**: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`
     - ✅ **ORDER BY on aggregates**: Sort grouped results by aggregate values (e.g., `ORDER BY COUNT(*) DESC`, `ORDER BY SUM(amount) ASC`)
@@ -90,6 +93,25 @@ db > .exit
 Bye!
 ```
 
+### DDL Commands - CREATE TABLE and DROP TABLE
+```sql
+-- Create a new table
+db > CREATE TABLE products (id, name, price)
+Table 'products' created with columns: id, name, price
+
+-- Create another table
+db > CREATE TABLE inventory (id, product_id, quantity)
+Table 'inventory' created with columns: id, product_id, quantity
+
+-- Drop a table
+db > DROP TABLE inventory
+Table 'inventory' dropped
+
+-- Try to drop non-existent table (error)
+db > DROP TABLE nonexistent
+Error: Table 'nonexistent' does not exist
+```
+
 ## Examples - Advanced Usage
 
 ### ORDER BY on Aggregate Functions
@@ -164,8 +186,9 @@ SELECT username FROM users WHERE username LIKE 'b_b'
 - [x] Combined row output for JOINs
 - [x] Table alias support (e.g., `users u`, `orders o`)
 - [x] WHERE `IS NULL` / `IS NOT NULL`
-- [ ] More SQL commands (CREATE TABLE, DROP TABLE, ALTER TABLE)
+- [x] CREATE TABLE and DROP TABLE commands
 - [x] LIKE operator for pattern matching
+- [ ] ALTER TABLE (add/drop columns, rename)
 - [ ] Subqueries
 - [ ] Transactions and ACID properties
 

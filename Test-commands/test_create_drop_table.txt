@@ -1,0 +1,5 @@
+CREATE TABLE products (id, name, price)
+DROP TABLE products
+CREATE TABLE customers (id, name, email)
+DROP TABLE customers
+.exit

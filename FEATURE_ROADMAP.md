@@ -137,13 +137,22 @@
 
 ## Planned Features - Phase 3 (Enterprise Features)
 
-### 7. Multi-Table Support
-- **CREATE TABLE**: Dynamic table creation
-- **DROP TABLE**: Remove tables
-- **ALTER TABLE**: Modify table structure
-- **Table Metadata**: Store schema information
-- **Priority**: HIGH (prerequisite for JOINs)
-- **Estimated Effort**: 3-4 weeks
+### 7. Multi-Table Support ✅ PARTIALLY COMPLETED
+- ✅ **CREATE TABLE**: Dynamic table creation
+  - `CREATE TABLE table_name (col1, col2, col3)`
+  - Creates new table with specified columns
+  - Stores table registry in HashMap<String, Table>
+  - Generates .json file for persistence
+- ✅ **DROP TABLE**: Remove tables
+  - `DROP TABLE table_name`
+  - Removes table from registry
+  - Deletes corresponding .json file
+  - Error handling for non-existent tables
+- [ ] **ALTER TABLE**: Modify table structure
+- [ ] **Table Metadata**: Store schema information in catalog
+- **Status**: ✅ PARTIALLY COMPLETED (CREATE/DROP implemented)
+- **Priority**: HIGH (prerequisite for enhanced multi-table operations)
+- **Estimated Effort**: 2-3 weeks for remaining features
 
 ### 8. Data Types
 - **Type System**:
