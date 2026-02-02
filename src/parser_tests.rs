@@ -23,7 +23,8 @@ mod tests {
     fn test_parse_insert_simple_format() {
         let result = parse_insert("INSERT 1 alice alice@example.com");
         assert!(result.is_ok());
-        let (id, username, email) = result.unwrap();
+        let (table_name, id, username, email) = result.unwrap();
+        assert!(table_name.is_none());
         assert_eq!(id, 1);
         assert_eq!(username, "alice");
         assert_eq!(email, "alice@example.com");
@@ -33,7 +34,8 @@ mod tests {
     fn test_parse_insert_full_format() {
         let result = parse_insert("INSERT INTO users VALUES (1, 'alice', 'alice@example.com')");
         assert!(result.is_ok());
-        let (id, username, email) = result.unwrap();
+        let (table_name, id, username, email) = result.unwrap();
+        assert_eq!(table_name, Some("users".to_string()));
         assert_eq!(id, 1);
         assert_eq!(username, "alice");
         assert_eq!(email, "alice@example.com");

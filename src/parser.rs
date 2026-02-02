@@ -1146,12 +1146,12 @@ fn parse_select_tokens(
     ))
 }
 
-pub fn parse_insert(input: &str) -> Result<(u32, String, String), String> {
+pub fn parse_insert(input: &str) -> Result<(Option<String>, u32, String, String), String> {
     let tokens = tokenize(input);
     parse_insert_tokens(&tokens)
 }
 
-fn parse_insert_tokens(tokens: &[Token]) -> Result<(u32, String, String), String> {
+fn parse_insert_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String, String), String> {
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Insert) {
         return Err("Expected INSERT".to_string());
@@ -1175,12 +1175,14 @@ fn parse_insert_tokens(tokens: &[Token]) -> Result<(u32, String, String), String
         if i != tokens.len() {
             return Err("Extra tokens".to_string());
         }
-        return Ok((*id, username, email));
+        return Ok((None, *id, username, email));
     }
     // Full format: INSERT [INTO table] VALUES (id, 'username', 'email')
+    let mut table_name: Option<String> = None;
     if tokens.get(i) == Some(&Token::Into) {
         i += 1;
-        if let Some(Token::Identifier(_)) = tokens.get(i) {
+        if let Some(Token::Identifier(name)) = tokens.get(i) {
+            table_name = Some(name.clone());
             i += 1;
         }
     }
@@ -1225,7 +1227,7 @@ fn parse_insert_tokens(tokens: &[Token]) -> Result<(u32, String, String), String
     if i != tokens.len() {
         return Err("Extra tokens".to_string());
     }
-    Ok((id, username, email))
+    Ok((table_name, id, username, email))
 }
 
 pub fn parse_update(input: &str) -> Result<(u32, String, String), String> {

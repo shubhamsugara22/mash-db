@@ -98,6 +98,7 @@ enum PrepareResult {
 
 enum Statement {
     Insert {
+        table_name: Option<String>,
         id: u32,
         username: String,
         email: String,
@@ -165,7 +166,8 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
 fn prepare_statement(input: &str) -> PrepareResult {
     if input.to_uppercase().starts_with("INSERT") {
         match parser::parse_insert(input) {
-            Ok((id, username, email)) => PrepareResult::Success(Statement::Insert {
+            Ok((table_name, id, username, email)) => PrepareResult::Success(Statement::Insert {
+                table_name,
                 id,
                 username,
                 email,
@@ -789,11 +791,16 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
 
     match statement {
         Statement::Insert {
+            table_name,
             id,
             username,
             email,
         } => {
-            let table = get_default_table(tables);
+            let table = if let Some(name) = table_name.as_deref() {
+                load_table_by_name(name, tables)
+            } else {
+                get_default_table(tables)
+            };
             match Row::new(id, username, email) {
                 Ok(row) => match table.insert(row) {
                     Ok(()) => {
@@ -1810,6 +1817,10 @@ mod tests {
         assert_eq!(user_rows.len(), 3);
 
         // Apply LEFT JOIN logic manually
+        let mut tables: std::collections::HashMap<String, Table> = std::collections::HashMap::new();
+        tables.insert("test_left_users".to_string(), users);
+        tables.insert("test_left_orders".to_string(), orders);
+
         let result = super::execute_statement(
             Statement::Select {
                 distinct: false,
@@ -1827,7 +1838,7 @@ mod tests {
                 limit: None,
                 offset: None,
             },
-            &mut users,
+            &mut tables,
         );
     }
 
