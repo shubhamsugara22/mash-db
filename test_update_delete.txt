@@ -1,0 +1,8 @@
+CREATE TABLE products;
+INSERT INTO products VALUES (1, 'Widget', 'Desc A');
+INSERT INTO products VALUES (2, 'Gadget', 'Desc B');
+SELECT * FROM products;
+UPDATE products SET username = 'NewWidget' WHERE id = 1;
+SELECT * FROM products;
+DELETE FROM products WHERE id = 2;
+SELECT * FROM products;

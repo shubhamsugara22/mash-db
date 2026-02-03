@@ -1382,8 +1382,12 @@ fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(Option<String>, String
         return Err("Expected =".to_string());
     }
     i += 1;
+
+    // Handle both string values and numeric values
     let value = if let Some(Token::String(s)) = tokens.get(i) {
         s.clone()
+    } else if let Some(Token::Number(n)) = tokens.get(i) {
+        n.to_string()
     } else {
         return Err("Expected value".to_string());
     };
