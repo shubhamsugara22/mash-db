@@ -105,7 +105,8 @@ mod tests {
     fn test_parse_update() {
         let result = parse_update("UPDATE users SET username = 'newname' WHERE id = 1");
         assert!(result.is_ok());
-        let (id, column, value) = result.unwrap();
+        let (table_name, id, column, value) = result.unwrap();
+        assert_eq!(table_name, Some("users".to_string()));
         assert_eq!(id, 1);
         assert_eq!(column, "username");
         assert_eq!(value, "newname");
@@ -115,14 +116,17 @@ mod tests {
     fn test_parse_delete() {
         let result = parse_delete("DELETE FROM users WHERE id = 5");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 5);
+        let (table_name, id) = result.unwrap();
+        assert_eq!(table_name, Some("users".to_string()));
+        assert_eq!(id, 5);
     }
 
     #[test]
     fn test_parse_delete_where() {
-        let result = parse_delete_where("DELETE WHERE username = 'alice'");
+        let result = parse_delete_where("DELETE FROM users WHERE username = 'alice'");
         assert!(result.is_ok());
-        let (column, value) = result.unwrap();
+        let (table_name, column, value) = result.unwrap();
+        assert_eq!(table_name, Some("users".to_string()));
         assert_eq!(column, "username");
         assert_eq!(value, "alice");
     }
