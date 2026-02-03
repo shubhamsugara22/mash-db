@@ -1360,15 +1360,20 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
         } => {
             let table_name_lower = table_name.to_lowercase();
 
-            // Check if table already exists
+            // Check if table already exists in registry
             if tables.contains_key(&table_name_lower) {
                 println!("Error: Table '{}' already exists", table_name);
                 return;
             }
 
-            // Create new table file
+            // Create new table file - if file exists, clear it
             let file_path = table_file_for(&table_name_lower);
-            let new_table = Table::new(file_path);
+            let mut new_table = Table::new(file_path);
+            // Clear any existing data if the file existed
+            new_table.clear();
+            new_table
+                .save()
+                .unwrap_or_else(|e| eprintln!("Warning: could not save table: {}", e));
 
             // Store table columns metadata (for future schema validation)
             // For now, we'll just create an empty table
