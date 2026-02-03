@@ -1,0 +1,8 @@
+SELECT * FROM users;
+SELECT COUNT(*) FROM users;
+INSERT VALUES (100, 'test', 'test@example.com');
+SELECT * FROM users WHERE id = 100;
+UPDATE users SET username = 'updated' WHERE id = 100;
+SELECT * FROM users WHERE id = 100;
+DELETE FROM users WHERE id = 100;
+SELECT * FROM users WHERE id = 100;
