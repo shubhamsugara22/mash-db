@@ -1,0 +1,23 @@
+DROP TABLE IF EXISTS products;
+CREATE TABLE products;
+INSERT INTO products VALUES (1, 'Widget', 'Description A');
+INSERT INTO products VALUES (2, 'Gadget', 'Description B');
+SELECT * FROM products;
+
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders;
+INSERT INTO orders VALUES (1, 1, 5);
+INSERT INTO orders VALUES (2, 2, 3);
+SELECT * FROM orders;
+
+UPDATE products SET name = 'SuperWidget' WHERE id = 1;
+SELECT * FROM products;
+
+UPDATE orders SET quantity = 10 WHERE id = 1;
+SELECT * FROM orders;
+
+DELETE FROM products WHERE id = 2;
+SELECT * FROM products;
+
+DELETE FROM orders WHERE id = 1;
+SELECT * FROM orders;

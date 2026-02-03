@@ -1,0 +1,70 @@
+-- COMPREHENSIVE MULTI-TABLE TEST SUITE
+-- Tests INSERT, SELECT, UPDATE, DELETE on different tables
+-- Also tests table persistence and retrieval
+
+-- Clean up tables
+DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS users;
+
+-- Create three different tables
+CREATE TABLE products;
+CREATE TABLE orders;
+CREATE TABLE users;
+
+-- Test 1: INSERT INTO products
+INSERT INTO products VALUES (1, 'Widget', 'Description A');
+INSERT INTO products VALUES (2, 'Gadget', 'Description B');
+
+-- Test 2: INSERT INTO orders
+INSERT INTO orders VALUES (1, 1, 5);
+INSERT INTO orders VALUES (2, 2, 3);
+
+-- Test 3: INSERT INTO users (default table)
+INSERT VALUES (1, 'alice', 'alice@example.com');
+INSERT VALUES (2, 'bob', 'bob@example.com');
+
+-- Test 4: SELECT from products
+SELECT * FROM products;
+SELECT id FROM products WHERE id = 1;
+
+-- Test 5: SELECT from orders
+SELECT * FROM orders;
+SELECT id FROM orders WHERE id = 2;
+
+-- Test 6: SELECT from users
+SELECT * FROM users;
+SELECT id FROM users WHERE id = 1;
+
+-- Test 7: UPDATE products
+UPDATE products SET name = 'SuperWidget' WHERE id = 1;
+SELECT * FROM products;
+
+-- Test 8: UPDATE orders
+UPDATE orders SET quantity = 10 WHERE id = 1;
+SELECT * FROM orders;
+
+-- Test 9: DELETE from products
+DELETE FROM products WHERE id = 2;
+SELECT * FROM products;
+
+-- Test 10: DELETE from orders
+DELETE FROM orders WHERE id = 1;
+SELECT * FROM orders;
+
+-- Test 11: Verify users table still intact
+SELECT * FROM users;
+
+-- Test 12: INSERT more data
+INSERT INTO products VALUES (3, 'NewWidget', 'New Description');
+SELECT * FROM products;
+
+-- Test 13: Multiple SELECT on same table
+SELECT id FROM products;
+SELECT * FROM products;
+
+-- Test 14: Aggregate on products
+SELECT COUNT(*) FROM products;
+
+-- Test 15: ORDER BY on products
+SELECT * FROM products ORDER BY id DESC;

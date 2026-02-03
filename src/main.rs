@@ -128,14 +128,17 @@ enum Statement {
         offset: Option<u32>,
     },
     Update {
+        table_name: Option<String>,
         id: u32,
         column: String,
         value: String,
     },
     Delete {
+        table_name: Option<String>,
         id: u32,
     },
     DeleteWhere {
+        table_name: Option<String>,
         column: String,
         value: String,
     },
@@ -176,9 +179,12 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if input.to_uppercase().starts_with("UPDATE") {
         match parser::parse_update(input) {
-            Ok((id, column, value)) => {
-                PrepareResult::Success(Statement::Update { id, column, value })
-            }
+            Ok((table_name, id, column, value)) => PrepareResult::Success(Statement::Update {
+                table_name,
+                id,
+                column,
+                value,
+            }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if input.to_uppercase().starts_with("SELECT") {
@@ -236,14 +242,18 @@ fn prepare_statement(input: &str) -> PrepareResult {
     } else if input.to_uppercase().starts_with("DELETE") {
         if input.to_uppercase().contains("WHERE") {
             match parser::parse_delete_where(input) {
-                Ok((column, value)) => {
-                    PrepareResult::Success(Statement::DeleteWhere { column, value })
-                }
+                Ok((table_name, column, value)) => PrepareResult::Success(Statement::DeleteWhere {
+                    table_name,
+                    column,
+                    value,
+                }),
                 Err(_) => PrepareResult::UnrecognizedStatement,
             }
         } else {
             match parser::parse_delete(input) {
-                Ok(id) => PrepareResult::Success(Statement::Delete { id }),
+                Ok((table_name, id)) => {
+                    PrepareResult::Success(Statement::Delete { table_name, id })
+                }
                 Err(_) => PrepareResult::UnrecognizedStatement,
             }
         }
@@ -1315,8 +1325,16 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                 Err(e) => println!("Error: {}", e),
             }
         }
-        Statement::Update { id, column, value } => {
-            let table = get_default_table(tables);
+        Statement::Update {
+            table_name,
+            id,
+            column,
+            value,
+        } => {
+            let table = match table_name {
+                Some(name) => load_table_by_name(&name, tables),
+                None => get_default_table(tables),
+            };
             match table.update(id, &column, &value) {
                 Ok(()) => {
                     table.save().unwrap();
@@ -1325,8 +1343,11 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                 Err(e) => println!("Error: {}", e),
             }
         }
-        Statement::Delete { id } => {
-            let table = get_default_table(tables);
+        Statement::Delete { table_name, id } => {
+            let table = match table_name {
+                Some(name) => load_table_by_name(&name, tables),
+                None => get_default_table(tables),
+            };
             match table.delete(id) {
                 Ok(()) => {
                     table.save().unwrap();
@@ -1335,8 +1356,15 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                 Err(e) => println!("Error: {}", e),
             }
         }
-        Statement::DeleteWhere { column, value } => {
-            let table = get_default_table(tables);
+        Statement::DeleteWhere {
+            table_name,
+            column,
+            value,
+        } => {
+            let table = match table_name {
+                Some(name) => load_table_by_name(&name, tables),
+                None => get_default_table(tables),
+            };
             match table.delete_where(&column, &value) {
                 Ok(count) => {
                     table.save().unwrap();
@@ -1366,17 +1394,21 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                 return;
             }
 
-            // Create new table file - if file exists, clear it
+            // Remove existing file if it exists (to start fresh)
             let file_path = table_file_for(&table_name_lower);
-            let mut new_table = Table::new(file_path);
-            // Clear any existing data if the file existed
-            new_table.clear();
-            new_table
-                .save()
-                .unwrap_or_else(|e| eprintln!("Warning: could not save table: {}", e));
+            if std::path::Path::new(&file_path).exists() {
+                if let Err(e) = std::fs::remove_file(&file_path) {
+                    eprintln!(
+                        "Warning: Could not remove existing table file '{}': {}",
+                        file_path, e
+                    );
+                }
+            }
 
-            // Store table columns metadata (for future schema validation)
-            // For now, we'll just create an empty table
+            // Create new empty table
+            let new_table = Table::new(file_path);
+
+            // Store table in registry
             tables.insert(table_name_lower.clone(), new_table);
 
             println!(

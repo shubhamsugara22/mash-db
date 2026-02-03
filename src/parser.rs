@@ -1230,20 +1230,38 @@ fn parse_insert_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String,
     Ok((table_name, id, username, email))
 }
 
-pub fn parse_update(input: &str) -> Result<(u32, String, String), String> {
+pub fn parse_update(input: &str) -> Result<(Option<String>, u32, String, String), String> {
     let tokens = tokenize(input);
     parse_update_tokens(&tokens)
 }
 
-fn parse_update_tokens(tokens: &[Token]) -> Result<(u32, String, String), String> {
+fn parse_update_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String, String), String> {
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Update) {
         return Err("Expected UPDATE".to_string());
     }
     i += 1;
-    if let Some(Token::Identifier(_)) = tokens.get(i) {
+
+    let mut table_name: Option<String> = None;
+    let first_ident = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
         i += 1;
+        Some(n)
+    } else {
+        None
+    };
+
+    if tokens.get(i) == Some(&Token::Set) {
+        // Simple format: UPDATE SET column = value WHERE id = ?
+        // first_ident is just consumed but ignored
+    } else if first_ident.is_some() && tokens.get(i) == Some(&Token::Set) {
+        // UPDATE table SET column = value WHERE id = ?
+        table_name = first_ident;
+    } else if first_ident.is_some() {
+        // Could be: UPDATE table SET
+        table_name = first_ident;
     }
+
     if tokens.get(i) != Some(&Token::Set) {
         return Err("Expected SET".to_string());
     }
@@ -1285,26 +1303,30 @@ fn parse_update_tokens(tokens: &[Token]) -> Result<(u32, String, String), String
     if i != tokens.len() {
         return Err("Extra tokens".to_string());
     }
-    Ok((id, column, value))
+    Ok((table_name, id, column, value))
 }
 
-pub fn parse_delete(input: &str) -> Result<u32, String> {
+pub fn parse_delete(input: &str) -> Result<(Option<String>, u32), String> {
     let tokens = tokenize(input);
     parse_delete_tokens(&tokens)
 }
 
-fn parse_delete_tokens(tokens: &[Token]) -> Result<u32, String> {
+fn parse_delete_tokens(tokens: &[Token]) -> Result<(Option<String>, u32), String> {
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Delete) {
         return Err("Expected DELETE".to_string());
     }
     i += 1;
+
+    let mut table_name: Option<String> = None;
     if tokens.get(i) == Some(&Token::From) {
         i += 1;
-        if let Some(Token::Identifier(_)) = tokens.get(i) {
+        if let Some(Token::Identifier(name)) = tokens.get(i) {
+            table_name = Some(name.clone());
             i += 1;
         }
     }
+
     if tokens.get(i) != Some(&Token::Where) {
         return Err("Expected WHERE".to_string());
     }
@@ -1326,23 +1348,26 @@ fn parse_delete_tokens(tokens: &[Token]) -> Result<u32, String> {
     if i != tokens.len() {
         return Err("Extra tokens".to_string());
     }
-    Ok(id)
+    Ok((table_name, id))
 }
 
-pub fn parse_delete_where(input: &str) -> Result<(String, String), String> {
+pub fn parse_delete_where(input: &str) -> Result<(Option<String>, String, String), String> {
     let tokens = tokenize(input);
     parse_delete_where_tokens(&tokens)
 }
 
-fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(String, String), String> {
+fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(Option<String>, String, String), String> {
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Delete) {
         return Err("Expected DELETE".to_string());
     }
     i += 1;
+
+    let mut table_name: Option<String> = None;
     if tokens.get(i) == Some(&Token::From) {
         i += 1;
-        if let Some(Token::Identifier(_)) = tokens.get(i) {
+        if let Some(Token::Identifier(name)) = tokens.get(i) {
+            table_name = Some(name.clone());
             i += 1;
         }
     }
@@ -1369,7 +1394,7 @@ fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(String, String), Strin
     if i != tokens.len() {
         return Err("Extra tokens".to_string());
     }
-    Ok((column, value))
+    Ok((table_name, column, value))
 }
 
 // Parse CREATE TABLE statement
