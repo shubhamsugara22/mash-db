@@ -834,15 +834,14 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             offset,
             ..
         } => {
-            // Resolve left (from) table - get a cloned copy to avoid borrowing issues
+            // Resolve left (from) table - use registry instead of reloading from file
             let table_name = from_table.as_deref().unwrap_or("users");
-            let left_table_clone = {
-                let tbl = load_table_by_name(table_name, tables);
-                // Create a new Table instance pointing to the same file to avoid borrowing issues
-                Table::new(table_file_for(table_name))
-            };
 
-            let rows = left_table_clone.select_all();
+            // Get rows from the registry table (which contains in-memory changes)
+            let rows = {
+                let tbl = load_table_by_name(table_name, tables);
+                tbl.select_all()
+            };
 
             // Handle JOIN case separately to avoid ownership issues
             if let Some(ref jc) = join {
@@ -1074,11 +1073,15 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             offset,
             ..
         } => {
-            // Resolve left (from) table - get a cloned copy to avoid borrowing issues
+            // Resolve left (from) table - use registry instead of reloading from file
             let table_name = from_table.as_deref().unwrap_or("users");
-            let left_table_clone = Table::new(table_file_for(table_name));
 
-            match left_table_clone.select_where_complex(&conditions, &operators) {
+            let select_result = {
+                let tbl = load_table_by_name(table_name, tables);
+                tbl.select_where_complex(&conditions, &operators)
+            };
+
+            match select_result {
                 Ok(rows) => {
                     // Handle JOIN case separately to avoid ownership issues
                     if let Some(ref jc) = join {
