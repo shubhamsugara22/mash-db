@@ -1251,15 +1251,12 @@ fn parse_update_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String,
         None
     };
 
-    if tokens.get(i) == Some(&Token::Set) {
-        // Simple format: UPDATE SET column = value WHERE id = ?
-        // first_ident is just consumed but ignored
-    } else if first_ident.is_some() && tokens.get(i) == Some(&Token::Set) {
-        // UPDATE table SET column = value WHERE id = ?
+    // If we have an identifier followed by SET, that identifier is the table name
+    if first_ident.is_some() && tokens.get(i) == Some(&Token::Set) {
         table_name = first_ident;
-    } else if first_ident.is_some() {
-        // Could be: UPDATE table SET
-        table_name = first_ident;
+    } else if tokens.get(i) != Some(&Token::Set) {
+        // If no SET immediately after first token, check if first was consumed
+        return Err("Expected SET".to_string());
     }
 
     if tokens.get(i) != Some(&Token::Set) {
