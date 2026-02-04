@@ -150,6 +150,7 @@ enum Statement {
     DropTable {
         table_name: String,
     },
+    ShowTables,
 }
 
 fn print_prompt() {
@@ -270,6 +271,8 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Ok(table_name) => PrepareResult::Success(Statement::DropTable { table_name }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
+    } else if input.to_uppercase() == "SHOW TABLES" {
+        PrepareResult::Success(Statement::ShowTables)
     } else {
         PrepareResult::UnrecognizedStatement
     }
@@ -1450,6 +1453,19 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             }
 
             println!("Table '{}' dropped", table_name);
+        }
+        Statement::ShowTables => {
+            let mut table_names: Vec<String> = tables.keys().cloned().collect();
+            table_names.sort();
+
+            if table_names.is_empty() {
+                println!("No tables found.");
+            } else {
+                println!("Tables:");
+                for name in table_names {
+                    println!("  {}", name);
+                }
+            }
         }
     }
 }
