@@ -15,6 +15,7 @@ pub enum Token {
     Create,
     Drop,
     Show,
+    Truncate,
     Table,
     Order,
     By,
@@ -126,6 +127,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "CREATE" => Token::Create,
                     "DROP" => Token::Drop,
                     "SHOW" => Token::Show,
+                    "TRUNCATE" => Token::Truncate,
                     "TABLE" => Token::Table,
                     "ORDER" => Token::Order,
                     "BY" => Token::By,
@@ -1484,6 +1486,32 @@ fn parse_drop_table_tokens(tokens: &[Token]) -> Result<String, String> {
 
     if tokens.get(i) != Some(&Token::Table) {
         return Err("Expected TABLE after DROP".to_string());
+    }
+    i += 1;
+
+    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        name.clone()
+    } else {
+        return Err("Expected table name".to_string());
+    };
+
+    Ok(table_name)
+}
+pub fn parse_truncate_table(input: &str) -> Result<String, String> {
+    let tokens = tokenize(input);
+    parse_truncate_table_tokens(&tokens)
+}
+
+fn parse_truncate_table_tokens(tokens: &[Token]) -> Result<String, String> {
+    let mut i = 0;
+
+    if tokens.get(i) != Some(&Token::Truncate) {
+        return Err("Expected TRUNCATE".to_string());
+    }
+    i += 1;
+
+    if tokens.get(i) != Some(&Token::Table) {
+        return Err("Expected TABLE after TRUNCATE".to_string());
     }
     i += 1;
 

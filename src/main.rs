@@ -150,6 +150,9 @@ enum Statement {
     DropTable {
         table_name: String,
     },
+    TruncateTable {
+        table_name: String,
+    },
     ShowTables,
 }
 
@@ -271,7 +274,12 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Ok(table_name) => PrepareResult::Success(Statement::DropTable { table_name }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_uppercase() == "SHOW TABLES" {
+    } else if input.to_uppercase().starts_with("TRUNCATE TABLE") {
+        match parser::parse_truncate_table(input) {
+            Ok(table_name) => PrepareResult::Success(Statement::TruncateTable { table_name }),
+            Err(_) => PrepareResult::UnrecognizedStatement,
+        }
+    } else if input.to_uppercase().starts_with("SHOW TABLES") {
         PrepareResult::Success(Statement::ShowTables)
     } else {
         PrepareResult::UnrecognizedStatement
@@ -1466,6 +1474,28 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                     println!("  {}", name);
                 }
             }
+        }
+        Statement::TruncateTable { table_name } => {
+            let table_name_lower = table_name.to_lowercase();
+
+            // Check if table exists
+            if !tables.contains_key(&table_name_lower) {
+                println!("Error: Table '{}' does not exist", table_name);
+                return;
+            }
+
+            // Don't allow truncating the default users table
+            if table_name_lower == "users" {
+                println!("Error: Cannot truncate default table 'users'");
+                return;
+            }
+
+            // Clear the table
+            let table = tables.get_mut(&table_name_lower).unwrap();
+            let count = table.clear();
+            table.save().unwrap();
+
+            println!("Truncated table '{}' ({} rows deleted)", table_name, count);
         }
     }
 }
