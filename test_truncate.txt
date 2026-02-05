@@ -1,0 +1,5 @@
+SELECT COUNT(*) FROM orders;
+TRUNCATE TABLE orders;
+SELECT COUNT(*) FROM orders;
+INSERT VALUES (100, 'test', 'test@example.com');
+SELECT COUNT(*) FROM users;
