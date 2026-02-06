@@ -1,0 +1,10 @@
+-- Test WHERE BETWEEN feature
+SELECT * FROM users WHERE id BETWEEN 1 AND 3;
+SELECT COUNT(*) FROM users WHERE id BETWEEN 1 AND 3;
+SELECT * FROM users WHERE id BETWEEN 2 AND 5;
+SELECT COUNT(*) FROM users WHERE id BETWEEN 2 AND 5;
+-- Test with exact range
+SELECT * FROM users WHERE id BETWEEN 1 AND 1;
+SELECT * FROM users WHERE id BETWEEN 10 AND 20;
+-- Test with combined WHERE conditions
+SELECT * FROM users WHERE id BETWEEN 1 AND 2 AND username = 'alice';

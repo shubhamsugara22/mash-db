@@ -271,6 +271,7 @@ impl Table {
                 _ => false,
             }
         }
+    }
 
     /// Pattern matching for LIKE operator
     /// Supports % (zero or more characters) and _ (single character) wildcards
