@@ -227,33 +227,50 @@ impl Table {
             return true; // Single table rows always have non-NULL fields
         }
 
-        match column.as_str() {
-            "id" => {
-                let row_id = row.id as i64;
-                let val: i64 = value.parse().unwrap_or(0);
-                match operator.as_str() {
-                    "=" => row_id == val,
-                    "!=" => row_id != val,
-                    ">" => row_id > val,
-                    "<" => row_id < val,
-                    ">=" => row_id >= val,
-                    "<=" => row_id <= val,
-                    _ => false,
-                }
+        // Handle BETWEEN operator - value format is "min,max"
+        if operator == "BETWEEN" {
+            let parts: Vec<&str> = value.split(',').collect();
+            if parts.len() != 2 {
+                return false;
             }
-            "username" => match operator.as_str() {
-                "=" => row.username == *value,
-                "LIKE" => Self::pattern_match(&row.username, value),
+            let min_val: i64 = parts[0].parse().unwrap_or(0);
+            let max_val: i64 = parts[1].parse().unwrap_or(0);
+
+            match column.as_str() {
+                "id" => {
+                    let row_id = row.id as i64;
+                    row_id >= min_val && row_id <= max_val
+                }
+                _ => false, // BETWEEN only works with numeric columns like id
+            }
+        } else {
+            match column.as_str() {
+                "id" => {
+                    let row_id = row.id as i64;
+                    let val: i64 = value.parse().unwrap_or(0);
+                    match operator.as_str() {
+                        "=" => row_id == val,
+                        "!=" => row_id != val,
+                        ">" => row_id > val,
+                        "<" => row_id < val,
+                        ">=" => row_id >= val,
+                        "<=" => row_id <= val,
+                        _ => false,
+                    }
+                }
+                "username" => match operator.as_str() {
+                    "=" => row.username == *value,
+                    "LIKE" => Self::pattern_match(&row.username, value),
+                    _ => false,
+                },
+                "email" => match operator.as_str() {
+                    "=" => row.email == *value,
+                    "LIKE" => Self::pattern_match(&row.email, value),
+                    _ => false,
+                },
                 _ => false,
-            },
-            "email" => match operator.as_str() {
-                "=" => row.email == *value,
-                "LIKE" => Self::pattern_match(&row.email, value),
-                _ => false,
-            },
-            _ => false,
+            }
         }
-    }
 
     /// Pattern matching for LIKE operator
     /// Supports % (zero or more characters) and _ (single character) wildcards

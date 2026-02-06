@@ -47,6 +47,7 @@ pub enum Token {
     Not,
     Null,
     Like,
+    Between,
     Comma,
     LParen,
     RParen,
@@ -153,6 +154,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "NOT" => Token::Not,
                     "NULL" => Token::Null,
                     "LIKE" => Token::Like,
+                    "BETWEEN" => Token::Between,
                     _ => Token::Identifier(ident),
                 };
                 tokens.push(token);
@@ -622,6 +624,48 @@ fn parse_select_tokens(
                 let norm_col = resolve_alias(col, &alias_map);
                 let op = if is_not { "IS NOT NULL" } else { "IS NULL" };
                 conditions.push((norm_col, op.to_string(), String::new()));
+            } else if tokens.get(i) == Some(&Token::Between) {
+                // Handle BETWEEN operator: column BETWEEN value1 AND value2
+                i += 1;
+                let val1 = if let Some(Token::String(v)) = tokens.get(i) {
+                    i += 1;
+                    v.clone()
+                } else if let Some(Token::Number(v)) = tokens.get(i) {
+                    i += 1;
+                    v.to_string()
+                } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                    i += 1;
+                    v.clone()
+                } else {
+                    return Err("Expected value1 in BETWEEN".to_string());
+                };
+
+                // Expect AND keyword
+                if tokens.get(i) != Some(&Token::And) {
+                    return Err("Expected AND after first value in BETWEEN".to_string());
+                }
+                i += 1;
+
+                let val2 = if let Some(Token::String(v)) = tokens.get(i) {
+                    i += 1;
+                    v.clone()
+                } else if let Some(Token::Number(v)) = tokens.get(i) {
+                    i += 1;
+                    v.to_string()
+                } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                    i += 1;
+                    v.clone()
+                } else {
+                    return Err("Expected value2 in BETWEEN".to_string());
+                };
+
+                let norm_col = resolve_alias(col, &alias_map);
+                // Store as "BETWEEN" operator with format "val1,val2"
+                conditions.push((
+                    norm_col,
+                    "BETWEEN".to_string(),
+                    format!("{},{}", val1, val2),
+                ));
             } else {
                 let op = match tokens.get(i) {
                     Some(Token::Eq) => "=",
