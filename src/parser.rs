@@ -14,6 +14,15 @@ pub enum Token {
     Delete,
     Create,
     Drop,
+    Alter,
+    Add,
+    Column,
+    Rename,
+    To,
+    Begin,
+    Commit,
+    Rollback,
+    Transaction,
     Show,
     Truncate,
     Table,
@@ -35,6 +44,7 @@ pub enum Token {
     Left,
     Right,
     On,
+    In,
     Eq,
     Ne,
     Gt,
@@ -73,6 +83,14 @@ pub struct JoinClause {
     pub table: String,
     pub on_left: String,  // left_table.column
     pub on_right: String, // right_table.column
+}
+
+// ALTER TABLE action representation
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlterTableAction {
+    Rename(String),
+    AddColumn(String),
+    DropColumn(String),
 }
 
 // Aggregate function representation
@@ -127,6 +145,15 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "DELETE" => Token::Delete,
                     "CREATE" => Token::Create,
                     "DROP" => Token::Drop,
+                    "ALTER" => Token::Alter,
+                    "ADD" => Token::Add,
+                    "COLUMN" => Token::Column,
+                    "RENAME" => Token::Rename,
+                    "TO" => Token::To,
+                    "BEGIN" => Token::Begin,
+                    "COMMIT" => Token::Commit,
+                    "ROLLBACK" => Token::Rollback,
+                    "TRANSACTION" => Token::Transaction,
                     "SHOW" => Token::Show,
                     "TRUNCATE" => Token::Truncate,
                     "TABLE" => Token::Table,
@@ -148,6 +175,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "LEFT" => Token::Left,
                     "RIGHT" => Token::Right,
                     "ON" => Token::On,
+                    "IN" => Token::In,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -213,6 +241,83 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         }
     }
     tokens
+}
+
+fn token_to_sql(token: &Token) -> String {
+    match token {
+        Token::Select => "SELECT".to_string(),
+        Token::Distinct => "DISTINCT".to_string(),
+        Token::From => "FROM".to_string(),
+        Token::Where => "WHERE".to_string(),
+        Token::Insert => "INSERT".to_string(),
+        Token::Into => "INTO".to_string(),
+        Token::Values => "VALUES".to_string(),
+        Token::Update => "UPDATE".to_string(),
+        Token::Set => "SET".to_string(),
+        Token::Delete => "DELETE".to_string(),
+        Token::Create => "CREATE".to_string(),
+        Token::Drop => "DROP".to_string(),
+        Token::Alter => "ALTER".to_string(),
+        Token::Add => "ADD".to_string(),
+        Token::Column => "COLUMN".to_string(),
+        Token::Rename => "RENAME".to_string(),
+        Token::To => "TO".to_string(),
+        Token::Begin => "BEGIN".to_string(),
+        Token::Commit => "COMMIT".to_string(),
+        Token::Rollback => "ROLLBACK".to_string(),
+        Token::Transaction => "TRANSACTION".to_string(),
+        Token::Show => "SHOW".to_string(),
+        Token::Truncate => "TRUNCATE".to_string(),
+        Token::Table => "TABLE".to_string(),
+        Token::Order => "ORDER".to_string(),
+        Token::By => "BY".to_string(),
+        Token::Asc => "ASC".to_string(),
+        Token::Desc => "DESC".to_string(),
+        Token::Limit => "LIMIT".to_string(),
+        Token::Offset => "OFFSET".to_string(),
+        Token::Group => "GROUP".to_string(),
+        Token::Having => "HAVING".to_string(),
+        Token::Count => "COUNT".to_string(),
+        Token::Sum => "SUM".to_string(),
+        Token::Avg => "AVG".to_string(),
+        Token::Min => "MIN".to_string(),
+        Token::Max => "MAX".to_string(),
+        Token::Join => "JOIN".to_string(),
+        Token::Inner => "INNER".to_string(),
+        Token::Left => "LEFT".to_string(),
+        Token::Right => "RIGHT".to_string(),
+        Token::On => "ON".to_string(),
+        Token::In => "IN".to_string(),
+        Token::Eq => "=".to_string(),
+        Token::Ne => "!=".to_string(),
+        Token::Gt => ">".to_string(),
+        Token::Lt => "<".to_string(),
+        Token::Ge => ">=".to_string(),
+        Token::Le => "<=".to_string(),
+        Token::And => "AND".to_string(),
+        Token::Or => "OR".to_string(),
+        Token::Is => "IS".to_string(),
+        Token::Not => "NOT".to_string(),
+        Token::Null => "NULL".to_string(),
+        Token::Like => "LIKE".to_string(),
+        Token::Between => "BETWEEN".to_string(),
+        Token::Comma => ",".to_string(),
+        Token::LParen => "(".to_string(),
+        Token::RParen => ")".to_string(),
+        Token::Star => "*".to_string(),
+        Token::Dot => ".".to_string(),
+        Token::Identifier(s) => s.clone(),
+        Token::String(s) => format!("'{}'", s),
+        Token::Number(n) => n.to_string(),
+    }
+}
+
+fn tokens_to_sql(tokens: &[Token]) -> String {
+    tokens
+        .iter()
+        .map(token_to_sql)
+        .collect::<Vec<String>>()
+        .join(" ")
 }
 
 // Helper function to parse SELECT columns (can include aggregates)
@@ -666,6 +771,71 @@ fn parse_select_tokens(
                     "BETWEEN".to_string(),
                     format!("{},{}", val1, val2),
                 ));
+            } else if tokens.get(i) == Some(&Token::In) {
+                // Handle IN operator: column IN (value1, value2, ...) or column IN (SELECT ...)
+                i += 1;
+                if tokens.get(i) != Some(&Token::LParen) {
+                    return Err("Expected ( after IN".to_string());
+                }
+                i += 1;
+
+                let norm_col = resolve_alias(col, &alias_map);
+
+                if tokens.get(i) == Some(&Token::Select) {
+                    let start = i;
+                    let mut depth = 1;
+                    while i < tokens.len() {
+                        match tokens.get(i) {
+                            Some(Token::LParen) => depth += 1,
+                            Some(Token::RParen) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+
+                    if depth != 0 {
+                        return Err("Unclosed subquery in IN".to_string());
+                    }
+
+                    let sub_tokens = &tokens[start..i];
+                    let subquery_sql = tokens_to_sql(sub_tokens);
+                    i += 1; // consume closing ')'
+                    conditions.push((norm_col, "IN_SUBQUERY".to_string(), subquery_sql));
+                } else {
+                    let mut values = Vec::new();
+                    loop {
+                        let val = if let Some(Token::String(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else if let Some(Token::Number(v)) = tokens.get(i) {
+                            i += 1;
+                            v.to_string()
+                        } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else {
+                            return Err("Expected value in IN list".to_string());
+                        };
+                        values.push(val);
+
+                        if tokens.get(i) == Some(&Token::Comma) {
+                            i += 1;
+                            continue;
+                        } else if tokens.get(i) == Some(&Token::RParen) {
+                            i += 1;
+                            break;
+                        } else {
+                            return Err("Expected , or ) in IN list".to_string());
+                        }
+                    }
+
+                    conditions.push((norm_col, "IN".to_string(), values.join(",")));
+                }
             } else {
                 let op = match tokens.get(i) {
                     Some(Token::Eq) => "=",
@@ -727,6 +897,111 @@ fn parse_select_tokens(
                         let norm_col = resolve_alias(col, &alias_map);
                         let op = if is_not { "IS NOT NULL" } else { "IS NULL" };
                         conditions.push((norm_col, op.to_string(), String::new()));
+                    } else if tokens.get(i) == Some(&Token::Between) {
+                        // Handle BETWEEN operator in subsequent conditions
+                        i += 1;
+                        let val1 = if let Some(Token::String(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else if let Some(Token::Number(v)) = tokens.get(i) {
+                            i += 1;
+                            v.to_string()
+                        } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else {
+                            return Err("Expected value1 in BETWEEN".to_string());
+                        };
+
+                        if tokens.get(i) != Some(&Token::And) {
+                            return Err("Expected AND after first value in BETWEEN".to_string());
+                        }
+                        i += 1;
+
+                        let val2 = if let Some(Token::String(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else if let Some(Token::Number(v)) = tokens.get(i) {
+                            i += 1;
+                            v.to_string()
+                        } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else {
+                            return Err("Expected value2 in BETWEEN".to_string());
+                        };
+
+                        let norm_col = resolve_alias(col, &alias_map);
+                        conditions.push((
+                            norm_col,
+                            "BETWEEN".to_string(),
+                            format!("{},{}", val1, val2),
+                        ));
+                    } else if tokens.get(i) == Some(&Token::In) {
+                        // Handle IN operator in subsequent conditions
+                        i += 1;
+                        if tokens.get(i) != Some(&Token::LParen) {
+                            return Err("Expected ( after IN".to_string());
+                        }
+                        i += 1;
+
+                        let norm_col = resolve_alias(col, &alias_map);
+
+                        if tokens.get(i) == Some(&Token::Select) {
+                            let start = i;
+                            let mut depth = 1;
+                            while i < tokens.len() {
+                                match tokens.get(i) {
+                                    Some(Token::LParen) => depth += 1,
+                                    Some(Token::RParen) => {
+                                        depth -= 1;
+                                        if depth == 0 {
+                                            break;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                i += 1;
+                            }
+
+                            if depth != 0 {
+                                return Err("Unclosed subquery in IN".to_string());
+                            }
+
+                            let sub_tokens = &tokens[start..i];
+                            let subquery_sql = tokens_to_sql(sub_tokens);
+                            i += 1; // consume closing ')'
+                            conditions.push((norm_col, "IN_SUBQUERY".to_string(), subquery_sql));
+                        } else {
+                            let mut values = Vec::new();
+                            loop {
+                                let val = if let Some(Token::String(v)) = tokens.get(i) {
+                                    i += 1;
+                                    v.clone()
+                                } else if let Some(Token::Number(v)) = tokens.get(i) {
+                                    i += 1;
+                                    v.to_string()
+                                } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                                    i += 1;
+                                    v.clone()
+                                } else {
+                                    return Err("Expected value in IN list".to_string());
+                                };
+                                values.push(val);
+
+                                if tokens.get(i) == Some(&Token::Comma) {
+                                    i += 1;
+                                    continue;
+                                } else if tokens.get(i) == Some(&Token::RParen) {
+                                    i += 1;
+                                    break;
+                                } else {
+                                    return Err("Expected , or ) in IN list".to_string());
+                                }
+                            }
+
+                            conditions.push((norm_col, "IN".to_string(), values.join(",")));
+                        }
                     } else {
                         let op = match tokens.get(i) {
                             Some(Token::Eq) => "=",
@@ -1508,6 +1783,95 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>), 
     }
 
     Ok((table_name, columns))
+}
+
+// Parse ALTER TABLE statement
+// Syntax:
+//   ALTER TABLE table_name RENAME TO new_name
+//   ALTER TABLE table_name ADD COLUMN column_name
+//   ALTER TABLE table_name DROP COLUMN column_name
+pub fn parse_alter_table(input: &str) -> Result<(String, AlterTableAction), String> {
+    let tokens = tokenize(input);
+    parse_alter_table_tokens(&tokens)
+}
+
+fn parse_alter_table_tokens(tokens: &[Token]) -> Result<(String, AlterTableAction), String> {
+    if tokens.len() < 5 {
+        return Err("ALTER TABLE requires an action".to_string());
+    }
+
+    let mut i = 0;
+    if tokens.get(i) != Some(&Token::Alter) {
+        return Err("Expected ALTER".to_string());
+    }
+    i += 1;
+
+    if tokens.get(i) != Some(&Token::Table) {
+        return Err("Expected TABLE after ALTER".to_string());
+    }
+    i += 1;
+
+    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        name.clone()
+    } else {
+        return Err("Expected table name".to_string());
+    };
+    i += 1;
+
+    match tokens.get(i) {
+        Some(Token::Rename) => {
+            i += 1;
+            if tokens.get(i) != Some(&Token::To) {
+                return Err("Expected TO after RENAME".to_string());
+            }
+            i += 1;
+            let new_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+                name.clone()
+            } else {
+                return Err("Expected new table name".to_string());
+            };
+            i += 1;
+            if i != tokens.len() {
+                return Err("Extra tokens".to_string());
+            }
+            Ok((table_name, AlterTableAction::Rename(new_name)))
+        }
+        Some(Token::Add) => {
+            i += 1;
+            if tokens.get(i) != Some(&Token::Column) {
+                return Err("Expected COLUMN after ADD".to_string());
+            }
+            i += 1;
+            let col_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+                name.clone()
+            } else {
+                return Err("Expected column name".to_string());
+            };
+            i += 1;
+            if i != tokens.len() {
+                return Err("Extra tokens".to_string());
+            }
+            Ok((table_name, AlterTableAction::AddColumn(col_name)))
+        }
+        Some(Token::Drop) => {
+            i += 1;
+            if tokens.get(i) != Some(&Token::Column) {
+                return Err("Expected COLUMN after DROP".to_string());
+            }
+            i += 1;
+            let col_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+                name.clone()
+            } else {
+                return Err("Expected column name".to_string());
+            };
+            i += 1;
+            if i != tokens.len() {
+                return Err("Extra tokens".to_string());
+            }
+            Ok((table_name, AlterTableAction::DropColumn(col_name)))
+        }
+        _ => Err("Expected RENAME, ADD, or DROP in ALTER TABLE".to_string()),
+    }
 }
 
 // Parse DROP TABLE statement

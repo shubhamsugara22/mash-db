@@ -243,6 +243,17 @@ impl Table {
                 }
                 _ => false, // BETWEEN only works with numeric columns like id
             }
+        } else if operator == "IN" {
+            let values: Vec<&str> = value.split(',').map(|v| v.trim()).collect();
+            match column.as_str() {
+                "id" => {
+                    let row_id = row.id as i64;
+                    values.iter().any(|v| v.parse::<i64>().ok() == Some(row_id))
+                }
+                "username" => values.iter().any(|v| *v == row.username),
+                "email" => values.iter().any(|v| *v == row.email),
+                _ => false,
+            }
         } else {
             match column.as_str() {
                 "id" => {

@@ -1,0 +1,5 @@
+-- IN list and IN subquery tests
+SELECT * FROM users WHERE username IN ('alice','bob');
+SELECT * FROM users WHERE id IN (1, 2, 3);
+SELECT * FROM users WHERE id IN (SELECT id FROM users WHERE id BETWEEN 1 AND 3);
+SELECT COUNT(*) FROM users WHERE id IN (SELECT id FROM users WHERE id BETWEEN 1 AND 3);

@@ -188,9 +188,9 @@ SELECT username FROM users WHERE username LIKE 'b_b'
 - [x] WHERE `IS NULL` / `IS NOT NULL`
 - [x] CREATE TABLE and DROP TABLE commands
 - [x] LIKE operator for pattern matching
-- [ ] ALTER TABLE (add/drop columns, rename)
-- [ ] Subqueries
-- [ ] Transactions and ACID properties
+- [x] ALTER TABLE (add/drop columns, rename) — metadata only
+- [x] Subqueries — IN subquery support
+- [x] Transactions — BEGIN/COMMIT/ROLLBACK (snapshot-based)
 
 ## References
 

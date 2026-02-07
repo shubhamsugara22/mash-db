@@ -1,0 +1,8 @@
+-- ALTER TABLE feature (metadata only)
+SHOW TABLES;
+ALTER TABLE orders ADD COLUMN status;
+ALTER TABLE orders DROP COLUMN status;
+ALTER TABLE orders RENAME TO orders_new;
+SHOW TABLES;
+ALTER TABLE orders_new RENAME TO orders;
+SHOW TABLES;

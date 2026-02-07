@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::path::Path;
 
 mod column;
 mod pager;
@@ -96,7 +97,16 @@ enum PrepareResult {
     UnrecognizedStatement,
 }
 
+struct TransactionState {
+    active: bool,
+    table_snapshots: HashMap<String, Vec<Row>>,
+    schema_snapshot: HashMap<String, Vec<String>>,
+}
+
 enum Statement {
+    BeginTransaction,
+    CommitTransaction,
+    RollbackTransaction,
     Insert {
         table_name: Option<String>,
         id: u32,
@@ -147,6 +157,18 @@ enum Statement {
         table_name: String,
         columns: Vec<String>,
     },
+    AlterTableRename {
+        table_name: String,
+        new_name: String,
+    },
+    AlterTableAddColumn {
+        table_name: String,
+        column: String,
+    },
+    AlterTableDropColumn {
+        table_name: String,
+        column: String,
+    },
     DropTable {
         table_name: String,
     },
@@ -171,7 +193,15 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
 }
 
 fn prepare_statement(input: &str) -> PrepareResult {
-    if input.to_uppercase().starts_with("INSERT") {
+    let upper = input.to_uppercase();
+
+    if upper == "BEGIN" || upper == "BEGIN TRANSACTION" {
+        PrepareResult::Success(Statement::BeginTransaction)
+    } else if upper == "COMMIT" || upper == "COMMIT TRANSACTION" {
+        PrepareResult::Success(Statement::CommitTransaction)
+    } else if upper == "ROLLBACK" || upper == "ROLLBACK TRANSACTION" {
+        PrepareResult::Success(Statement::RollbackTransaction)
+    } else if upper.starts_with("INSERT") {
         match parser::parse_insert(input) {
             Ok((table_name, id, username, email)) => PrepareResult::Success(Statement::Insert {
                 table_name,
@@ -181,7 +211,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_uppercase().starts_with("UPDATE") {
+    } else if upper.starts_with("UPDATE") {
         match parser::parse_update(input) {
             Ok((table_name, id, column, value)) => PrepareResult::Success(Statement::Update {
                 table_name,
@@ -191,7 +221,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_uppercase().starts_with("SELECT") {
+    } else if upper.starts_with("SELECT") {
         match parser::parse_select(input) {
             Ok((
                 distinct,
@@ -241,10 +271,10 @@ fn prepare_statement(input: &str) -> PrepareResult {
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_uppercase() == "DELETE ALL" {
+    } else if upper == "DELETE ALL" {
         PrepareResult::Success(Statement::DeleteAll)
-    } else if input.to_uppercase().starts_with("DELETE") {
-        if input.to_uppercase().contains("WHERE") {
+    } else if upper.starts_with("DELETE") {
+        if upper.contains("WHERE") {
             match parser::parse_delete_where(input) {
                 Ok((table_name, column, value)) => PrepareResult::Success(Statement::DeleteWhere {
                     table_name,
@@ -261,7 +291,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
                 Err(_) => PrepareResult::UnrecognizedStatement,
             }
         }
-    } else if input.to_uppercase().starts_with("CREATE TABLE") {
+    } else if upper.starts_with("CREATE TABLE") {
         match parser::parse_create_table(input) {
             Ok((table_name, columns)) => PrepareResult::Success(Statement::CreateTable {
                 table_name,
@@ -269,17 +299,35 @@ fn prepare_statement(input: &str) -> PrepareResult {
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_uppercase().starts_with("DROP TABLE") {
+    } else if upper.starts_with("ALTER TABLE") {
+        match parser::parse_alter_table(input) {
+            Ok((table_name, action)) => match action {
+                parser::AlterTableAction::Rename(new_name) => {
+                    PrepareResult::Success(Statement::AlterTableRename {
+                        table_name,
+                        new_name,
+                    })
+                }
+                parser::AlterTableAction::AddColumn(column) => {
+                    PrepareResult::Success(Statement::AlterTableAddColumn { table_name, column })
+                }
+                parser::AlterTableAction::DropColumn(column) => {
+                    PrepareResult::Success(Statement::AlterTableDropColumn { table_name, column })
+                }
+            },
+            Err(_) => PrepareResult::UnrecognizedStatement,
+        }
+    } else if upper.starts_with("DROP TABLE") {
         match parser::parse_drop_table(input) {
             Ok(table_name) => PrepareResult::Success(Statement::DropTable { table_name }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_uppercase().starts_with("TRUNCATE TABLE") {
+    } else if upper.starts_with("TRUNCATE TABLE") {
         match parser::parse_truncate_table(input) {
             Ok(table_name) => PrepareResult::Success(Statement::TruncateTable { table_name }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if input.to_uppercase().starts_with("SHOW TABLES") {
+    } else if upper.starts_with("SHOW TABLES") {
         PrepareResult::Success(Statement::ShowTables)
     } else {
         PrepareResult::UnrecognizedStatement
@@ -536,7 +584,12 @@ fn passes_having_filter(
     }
 }
 
-fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) {
+fn execute_statement(
+    statement: Statement,
+    tables: &mut HashMap<String, Table>,
+    schemas: &mut HashMap<String, Vec<String>>,
+    tx: &mut TransactionState,
+) {
     // Map a logical table name to a backing file path.
     fn table_file_for(name: &str) -> String {
         match name.to_lowercase().as_str() {
@@ -568,6 +621,83 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
         } else {
             qualified
         }
+    }
+
+    fn execute_subquery_for_in(
+        subquery_sql: &str,
+        tables: &mut HashMap<String, Table>,
+    ) -> Result<Vec<String>, String> {
+        let (
+            distinct,
+            cols,
+            from_table,
+            join,
+            where_clause,
+            group_by,
+            having,
+            order_by,
+            limit,
+            offset,
+        ) = parser::parse_select(subquery_sql)?;
+
+        if join.is_some() || group_by.is_some() || having.is_some() {
+            return Err(
+                "Subquery only supports simple SELECT without JOIN/GROUP BY/HAVING".to_string(),
+            );
+        }
+
+        let cols = cols.ok_or_else(|| "Subquery must select a column".to_string())?;
+        if cols.len() != 1 {
+            return Err("Subquery must select exactly one column".to_string());
+        }
+
+        let col = cols[0].clone();
+        if col == "*" || col.contains('(') {
+            return Err("Subquery column must be a simple column".to_string());
+        }
+
+        let table_name = from_table.unwrap_or_else(|| "users".to_string());
+        let mut rows = {
+            let tbl = load_table_by_name(&table_name, tables);
+            match where_clause {
+                None => tbl.select_all(),
+                Some((conditions, operators)) => {
+                    tbl.select_where_complex(&conditions, &operators)?
+                }
+            }
+        };
+
+        rows = apply_sorting(rows, order_by);
+        rows = apply_distinct(rows, distinct);
+        rows = apply_offset_limit(rows, offset, limit);
+
+        let col_name = extract_column_name(&col);
+        let mut values = Vec::new();
+        for row in rows {
+            match col_name {
+                "id" => values.push(row.id.to_string()),
+                "username" => values.push(row.username.clone()),
+                "email" => values.push(row.email.clone()),
+                _ => return Err("Invalid column in subquery".to_string()),
+            }
+        }
+        Ok(values)
+    }
+
+    fn resolve_in_subqueries(
+        conditions: &[(String, String, String)],
+        tables: &mut HashMap<String, Table>,
+    ) -> Result<Vec<(String, String, String)>, String> {
+        let mut resolved = Vec::new();
+        for (col, op, val) in conditions.iter() {
+            if op == "IN_SUBQUERY" {
+                let values = execute_subquery_for_in(val, tables)?;
+                resolved.push((col.clone(), "IN".to_string(), values.join(",")));
+            } else {
+                resolved.push((col.clone(), op.clone(), val.clone()));
+            }
+        }
+        Ok(resolved)
     }
 
     // Apply JOIN based on join type and return combined rows
@@ -699,6 +829,19 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                 "<" => l < r,
                 ">=" => l >= r,
                 "<=" => l <= r,
+                "BETWEEN" => {
+                    let parts: Vec<&str> = rhs.split(',').collect();
+                    if parts.len() != 2 {
+                        return false;
+                    }
+                    let min_val = parts[0].parse::<i64>().unwrap_or(0);
+                    let max_val = parts[1].parse::<i64>().unwrap_or(0);
+                    l >= min_val && l <= max_val
+                }
+                "IN" => rhs
+                    .split(',')
+                    .filter_map(|v| v.trim().parse::<i64>().ok())
+                    .any(|v| v == l),
                 _ => false,
             }
         }
@@ -706,6 +849,7 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             match op {
                 "=" => val == rhs,
                 "LIKE" => pattern_match(val, rhs),
+                "IN" => rhs.split(',').any(|v| v.trim() == val),
                 _ => false,
             }
         }
@@ -811,6 +955,73 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
     }
 
     match statement {
+        Statement::BeginTransaction => {
+            if tx.active {
+                println!("Error: Transaction already active");
+                return;
+            }
+
+            tx.table_snapshots.clear();
+            for (name, table) in tables.iter() {
+                let rows: Vec<Row> = table.select_all().iter().map(|r| (*r).clone()).collect();
+                tx.table_snapshots.insert(name.clone(), rows);
+            }
+            tx.schema_snapshot = schemas.clone();
+            tx.active = true;
+            println!("Transaction started.");
+        }
+        Statement::CommitTransaction => {
+            if !tx.active {
+                println!("Error: No active transaction");
+                return;
+            }
+
+            for table in tables.values() {
+                let _ = table.save();
+            }
+            save_schemas(schemas);
+            tx.table_snapshots.clear();
+            tx.schema_snapshot.clear();
+            tx.active = false;
+            println!("Transaction committed.");
+        }
+        Statement::RollbackTransaction => {
+            if !tx.active {
+                println!("Error: No active transaction");
+                return;
+            }
+
+            // Remove tables created during transaction
+            let snapshot_keys: std::collections::HashSet<String> =
+                tx.table_snapshots.keys().cloned().collect();
+            let current_keys: Vec<String> = tables.keys().cloned().collect();
+            for name in current_keys {
+                if !snapshot_keys.contains(&name) {
+                    let file_path = table_file_for(&name);
+                    tables.remove(&name);
+                    let _ = std::fs::remove_file(&file_path);
+                }
+            }
+
+            // Restore tables from snapshot
+            for (name, rows) in tx.table_snapshots.iter() {
+                let table = tables
+                    .entry(name.clone())
+                    .or_insert_with(|| Table::new(table_file_for(name)));
+                table.clear();
+                for row in rows.iter().cloned() {
+                    let _ = table.insert(row);
+                }
+                let _ = table.save();
+            }
+
+            *schemas = tx.schema_snapshot.clone();
+            save_schemas(schemas);
+            tx.table_snapshots.clear();
+            tx.schema_snapshot.clear();
+            tx.active = false;
+            println!("Transaction rolled back.");
+        }
         Statement::Insert {
             table_name,
             id,
@@ -1087,9 +1298,17 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             // Resolve left (from) table - use registry instead of reloading from file
             let table_name = from_table.as_deref().unwrap_or("users");
 
+            let resolved_conditions = match resolve_in_subqueries(&conditions, tables) {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    println!("Error: {}", e);
+                    return;
+                }
+            };
+
             let select_result = {
                 let tbl = load_table_by_name(table_name, tables);
-                tbl.select_where_complex(&conditions, &operators)
+                tbl.select_where_complex(&resolved_conditions, &operators)
             };
 
             match select_result {
@@ -1111,10 +1330,10 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                             .map(|s| s.to_lowercase())
                             .unwrap_or_else(|| "users".to_string());
                         let right_table_name = jc.table.to_lowercase();
-                        let jrows = if !conditions.is_empty() {
+                        let jrows = if !resolved_conditions.is_empty() {
                             filter_joined_rows(
                                 jrows,
-                                &conditions,
+                                &resolved_conditions,
                                 &operators,
                                 &left_table_name,
                                 &right_table_name,
@@ -1425,11 +1644,115 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
             // Store table in registry
             tables.insert(table_name_lower.clone(), new_table);
 
+            schemas.insert(table_name_lower.clone(), columns.clone());
+            if !tx.active {
+                save_schemas(schemas);
+            }
+
             println!(
                 "Table '{}' created with columns: {}",
                 table_name,
                 columns.join(", ")
             );
+        }
+        Statement::AlterTableRename {
+            table_name,
+            new_name,
+        } => {
+            let old_name = table_name.to_lowercase();
+            let new_name_lower = new_name.to_lowercase();
+
+            if old_name == "users" {
+                println!("Error: Cannot rename default table 'users'");
+                return;
+            }
+
+            if !tables.contains_key(&old_name) {
+                println!("Error: Table '{}' does not exist", table_name);
+                return;
+            }
+
+            if tables.contains_key(&new_name_lower) {
+                println!("Error: Table '{}' already exists", new_name);
+                return;
+            }
+
+            let old_rows: Vec<Row> = tables
+                .get(&old_name)
+                .unwrap()
+                .select_all()
+                .iter()
+                .map(|r| (*r).clone())
+                .collect();
+
+            let old_file = table_file_for(&old_name);
+            let new_file = table_file_for(&new_name_lower);
+            let _ = std::fs::remove_file(&new_file);
+
+            let mut new_table = Table::new(new_file.clone());
+            for row in old_rows {
+                let _ = new_table.insert(row);
+            }
+            let _ = new_table.save();
+
+            tables.remove(&old_name);
+            tables.insert(new_name_lower.clone(), new_table);
+            let _ = std::fs::remove_file(&old_file);
+
+            if let Some(cols) = schemas.remove(&old_name) {
+                schemas.insert(new_name_lower.clone(), cols);
+            }
+            if !tx.active {
+                save_schemas(schemas);
+            }
+
+            println!("Table '{}' renamed to '{}'", table_name, new_name);
+        }
+        Statement::AlterTableAddColumn { table_name, column } => {
+            let table_name_lower = table_name.to_lowercase();
+            if !tables.contains_key(&table_name_lower) {
+                println!("Error: Table '{}' does not exist", table_name);
+                return;
+            }
+
+            let cols = schemas.entry(table_name_lower.clone()).or_default();
+            if cols.iter().any(|c| c.eq_ignore_ascii_case(&column)) {
+                println!("Error: Column '{}' already exists", column);
+                return;
+            }
+            cols.push(column.clone());
+            if !tx.active {
+                save_schemas(schemas);
+            }
+            println!(
+                "Column '{}' added to table '{}' (metadata only)",
+                column, table_name
+            );
+        }
+        Statement::AlterTableDropColumn { table_name, column } => {
+            let table_name_lower = table_name.to_lowercase();
+            if !tables.contains_key(&table_name_lower) {
+                println!("Error: Table '{}' does not exist", table_name);
+                return;
+            }
+
+            if let Some(cols) = schemas.get_mut(&table_name_lower) {
+                let before = cols.len();
+                cols.retain(|c| !c.eq_ignore_ascii_case(&column));
+                if cols.len() == before {
+                    println!("Error: Column '{}' does not exist", column);
+                    return;
+                }
+                if !tx.active {
+                    save_schemas(schemas);
+                }
+                println!(
+                    "Column '{}' dropped from table '{}' (metadata only)",
+                    column, table_name
+                );
+            } else {
+                println!("Error: No schema found for table '{}'", table_name);
+            }
         }
         Statement::DropTable { table_name } => {
             let table_name_lower = table_name.to_lowercase();
@@ -1458,6 +1781,11 @@ fn execute_statement(statement: Statement, tables: &mut HashMap<String, Table>) 
                         file_path, e
                     );
                 }
+            }
+
+            schemas.remove(&table_name_lower);
+            if !tx.active {
+                save_schemas(schemas);
             }
 
             println!("Table '{}' dropped", table_name);
@@ -1708,10 +2036,57 @@ fn apply_distinct(rows: Vec<&Row>, distinct: bool) -> Vec<&Row> {
     unique_rows
 }
 
+const SCHEMA_FILE: &str = "schemas.json";
+
+fn load_schemas() -> HashMap<String, Vec<String>> {
+    if Path::new(SCHEMA_FILE).exists() {
+        if let Ok(contents) = std::fs::read_to_string(SCHEMA_FILE) {
+            if let Ok(schemas) = serde_json::from_str::<HashMap<String, Vec<String>>>(&contents) {
+                return schemas;
+            }
+        }
+    }
+    HashMap::new()
+}
+
+fn save_schemas(schemas: &HashMap<String, Vec<String>>) {
+    if let Ok(json) = serde_json::to_string_pretty(schemas) {
+        let _ = std::fs::write(SCHEMA_FILE, json);
+    }
+}
+
 fn main() {
     // Initialize table registry with default "users" table
     let mut tables: HashMap<String, Table> = HashMap::new();
     tables.insert("users".to_string(), Table::new("data.json".to_string()));
+
+    // Load or initialize schema registry
+    let mut schemas = load_schemas();
+    if schemas.is_empty() {
+        schemas.insert(
+            "users".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+        schemas.insert(
+            "orders".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+        save_schemas(&schemas);
+    }
+
+    let mut tx_state = TransactionState {
+        active: false,
+        table_snapshots: HashMap::new(),
+        schema_snapshot: HashMap::new(),
+    };
 
     // Optional: seed a secondary table for JOIN demos if empty
     {
@@ -1762,7 +2137,7 @@ fn main() {
 
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
-                execute_statement(statement, &mut tables);
+                execute_statement(statement, &mut tables, &mut schemas, &mut tx_state);
             }
             PrepareResult::UnrecognizedStatement => {
                 println!("Unrecognized keyword at start of '{}'", input);
@@ -1907,6 +2282,31 @@ mod tests {
         tables.insert("test_left_users".to_string(), users);
         tables.insert("test_left_orders".to_string(), orders);
 
+        let mut schemas: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        schemas.insert(
+            "test_left_users".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+        schemas.insert(
+            "test_left_orders".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+
+        let mut tx_state = TransactionState {
+            active: false,
+            table_snapshots: std::collections::HashMap::new(),
+            schema_snapshot: std::collections::HashMap::new(),
+        };
+
         let result = super::execute_statement(
             Statement::Select {
                 distinct: false,
@@ -1925,6 +2325,8 @@ mod tests {
                 offset: None,
             },
             &mut tables,
+            &mut schemas,
+            &mut tx_state,
         );
     }
 
