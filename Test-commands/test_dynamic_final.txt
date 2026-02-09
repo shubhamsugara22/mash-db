@@ -1,0 +1,45 @@
+-- Comprehensive Dynamic Row Structure Test Suite
+
+-- Test 1: Multiple custom tables with different schemas
+CREATE TABLE stores (id, name, city, opening_year, manager)
+CREATE TABLE sales (id, store_id, amount, date, product_type)
+
+-- Test 2: Insert into first custom table
+INSERT INTO stores VALUES (1, 'Downtown', 'NYC', '2020', 'John')
+INSERT INTO stores VALUES (2, 'Midtown', 'NYC', '2021', 'Jane')
+INSERT INTO stores VALUES (3, 'Brooklyn', 'NYC', '2019', 'Bob')
+
+-- Test 3: Insert into second custom table
+INSERT INTO sales VALUES (1, '1', '5000', '2024-01', 'Electronics')
+INSERT INTO sales VALUES (2, '1', '3000', '2024-02', 'Clothing')
+INSERT INTO sales VALUES (3, '2', '7000', '2024-01', 'Electronics')
+INSERT INTO sales VALUES (4, '2', '4000', '2024-02', 'Furniture')
+INSERT INTO sales VALUES (5, '3', '6000', '2024-01', 'Electronics')
+
+-- Test 4: SELECT from custom table (all columns)
+SELECT * FROM stores
+
+-- Test 5: SELECT from custom table (specific columns)
+SELECT name, manager FROM stores
+
+-- Test 6: WHERE on custom columns
+SELECT name, city FROM stores WHERE opening_year > '2019'
+
+-- Test 7: ORDER BY on custom columns
+SELECT name, opening_year FROM stores ORDER BY opening_year ASC
+
+-- Test 8: GROUP BY and aggregates on custom table
+SELECT product_type, SUM(amount) FROM sales GROUP BY product_type
+
+-- Test 9: Multiple aggregates
+SELECT store_id, COUNT(id), SUM(amount) FROM sales GROUP BY store_id
+
+-- Test 10: Verify backward compatibility with default users table
+INSERT INTO users VALUES (1, 'user1', 'user1@test.com')
+INSERT INTO users VALUES (2, 'user2', 'user2@test.com')
+SELECT * FROM users
+
+-- Test 11: Show all tables in system
+SHOW TABLES
+
+.exit

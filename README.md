@@ -2,40 +2,67 @@
 
 A simple database implementation in Rust, built from scratch following SQLite architecture.
 
+## 🎉 Major Feature: Dynamic Schema Support
+
+**NEW** - The database now supports custom table schemas with arbitrary columns! No longer limited to (id, username, email).
+
+### Examples:
+```sql
+-- Create a custom table with any columns
+CREATE TABLE products (id, name, price, stock, category)
+INSERT INTO products VALUES (1, 'Widget', '19.99', '100', 'Tools')
+SELECT * FROM products
+-- Output: (1, Widget, 19.99, 100, Tools)
+
+-- Create another table with different schema
+CREATE TABLE stores (id, name, city, opening_year, manager)
+INSERT INTO stores VALUES (1, 'Downtown', 'NYC', '2020', 'John')
+SELECT name, manager FROM stores
+-- Output: (Downtown, John)
+
+-- All operations work with custom columns
+SELECT category, SUM(stock) FROM products GROUP BY category
+SELECT name FROM products WHERE price > '15' ORDER BY name
+```
+
 ## Current Features
 
+- **Dynamic Schema Support** ✨ NEW - Create tables with any columns (no fixed structure)
 - **REPL Interface** - Interactive command-line interface with `db >` prompt
 - **Meta Commands** - `.exit` to quit the database, `.save <filename>` to save data, `.load <filename>` to load data
 - **Basic SQL Support**:
-  - `INSERT INTO table VALUES (id, 'username', 'email')` - Insert a row
-  - `SELECT * FROM table` - Retrieve all rows
+  - `INSERT INTO table VALUES (val1, val2, val3, ...)` - Insert rows with custom columns
+  - `SELECT * FROM table` - Retrieve all rows with all columns
+  - `SELECT col1, col2 FROM table` - Select specific columns
   - `SELECT * FROM table WHERE column = 'value'` - Select rows with WHERE condition
   - `SELECT DISTINCT column FROM table` - Select unique values
   - `UPDATE table SET column = 'value' WHERE id = number` - Update a row
   - `DELETE FROM table WHERE id = number` - Delete a row by ID
   - `DELETE FROM table WHERE column = 'value'` - Delete rows with WHERE condition
 - **DDL Commands**:
-  - `CREATE TABLE table_name (col1, col2, col3)` - Create a new table with specified columns
+  - `CREATE TABLE table_name (col1, col2, col3, ...)` - Create a new table with custom columns
   - `DROP TABLE table_name` - Drop an existing table (removes from registry and deletes .json file)
+  - `ALTER TABLE table_name RENAME TO new_name` - Rename a table
 - **Advanced SQL Features**:
   - **Aggregate Functions**: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`
-    - ✅ **ORDER BY on aggregates**: Sort grouped results by aggregate values (e.g., `ORDER BY COUNT(*) DESC`, `ORDER BY SUM(amount) ASC`)
-  - **GROUP BY**: Group results by one or multiple columns (e.g., `GROUP BY username, email`)
-  - **HAVING**: Filter grouped results with conditions (e.g., `HAVING COUNT(*) > 1`)
-  - **ORDER BY (qualified)**: Sort results ASC/DESC with optional table qualifiers (e.g., `ORDER BY users.username DESC`)
-  - **LIMIT/OFFSET**: Paginate results (e.g., `LIMIT 10 OFFSET 5`) — works on joined outputs and grouped aggregates
-  - **LIKE Operator**: Pattern matching with `%` (any length) and `_` (single char) wildcards
-  - **WHERE with NULL checks**: `IS NULL` and `IS NOT NULL` predicates for filtering (especially useful with LEFT/RIGHT joins)
-  - **Table Aliases**: Simplified references using aliases (e.g., `FROM users u`, `JOIN orders o`)
+    - ✅ **Works with custom columns**: Aggregates compute over any column
+    - ✅ **ORDER BY on aggregates**: Sort grouped results by aggregate values (e.g., `ORDER BY COUNT(*) DESC`)
+  - **GROUP BY**: Group results by any columns (e.g., `GROUP BY category, supplier`)
+  - **HAVING**: Filter grouped results with conditions
+  - **ORDER BY (qualified)**: Sort results ASC/DESC with table qualifiers
+  - **LIMIT/OFFSET**: Paginate results
+  - **LIKE Operator**: Pattern matching with `%` and `_` wildcards
+  - **WHERE with NULL checks**: `IS NULL` and `IS NOT NULL` predicates
+  - **Table Aliases**: Simplified references using aliases
   - **JOIN Operations**: `INNER`, `LEFT`, `RIGHT` with `ON left.col = right.col`
-    - `SELECT * FROM users INNER JOIN orders ON users.id = orders.id`
-    - `SELECT users.id, orders.id FROM users INNER JOIN orders ON users.id = orders.id`
-    - `SELECT users.username, orders.id FROM users LEFT JOIN orders ON users.id = orders.id`
-- **B-Tree Indexing** - Efficient O(log n) lookups for ID-based operations, and fast lookups for username and email
-- **In-Memory Storage** - Table stores rows in a Vec with B-Tree indexes
-- **Data Validation** - Username (max 32 chars) and email (max 255 chars) length checks
-- **Persistence** - Save/load table to/from JSON files
-- **Comprehensive Testing** - 86 passing tests covering all SQL features
+- **B-Tree Indexing** - Efficient O(log n) lookups for indexed columns
+- **In-Memory Storage** - Table stores rows in a Vec with B-Tree indexes for id
+- **Data Validation** - Column value length checks
+- **Persistence** - Save/load tables to/from JSON files
+- **Schema Registry** - Tracks column schemas for each table, persists to schemas.json
+- **Backward Compatibility** - Original (id, username, email) fixed schema still fully supported
+- **Multiple Table Support** - Different tables can have completely different schemas
+- **Comprehensive Testing** - 86+ passing tests covering all SQL features
 
 ## Usage
 

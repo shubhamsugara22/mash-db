@@ -1,0 +1,30 @@
+-- Test 1: Create custom table with different columns
+CREATE TABLE inventory (id, product_name, quantity, location, supplier)
+INSERT INTO inventory VALUES (1, 'CPU', '50', 'Warehouse-A', 'TechSupply')
+INSERT INTO inventory VALUES (2, 'RAM', '100', 'Warehouse-B', 'MemoryCore')
+INSERT INTO inventory VALUES (3, 'SSD', '30', 'Warehouse-A', 'TechSupply')
+
+-- Test 2: SELECT all from custom table
+SELECT * FROM inventory
+
+-- Test 3: SELECT specific columns from custom table
+SELECT product_name, quantity FROM inventory
+
+-- Test 4: WHERE clause with custom columns
+SELECT product_name, quantity FROM inventory WHERE quantity > '40'
+
+-- Test 5: ORDER BY on custom columns
+SELECT product_name, quantity FROM inventory ORDER BY quantity DESC
+
+-- Test 6: GROUP BY on custom columns
+SELECT supplier, SUM(quantity) FROM inventory GROUP BY supplier
+
+-- Test 7: Backward compatibility - test default users table still works
+INSERT INTO users VALUES (1, 'alice', 'alice@example.com')
+INSERT INTO users VALUES (2, 'bob', 'bob@example.com')
+SELECT * FROM users
+
+-- Test 8: Check both tables exist
+SHOW TABLES
+
+.exit

@@ -1,4 +1,16 @@
 {
+  "inventory": [
+    "id",
+    "product_name",
+    "quantity",
+    "location",
+    "supplier"
+  ],
+  "users": [
+    "id",
+    "username",
+    "email"
+  ],
   "orders": [
     "id",
     "username",
@@ -11,9 +23,18 @@
     "stock",
     "category"
   ],
-  "users": [
+  "stores": [
     "id",
-    "username",
-    "email"
+    "name",
+    "city",
+    "opening_year",
+    "manager"
+  ],
+  "sales": [
+    "id",
+    "store_id",
+    "amount",
+    "date",
+    "product_type"
   ]
 }
