@@ -1,0 +1,19 @@
+{
+  "orders": [
+    "id",
+    "username",
+    "email"
+  ],
+  "products": [
+    "id",
+    "name",
+    "price",
+    "stock",
+    "category"
+  ],
+  "users": [
+    "id",
+    "username",
+    "email"
+  ]
+}

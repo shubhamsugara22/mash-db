@@ -1,0 +1,9 @@
+CREATE TABLE products (id, name, price, stock, category)
+INSERT INTO products VALUES (1, 'Widget', '19.99', '100', 'Tools')
+INSERT INTO products VALUES (2, 'Gadget', '29.99', '50', 'Electronics')
+INSERT INTO products VALUES (3, 'Hammer', '15.00', '75', 'Tools')
+SELECT * FROM products
+SELECT name, price FROM products WHERE price > '18'
+SELECT category, SUM(stock) FROM products GROUP BY category
+SHOW TABLES
+.exit

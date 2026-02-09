@@ -683,7 +683,7 @@ fn execute_statement(
         let mut resolved = Vec::new();
         for (col, op, val) in conditions.iter() {
             if op == "IN_SUBQUERY" {
-                let values = execute_subquery_for_in(val, tables)?;
+                let values = execute_subquery_for_in(val, tables, schemas)?;
                 resolved.push((col.clone(), "IN".to_string(), values.join(",")));
             } else {
                 resolved.push((col.clone(), op.clone(), val.clone()));
@@ -997,9 +997,10 @@ fn execute_statement(
 
             // Restore tables from snapshot
             for (name, rows) in tx.table_snapshots.iter() {
+                let schema = get_schema_for(name, schemas);
                 let table = tables
                     .entry(name.clone())
-                    .or_insert_with(|| Table::new(table_file_for(name)));
+                    .or_insert_with(|| Table::new(table_file_for(name), schema.clone()));
                 table.clear();
                 for row in rows.iter().cloned() {
                     let _ = table.insert(row);
@@ -1014,18 +1015,14 @@ fn execute_statement(
             tx.active = false;
             println!("Transaction rolled back.");
         }
-        Statement::Insert {
-            table_name,
-            id,
-            username,
-            email,
-        } => {
+        Statement::Insert { table_name, values } => {
             let table = if let Some(name) = table_name.as_deref() {
-                load_table_by_name(name, tables)
+                load_table_by_name(name, tables, schemas)
             } else {
-                get_default_table(tables)
+                get_default_table(tables, schemas)
             };
-            match Row::new(id, username, email) {
+            let schema = table.schema().clone();
+            match Row::from_values(&schema, values) {
                 Ok(row) => match table.insert(row) {
                     Ok(()) => {
                         table.save().unwrap();
@@ -1053,13 +1050,14 @@ fn execute_statement(
 
             // Get rows from the registry table (which contains in-memory changes)
             let rows = {
-                let tbl = load_table_by_name(table_name, tables);
+                let tbl = load_table_by_name(table_name, tables, schemas);
                 tbl.select_all()
             };
 
             // Handle JOIN case separately to avoid ownership issues
             if let Some(ref jc) = join {
-                let right_table = Table::new(table_file_for(&jc.table));
+                let right_schema = get_schema_for(&jc.table, schemas);
+                let right_table = Table::new(table_file_for(&jc.table), right_schema);
                 let jrows = apply_join(
                     rows,
                     &jc.on_left,
@@ -1178,7 +1176,8 @@ fn execute_statement(
             if has_aggregates {
                 if let Some(ref group_cols) = group_by {
                     // GROUP BY with aggregates
-                    let groups = group_rows_by_columns(rows, group_cols);
+                    let table_schema = get_schema_for(table_name, schemas);
+                    let groups = group_rows_by_columns(rows, group_cols, &table_schema);
 
                     // Parse columns for aggregates
                     let agg_cols: Vec<AggregateColumn> = match &columns {
@@ -1194,7 +1193,7 @@ fn execute_statement(
                     for (_, group_rows) in groups {
                         let mut values = Vec::new();
                         for agg in &agg_cols {
-                            values.push(compute_aggregate(agg, &group_rows));
+                            values.push(compute_aggregate(agg, &group_rows, &table_schema));
                         }
 
                         // Apply HAVING filter
@@ -1239,9 +1238,10 @@ fn execute_statement(
                     };
 
                     // Compute aggregates over all rows
+                    let table_schema = get_schema_for(table_name, schemas);
                     let mut values = Vec::new();
                     for agg in &agg_cols {
-                        values.push(compute_aggregate(agg, &rows));
+                        values.push(compute_aggregate(agg, &rows, &table_schema));
                     }
                     println!("({})", values.join(", "));
                 }
@@ -1252,19 +1252,25 @@ fn execute_statement(
                 rows = apply_distinct(rows, distinct);
                 rows = apply_offset_limit(rows, offset, limit);
 
+                let table_schema = get_schema_for(table_name, schemas);
                 for row in rows {
                     match &columns {
-                        None => println!("({}, {}, {})", row.id, row.username, row.email),
+                        None => {
+                            // Print all columns from schema
+                            let values: Vec<String> = table_schema
+                                .iter()
+                                .map(|col| row.get_value(col).unwrap_or_else(|| "NULL".to_string()))
+                                .collect();
+                            println!("({})", values.join(", "));
+                        }
                         Some(cols) => {
                             let mut values: Vec<String> = Vec::new();
                             for col in cols.iter() {
                                 let col_name = extract_column_name(col);
-                                match col_name {
-                                    "id" => values.push(row.id.to_string()),
-                                    "username" => values.push(row.username.clone()),
-                                    "email" => values.push(row.email.clone()),
-                                    other => values.push(format!("NULL({})", other)),
-                                }
+                                values.push(
+                                    row.get_value(col_name)
+                                        .unwrap_or_else(|| format!("NULL({})", col_name)),
+                                );
                             }
                             println!("({})", values.join(", "));
                         }
@@ -1290,7 +1296,7 @@ fn execute_statement(
             // Resolve left (from) table - use registry instead of reloading from file
             let table_name = from_table.as_deref().unwrap_or("users");
 
-            let resolved_conditions = match resolve_in_subqueries(&conditions, tables) {
+            let resolved_conditions = match resolve_in_subqueries(&conditions, tables, schemas) {
                 Ok(resolved) => resolved,
                 Err(e) => {
                     println!("Error: {}", e);
@@ -1299,7 +1305,7 @@ fn execute_statement(
             };
 
             let select_result = {
-                let tbl = load_table_by_name(table_name, tables);
+                let tbl = load_table_by_name(table_name, tables, schemas);
                 tbl.select_where_complex(&resolved_conditions, &operators)
             };
 
@@ -1307,7 +1313,8 @@ fn execute_statement(
                 Ok(rows) => {
                     // Handle JOIN case separately to avoid ownership issues
                     if let Some(ref jc) = join {
-                        let right_table = Table::new(table_file_for(&jc.table));
+                        let right_schema = get_schema_for(&jc.table, schemas);
+                        let right_table = Table::new(table_file_for(&jc.table), right_schema);
                         let jrows = apply_join(
                             rows,
                             &jc.on_left,
@@ -1451,7 +1458,8 @@ fn execute_statement(
                     if has_aggregates {
                         if let Some(ref group_cols) = group_by {
                             // GROUP BY with aggregates
-                            let groups = group_rows_by_columns(rows, group_cols);
+                            let table_schema = get_schema_for(table_name, schemas);
+                            let groups = group_rows_by_columns(rows, group_cols, &table_schema);
 
                             // Parse columns for aggregates
                             let agg_cols: Vec<AggregateColumn> = match &columns {
@@ -1467,7 +1475,7 @@ fn execute_statement(
                             for (_, group_rows) in groups {
                                 let mut values = Vec::new();
                                 for agg in &agg_cols {
-                                    values.push(compute_aggregate(agg, &group_rows));
+                                    values.push(compute_aggregate(agg, &group_rows, &table_schema));
                                 }
 
                                 // Apply HAVING filter
@@ -1513,9 +1521,10 @@ fn execute_statement(
                             };
 
                             // Compute aggregates over filtered rows
+                            let table_schema = get_schema_for(table_name, schemas);
                             let mut values = Vec::new();
                             for agg in &agg_cols {
-                                values.push(compute_aggregate(agg, &rows));
+                                values.push(compute_aggregate(agg, &rows, &table_schema));
                             }
                             println!("({})", values.join(", "));
                         }
@@ -1526,19 +1535,27 @@ fn execute_statement(
                         rows = apply_distinct(rows, distinct);
                         rows = apply_offset_limit(rows, offset, limit);
 
+                        let table_schema = get_schema_for(table_name, schemas);
                         for row in rows {
                             match &columns {
-                                None => println!("({}, {}, {})", row.id, row.username, row.email),
+                                None => {
+                                    // Print all columns from schema
+                                    let values: Vec<String> = table_schema
+                                        .iter()
+                                        .map(|col| {
+                                            row.get_value(col).unwrap_or_else(|| "NULL".to_string())
+                                        })
+                                        .collect();
+                                    println!("({})", values.join(", "));
+                                }
                                 Some(cols) => {
                                     let mut values = Vec::new();
                                     for col in cols {
                                         let col_name = extract_column_name(col);
-                                        match col_name {
-                                            "id" => values.push(row.id.to_string()),
-                                            "username" => values.push(row.username.clone()),
-                                            "email" => values.push(row.email.clone()),
-                                            other => values.push(format!("NULL({})", other)),
-                                        }
+                                        values.push(
+                                            row.get_value(col_name)
+                                                .unwrap_or_else(|| format!("NULL({})", col_name)),
+                                        );
                                     }
                                     println!("({})", values.join(", "));
                                 }
@@ -1557,8 +1574,8 @@ fn execute_statement(
             value,
         } => {
             let table = match table_name {
-                Some(name) => load_table_by_name(&name, tables),
-                None => get_default_table(tables),
+                Some(name) => load_table_by_name(&name, tables, schemas),
+                None => get_default_table(tables, schemas),
             };
             match table.update(id, &column, &value) {
                 Ok(()) => {
@@ -1570,8 +1587,8 @@ fn execute_statement(
         }
         Statement::Delete { table_name, id } => {
             let table = match table_name {
-                Some(name) => load_table_by_name(&name, tables),
-                None => get_default_table(tables),
+                Some(name) => load_table_by_name(&name, tables, schemas),
+                None => get_default_table(tables, schemas),
             };
             match table.delete(id) {
                 Ok(()) => {
@@ -1587,8 +1604,8 @@ fn execute_statement(
             value,
         } => {
             let table = match table_name {
-                Some(name) => load_table_by_name(&name, tables),
-                None => get_default_table(tables),
+                Some(name) => load_table_by_name(&name, tables, schemas),
+                None => get_default_table(tables, schemas),
             };
             match table.delete_where(&column, &value) {
                 Ok(count) => {
@@ -1600,9 +1617,10 @@ fn execute_statement(
         }
         Statement::DeleteAll => {
             // Get the default table (users) for backward compatibility
+            let schema = get_schema_for("users", schemas);
             let table = tables
                 .entry("users".to_string())
-                .or_insert_with(|| Table::new(table_file_for("users")));
+                .or_insert_with(|| Table::new(table_file_for("users"), schema));
             let count = table.clear();
             table.save().unwrap();
             println!("Deleted {} rows.", count);
@@ -1631,7 +1649,7 @@ fn execute_statement(
             }
 
             // Create new empty table
-            let new_table = Table::new(file_path);
+            let new_table = Table::new(file_path, columns.clone());
 
             // Store table in registry
             tables.insert(table_name_lower.clone(), new_table);
@@ -1681,7 +1699,8 @@ fn execute_statement(
             let new_file = table_file_for(&new_name_lower);
             let _ = std::fs::remove_file(&new_file);
 
-            let mut new_table = Table::new(new_file.clone());
+            let schema = get_schema_for(&old_name, schemas);
+            let mut new_table = Table::new(new_file.clone(), schema);
             for row in old_rows {
                 let _ = new_table.insert(row);
             }
@@ -2050,7 +2069,15 @@ fn save_schemas(schemas: &HashMap<String, Vec<String>>) {
 fn main() {
     // Initialize table registry with default "users" table
     let mut tables: HashMap<String, Table> = HashMap::new();
-    tables.insert("users".to_string(), Table::new("data.json".to_string()));
+    let default_schema = vec![
+        "id".to_string(),
+        "username".to_string(),
+        "email".to_string(),
+    ];
+    tables.insert(
+        "users".to_string(),
+        Table::new("data.json".to_string(), default_schema.clone()),
+    );
 
     // Load or initialize schema registry
     let mut schemas = load_schemas();
@@ -2082,7 +2109,7 @@ fn main() {
 
     // Optional: seed a secondary table for JOIN demos if empty
     {
-        let mut orders = Table::new("orders.json".to_string());
+        let mut orders = Table::new("orders.json".to_string(), default_schema.clone());
         if orders.select_all().is_empty() {
             let _ = orders
                 .insert(Row::new(1, "alice".to_string(), "alice@orders.com".to_string()).unwrap());
