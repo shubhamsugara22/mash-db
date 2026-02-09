@@ -1469,12 +1469,12 @@ fn parse_select_tokens(
     ))
 }
 
-pub fn parse_insert(input: &str) -> Result<(Option<String>, u32, String, String), String> {
+pub fn parse_insert(input: &str) -> Result<(Option<String>, Vec<String>), String> {
     let tokens = tokenize(input);
     parse_insert_tokens(&tokens)
 }
 
-fn parse_insert_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String, String), String> {
+fn parse_insert_tokens(tokens: &[Token]) -> Result<(Option<String>, Vec<String>), String> {
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Insert) {
         return Err("Expected INSERT".to_string());
@@ -1482,6 +1482,8 @@ fn parse_insert_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String,
     i += 1;
     // Check if simple format: INSERT id username email
     if let Some(Token::Number(id)) = tokens.get(i) {
+        let mut values: Vec<String> = Vec::new();
+        values.push(id.to_string());
         i += 1;
         let username = if let Some(Token::Identifier(u)) = tokens.get(i) {
             u.clone()
@@ -1498,7 +1500,9 @@ fn parse_insert_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String,
         if i != tokens.len() {
             return Err("Extra tokens".to_string());
         }
-        return Ok((None, *id, username, email));
+        values.push(username);
+        values.push(email);
+        return Ok((None, values));
     }
     // Full format: INSERT [INTO table] VALUES (id, 'username', 'email')
     let mut table_name: Option<String> = None;
@@ -1517,40 +1521,32 @@ fn parse_insert_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String,
         return Err("Expected (".to_string());
     }
     i += 1;
-    let id = if let Some(Token::Number(n)) = tokens.get(i) {
-        *n
-    } else {
-        return Err("Expected id number".to_string());
-    };
-    i += 1;
-    if tokens.get(i) != Some(&Token::Comma) {
-        return Err("Expected ,".to_string());
+    let mut values: Vec<String> = Vec::new();
+    loop {
+        let token = tokens.get(i).ok_or("Expected value".to_string())?;
+        match token {
+            Token::Number(n) => values.push(n.to_string()),
+            Token::String(s) => values.push(s.clone()),
+            Token::Identifier(s) => values.push(s.clone()),
+            _ => return Err("Expected value".to_string()),
+        }
+        i += 1;
+        match tokens.get(i) {
+            Some(Token::Comma) => {
+                i += 1;
+                continue;
+            }
+            Some(Token::RParen) => {
+                i += 1;
+                break;
+            }
+            _ => return Err("Expected , or )".to_string()),
+        }
     }
-    i += 1;
-    let username = if let Some(Token::String(s)) = tokens.get(i) {
-        s.clone()
-    } else {
-        return Err("Expected username string".to_string());
-    };
-    i += 1;
-    if tokens.get(i) != Some(&Token::Comma) {
-        return Err("Expected ,".to_string());
-    }
-    i += 1;
-    let email = if let Some(Token::String(s)) = tokens.get(i) {
-        s.clone()
-    } else {
-        return Err("Expected email string".to_string());
-    };
-    i += 1;
-    if tokens.get(i) != Some(&Token::RParen) {
-        return Err("Expected )".to_string());
-    }
-    i += 1;
     if i != tokens.len() {
         return Err("Extra tokens".to_string());
     }
-    Ok((table_name, id, username, email))
+    Ok((table_name, values))
 }
 
 pub fn parse_update(input: &str) -> Result<(Option<String>, u32, String, String), String> {

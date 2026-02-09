@@ -109,9 +109,7 @@ enum Statement {
     RollbackTransaction,
     Insert {
         table_name: Option<String>,
-        id: u32,
-        username: String,
-        email: String,
+        values: Vec<String>,
     },
     Select {
         distinct: bool,
@@ -203,12 +201,9 @@ fn prepare_statement(input: &str) -> PrepareResult {
         PrepareResult::Success(Statement::RollbackTransaction)
     } else if upper.starts_with("INSERT") {
         match parser::parse_insert(input) {
-            Ok((table_name, id, username, email)) => PrepareResult::Success(Statement::Insert {
-                table_name,
-                id,
-                username,
-                email,
-            }),
+            Ok((table_name, values)) => {
+                PrepareResult::Success(Statement::Insert { table_name, values })
+            }
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if upper.starts_with("UPDATE") {
@@ -338,6 +333,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
 fn group_rows_by_columns<'a>(
     rows: Vec<&'a Row>,
     group_by_cols: &[String],
+    schema: &[String],
 ) -> std::collections::HashMap<String, Vec<&'a Row>> {
     let mut groups: std::collections::HashMap<String, Vec<&'a Row>> =
         std::collections::HashMap::new();
@@ -345,11 +341,10 @@ fn group_rows_by_columns<'a>(
     for row in rows {
         let mut group_key = Vec::new();
         for col in group_by_cols {
-            match col.as_str() {
-                "id" => group_key.push(row.id.to_string()),
-                "username" => group_key.push(row.username.clone()),
-                "email" => group_key.push(row.email.clone()),
-                _ => group_key.push("NULL".to_string()),
+            if schema.iter().any(|c| c == col) {
+                group_key.push(row.get_value(col).unwrap_or("NULL".to_string()));
+            } else {
+                group_key.push("NULL".to_string());
             }
         }
         let key = group_key.join("|");
@@ -360,58 +355,49 @@ fn group_rows_by_columns<'a>(
 }
 
 // Helper function to compute aggregate value for a group of rows
-fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row]) -> String {
+fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) -> String {
     match agg {
         AggregateColumn::Regular(col) => {
             // For regular columns in GROUP BY, just return the first row's value
             if let Some(first_row) = rows.first() {
-                match col.as_str() {
-                    "id" => first_row.id.to_string(),
-                    "username" => first_row.username.clone(),
-                    "email" => first_row.email.clone(),
-                    _ => "NULL".to_string(),
+                if schema.iter().any(|c| c == col) {
+                    first_row.get_value(col).unwrap_or("NULL".to_string())
+                } else {
+                    "NULL".to_string()
                 }
             } else {
                 "NULL".to_string()
             }
         }
-        AggregateColumn::Count(col_opt) => {
-            match col_opt {
-                None => rows.len().to_string(), // COUNT(*)
-                Some(col) => {
-                    // COUNT(col) - count non-null values
-                    let count = rows
-                        .iter()
-                        .filter(|row| match col.as_str() {
-                            "id" => true,
-                            "username" => !row.username.is_empty(),
-                            "email" => !row.email.is_empty(),
-                            _ => false,
-                        })
-                        .count();
-                    count.to_string()
-                }
+        AggregateColumn::Count(col_opt) => match col_opt {
+            None => rows.len().to_string(), // COUNT(*)
+            Some(col) => {
+                // COUNT(col) - count non-null values
+                let count = rows
+                    .iter()
+                    .filter(|row| {
+                        if schema.iter().any(|c| c == col) {
+                            row.get_value_ref(col)
+                                .map(|v| !v.is_empty())
+                                .unwrap_or(false)
+                        } else {
+                            false
+                        }
+                    })
+                    .count();
+                count.to_string()
             }
-        }
+        },
         AggregateColumn::CountDistinct(col) => {
             // COUNT(DISTINCT col) - count unique values
             let mut unique_values = std::collections::HashSet::new();
-            for row in rows {
-                match col.as_str() {
-                    "id" => {
-                        unique_values.insert(row.id.to_string());
-                    }
-                    "username" => {
-                        if !row.username.is_empty() {
-                            unique_values.insert(row.username.clone());
+            if schema.iter().any(|c| c == col) {
+                for row in rows {
+                    if let Some(val) = row.get_value(col) {
+                        if !val.is_empty() {
+                            unique_values.insert(val);
                         }
                     }
-                    "email" => {
-                        if !row.email.is_empty() {
-                            unique_values.insert(row.email.clone());
-                        }
-                    }
-                    _ => {}
                 }
             }
             unique_values.len().to_string()
@@ -419,20 +405,16 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row]) -> String {
         AggregateColumn::Sum(col) => {
             let sum: f64 = rows
                 .iter()
-                .filter_map(|row| match col.as_str() {
-                    "id" => Some(row.id as f64),
-                    _ => None,
-                })
+                .filter_map(|row| row.get_value(col))
+                .filter_map(|v| v.parse::<f64>().ok())
                 .sum();
             format!("{:.0}", sum)
         }
         AggregateColumn::Avg(col) => {
             let values: Vec<f64> = rows
                 .iter()
-                .filter_map(|row| match col.as_str() {
-                    "id" => Some(row.id as f64),
-                    _ => None,
-                })
+                .filter_map(|row| row.get_value(col))
+                .filter_map(|v| v.parse::<f64>().ok())
                 .collect();
             if values.is_empty() {
                 "NULL".to_string()
@@ -441,60 +423,50 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row]) -> String {
                 format!("{:.2}", avg)
             }
         }
-        AggregateColumn::Min(col) => match col.as_str() {
-            "id" => {
-                let values: Vec<u32> = rows.iter().map(|row| row.id).collect();
-                if let Some(&min_val) = values.iter().min() {
-                    min_val.to_string()
-                } else {
-                    "NULL".to_string()
-                }
+        AggregateColumn::Min(col) => {
+            if !schema.iter().any(|c| c == col) {
+                return "NULL".to_string();
             }
-            "username" => {
-                let values: Vec<&str> = rows.iter().map(|row| row.username.as_str()).collect();
-                if let Some(&min_val) = values.iter().min() {
-                    min_val.to_string()
-                } else {
-                    "NULL".to_string()
-                }
+            let values: Vec<String> = rows.iter().filter_map(|row| row.get_value(col)).collect();
+            if values.is_empty() {
+                return "NULL".to_string();
             }
-            "email" => {
-                let values: Vec<&str> = rows.iter().map(|row| row.email.as_str()).collect();
-                if let Some(&min_val) = values.iter().min() {
-                    min_val.to_string()
-                } else {
-                    "NULL".to_string()
-                }
+            if values.iter().all(|v| v.parse::<f64>().is_ok()) {
+                let nums: Vec<f64> = values
+                    .iter()
+                    .filter_map(|v| v.parse::<f64>().ok())
+                    .collect();
+                nums.iter()
+                    .cloned()
+                    .reduce(f64::min)
+                    .map(|v| format!("{:.0}", v))
+                    .unwrap_or_else(|| "NULL".to_string())
+            } else {
+                values.iter().min().cloned().unwrap_or("NULL".to_string())
             }
-            _ => "NULL".to_string(),
-        },
-        AggregateColumn::Max(col) => match col.as_str() {
-            "id" => {
-                let values: Vec<u32> = rows.iter().map(|row| row.id).collect();
-                if let Some(&max_val) = values.iter().max() {
-                    max_val.to_string()
-                } else {
-                    "NULL".to_string()
-                }
+        }
+        AggregateColumn::Max(col) => {
+            if !schema.iter().any(|c| c == col) {
+                return "NULL".to_string();
             }
-            "username" => {
-                let values: Vec<&str> = rows.iter().map(|row| row.username.as_str()).collect();
-                if let Some(&max_val) = values.iter().max() {
-                    max_val.to_string()
-                } else {
-                    "NULL".to_string()
-                }
+            let values: Vec<String> = rows.iter().filter_map(|row| row.get_value(col)).collect();
+            if values.is_empty() {
+                return "NULL".to_string();
             }
-            "email" => {
-                let values: Vec<&str> = rows.iter().map(|row| row.email.as_str()).collect();
-                if let Some(&max_val) = values.iter().max() {
-                    max_val.to_string()
-                } else {
-                    "NULL".to_string()
-                }
+            if values.iter().all(|v| v.parse::<f64>().is_ok()) {
+                let nums: Vec<f64> = values
+                    .iter()
+                    .filter_map(|v| v.parse::<f64>().ok())
+                    .collect();
+                nums.iter()
+                    .cloned()
+                    .reduce(f64::max)
+                    .map(|v| format!("{:.0}", v))
+                    .unwrap_or_else(|| "NULL".to_string())
+            } else {
+                values.iter().max().cloned().unwrap_or("NULL".to_string())
             }
-            _ => "NULL".to_string(),
-        },
+        }
     }
 }
 
@@ -601,17 +573,36 @@ fn execute_statement(
         }
     }
 
-    // Load a table by name from the registry, or create it if it doesn't exist
-    fn load_table_by_name<'a>(name: &str, tables: &'a mut HashMap<String, Table>) -> &'a mut Table {
+    fn get_schema_for(name: &str, schemas: &HashMap<String, Vec<String>>) -> Vec<String> {
         let name_lower = name.to_lowercase();
+        schemas.get(&name_lower).cloned().unwrap_or_else(|| {
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ]
+        })
+    }
+
+    // Load a table by name from the registry, or create it if it doesn't exist
+    fn load_table_by_name<'a>(
+        name: &str,
+        tables: &'a mut HashMap<String, Table>,
+        schemas: &HashMap<String, Vec<String>>,
+    ) -> &'a mut Table {
+        let name_lower = name.to_lowercase();
+        let schema = get_schema_for(&name_lower, schemas);
         tables
             .entry(name_lower.clone())
-            .or_insert_with(|| Table::new(table_file_for(&name_lower)))
+            .or_insert_with(|| Table::new(table_file_for(&name_lower), schema))
     }
 
     // Get default table for backward compatibility with existing code
-    fn get_default_table<'a>(tables: &'a mut HashMap<String, Table>) -> &'a mut Table {
-        load_table_by_name("users", tables)
+    fn get_default_table<'a>(
+        tables: &'a mut HashMap<String, Table>,
+        schemas: &HashMap<String, Vec<String>>,
+    ) -> &'a mut Table {
+        load_table_by_name("users", tables, schemas)
     }
 
     // Extract column name from qualified name (e.g., "users.id" -> "id")
@@ -626,6 +617,7 @@ fn execute_statement(
     fn execute_subquery_for_in(
         subquery_sql: &str,
         tables: &mut HashMap<String, Table>,
+        schemas: &HashMap<String, Vec<String>>,
     ) -> Result<Vec<String>, String> {
         let (
             distinct,
@@ -658,7 +650,7 @@ fn execute_statement(
 
         let table_name = from_table.unwrap_or_else(|| "users".to_string());
         let mut rows = {
-            let tbl = load_table_by_name(&table_name, tables);
+            let tbl = load_table_by_name(&table_name, tables, schemas);
             match where_clause {
                 None => tbl.select_all(),
                 Some((conditions, operators)) => {
@@ -674,11 +666,10 @@ fn execute_statement(
         let col_name = extract_column_name(&col);
         let mut values = Vec::new();
         for row in rows {
-            match col_name {
-                "id" => values.push(row.id.to_string()),
-                "username" => values.push(row.username.clone()),
-                "email" => values.push(row.email.clone()),
-                _ => return Err("Invalid column in subquery".to_string()),
+            if let Some(val) = row.get_value(col_name) {
+                values.push(val);
+            } else {
+                return Err("Invalid column in subquery".to_string());
             }
         }
         Ok(values)
@@ -687,6 +678,7 @@ fn execute_statement(
     fn resolve_in_subqueries(
         conditions: &[(String, String, String)],
         tables: &mut HashMap<String, Table>,
+        schemas: &HashMap<String, Vec<String>>,
     ) -> Result<Vec<(String, String, String)>, String> {
         let mut resolved = Vec::new();
         for (col, op, val) in conditions.iter() {

@@ -4,6 +4,7 @@ const COLUMN_EMAIL_SIZE: usize = 255;
 use crate::pager::Pager;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Operator {
@@ -34,6 +35,7 @@ pub struct Row {
     pub id: u32,
     pub username: String,
     pub email: String,
+    pub extras: HashMap<String, String>,
 }
 
 impl Row {
@@ -51,35 +53,124 @@ impl Row {
             id,
             username,
             email,
+            extras: HashMap::new(),
         })
+    }
+
+    pub fn from_values(schema: &[String], values: Vec<String>) -> Result<Self, String> {
+        if schema.len() != values.len() {
+            return Err("Column count does not match schema".to_string());
+        }
+
+        let mut id: u32 = 0;
+        let mut username = String::new();
+        let mut email = String::new();
+        let mut extras: HashMap<String, String> = HashMap::new();
+
+        for (col, val) in schema.iter().zip(values.into_iter()) {
+            match col.as_str() {
+                "id" => {
+                    id = val
+                        .parse::<u32>()
+                        .map_err(|_| "Invalid id value".to_string())?;
+                }
+                "username" => {
+                    if val.len() > COLUMN_USERNAME_SIZE {
+                        return Err(format!(
+                            "Username too long (max {} chars)",
+                            COLUMN_USERNAME_SIZE
+                        ));
+                    }
+                    username = val;
+                }
+                "email" => {
+                    if val.len() > COLUMN_EMAIL_SIZE {
+                        return Err(format!("Email too long (max {} chars)", COLUMN_EMAIL_SIZE));
+                    }
+                    email = val;
+                }
+                _ => {
+                    extras.insert(col.clone(), val);
+                }
+            }
+        }
+
+        Ok(Row {
+            id,
+            username,
+            email,
+            extras,
+        })
+    }
+
+    pub fn get_value(&self, column: &str) -> Option<String> {
+        match column {
+            "id" => Some(self.id.to_string()),
+            "username" => Some(self.username.clone()),
+            "email" => Some(self.email.clone()),
+            _ => self.extras.get(column).cloned(),
+        }
+    }
+
+    pub fn get_value_ref(&self, column: &str) -> Option<&str> {
+        match column {
+            "username" => Some(self.username.as_str()),
+            "email" => Some(self.email.as_str()),
+            _ => self.extras.get(column).map(|v| v.as_str()),
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Table {
     pager: Pager,
+    schema: Vec<String>,
+    has_id: bool,
+    has_username: bool,
+    has_email: bool,
     id_index: BTreeMap<u32, (usize, usize)>, // Maps id to (page_index, row_index)
     username_index: BTreeMap<String, Vec<(usize, usize)>>, // Maps username to list of (page, row) indices
     email_index: BTreeMap<String, Vec<(usize, usize)>>, // Maps email to list of (page, row) indices
 }
 
 impl Table {
-    pub fn new(file_path: String) -> Self {
+    pub fn new(file_path: String, schema: Vec<String>) -> Self {
         let pager = Pager::new(file_path);
         let mut table = Table {
             pager,
+            schema,
+            has_id: false,
+            has_username: false,
+            has_email: false,
             id_index: BTreeMap::new(),
             username_index: BTreeMap::new(),
             email_index: BTreeMap::new(),
         };
+        table.update_schema_flags();
         table.rebuild_indexes();
         table
+    }
+
+    pub fn schema(&self) -> &Vec<String> {
+        &self.schema
+    }
+
+    pub fn set_schema(&mut self, schema: Vec<String>) {
+        self.schema = schema;
+        self.update_schema_flags();
+        self.rebuild_indexes();
+    }
+
+    fn update_schema_flags(&mut self) {
+        self.has_id = self.schema.iter().any(|c| c == "id");
+        self.has_username = self.schema.iter().any(|c| c == "username");
+        self.has_email = self.schema.iter().any(|c| c == "email");
     }
 
     /// Insert a row into the table.
     /// Returns an error if a row with the same `id` already exists.
     pub fn insert(&mut self, row: Row) -> Result<(), String> {
-        if self.id_index.contains_key(&row.id) {
+        if self.has_id && self.id_index.contains_key(&row.id) {
             return Err(format!("Duplicate id {}", row.id));
         }
         // Find the page to add to
@@ -96,15 +187,21 @@ impl Table {
         };
         self.pager.add_row(row.clone());
         let pos = (page_index, row_index);
-        self.id_index.insert(row.id, pos);
-        self.username_index
-            .entry(row.username.clone())
-            .or_insert(Vec::new())
-            .push(pos);
-        self.email_index
-            .entry(row.email.clone())
-            .or_insert(Vec::new())
-            .push(pos);
+        if self.has_id {
+            self.id_index.insert(row.id, pos);
+        }
+        if self.has_username {
+            self.username_index
+                .entry(row.username.clone())
+                .or_insert(Vec::new())
+                .push(pos);
+        }
+        if self.has_email {
+            self.email_index
+                .entry(row.email.clone())
+                .or_insert(Vec::new())
+                .push(pos);
+        }
         Ok(())
     }
 
@@ -123,6 +220,9 @@ impl Table {
 
         match column {
             "id" => {
+                if !self.has_id {
+                    return Err("Column 'id' does not exist".to_string());
+                }
                 let id_val = value
                     .parse::<u32>()
                     .map_err(|_| "Invalid id value".to_string())?;
@@ -162,6 +262,9 @@ impl Table {
                 }
             }
             "username" => {
+                if !self.has_username {
+                    return Err("Column 'username' does not exist".to_string());
+                }
                 if op != Operator::Eq {
                     return Err("Only = supported for username".to_string());
                 }
@@ -172,6 +275,9 @@ impl Table {
                 }
             }
             "email" => {
+                if !self.has_email {
+                    return Err("Column 'email' does not exist".to_string());
+                }
                 if op != Operator::Eq {
                     return Err("Only = supported for email".to_string());
                 }
@@ -181,7 +287,17 @@ impl Table {
                     }
                 }
             }
-            _ => return Err(format!("Invalid column '{}'", column)),
+            _ => {
+                if !self.schema.iter().any(|c| c == column) {
+                    return Err(format!("Invalid column '{}'", column));
+                }
+                for row in self.select_all() {
+                    let matches = Self::compare_values(row.get_value(column), operator, value);
+                    if matches {
+                        result.push(row);
+                    }
+                }
+            }
         }
 
         Ok(result)
@@ -233,52 +349,52 @@ impl Table {
             if parts.len() != 2 {
                 return false;
             }
-            let min_val: i64 = parts[0].parse().unwrap_or(0);
-            let max_val: i64 = parts[1].parse().unwrap_or(0);
-
-            match column.as_str() {
-                "id" => {
-                    let row_id = row.id as i64;
-                    row_id >= min_val && row_id <= max_val
+            let min_val: f64 = parts[0].parse().unwrap_or(0.0);
+            let max_val: f64 = parts[1].parse().unwrap_or(0.0);
+            let row_val = row.get_value(column);
+            if let Some(rv) = row_val {
+                if let Ok(num) = rv.parse::<f64>() {
+                    return num >= min_val && num <= max_val;
                 }
-                _ => false, // BETWEEN only works with numeric columns like id
             }
+            false
         } else if operator == "IN" {
             let values: Vec<&str> = value.split(',').map(|v| v.trim()).collect();
-            match column.as_str() {
-                "id" => {
-                    let row_id = row.id as i64;
-                    values.iter().any(|v| v.parse::<i64>().ok() == Some(row_id))
+            if let Some(rv) = row.get_value(column) {
+                return values.iter().any(|v| *v == rv);
+            }
+            false
+        } else {
+            if let Some(rv) = row.get_value(column) {
+                if operator == "LIKE" {
+                    return Self::pattern_match(&rv, value);
                 }
-                "username" => values.iter().any(|v| *v == row.username),
-                "email" => values.iter().any(|v| *v == row.email),
+                return Self::compare_values(Some(rv), operator, value);
+            }
+            false
+        }
+    }
+
+    fn compare_values(row_value: Option<String>, operator: &str, expected: &str) -> bool {
+        let rv = match row_value {
+            Some(v) => v,
+            None => return false,
+        };
+
+        if let (Ok(left), Ok(right)) = (rv.parse::<f64>(), expected.parse::<f64>()) {
+            match operator {
+                "=" => left == right,
+                "!=" => left != right,
+                ">" => left > right,
+                "<" => left < right,
+                ">=" => left >= right,
+                "<=" => left <= right,
                 _ => false,
             }
         } else {
-            match column.as_str() {
-                "id" => {
-                    let row_id = row.id as i64;
-                    let val: i64 = value.parse().unwrap_or(0);
-                    match operator.as_str() {
-                        "=" => row_id == val,
-                        "!=" => row_id != val,
-                        ">" => row_id > val,
-                        "<" => row_id < val,
-                        ">=" => row_id >= val,
-                        "<=" => row_id <= val,
-                        _ => false,
-                    }
-                }
-                "username" => match operator.as_str() {
-                    "=" => row.username == *value,
-                    "LIKE" => Self::pattern_match(&row.username, value),
-                    _ => false,
-                },
-                "email" => match operator.as_str() {
-                    "=" => row.email == *value,
-                    "LIKE" => Self::pattern_match(&row.email, value),
-                    _ => false,
-                },
+            match operator {
+                "=" => rv == expected,
+                "!=" => rv != expected,
                 _ => false,
             }
         }
@@ -338,10 +454,16 @@ impl Table {
     /// Update a row by id.
     /// Returns an error if the id doesn't exist or the value is invalid for the column.
     pub fn update(&mut self, id: u32, column: &str, value: &str) -> Result<(), String> {
+        if !self.has_id {
+            return Err("Cannot update without id column".to_string());
+        }
         if let Some(&(page_index, row_index)) = self.id_index.get(&id) {
             let row = &mut self.pager.pages[page_index].rows[row_index];
             match column {
                 "username" => {
+                    if !self.has_username {
+                        return Err("Column 'username' does not exist".to_string());
+                    }
                     if value.len() > COLUMN_USERNAME_SIZE {
                         return Err(format!(
                             "Username too long (max {} chars)",
@@ -361,6 +483,9 @@ impl Table {
                         .push((page_index, row_index));
                 }
                 "email" => {
+                    if !self.has_email {
+                        return Err("Column 'email' does not exist".to_string());
+                    }
                     if value.len() > COLUMN_EMAIL_SIZE {
                         return Err(format!("Email too long (max {} chars)", COLUMN_EMAIL_SIZE));
                     }
@@ -377,7 +502,12 @@ impl Table {
                         .push((page_index, row_index));
                 }
                 "id" => return Err("Cannot update id".to_string()),
-                _ => return Err(format!("Unknown column '{}'", column)),
+                _ => {
+                    if !self.schema.iter().any(|c| c == column) {
+                        return Err(format!("Unknown column '{}'", column));
+                    }
+                    row.extras.insert(column.to_string(), value.to_string());
+                }
             }
             Ok(())
         } else {
@@ -385,6 +515,9 @@ impl Table {
         }
     }
     pub fn delete(&mut self, id: u32) -> Result<(), String> {
+        if !self.has_id {
+            return Err("Cannot delete without id column".to_string());
+        }
         if let Some((page_index, row_index)) = self.id_index.remove(&id) {
             self.pager.pages[page_index].rows.remove(row_index);
             // Rebuild indexes after removal
@@ -399,6 +532,9 @@ impl Table {
 
         match column {
             "id" => {
+                if !self.has_id {
+                    return Err("Column 'id' does not exist".to_string());
+                }
                 let id = value
                     .parse::<u32>()
                     .map_err(|_| "Invalid id value".to_string())?;
@@ -408,6 +544,9 @@ impl Table {
                 };
             }
             "username" => {
+                if !self.has_username {
+                    return Err("Column 'username' does not exist".to_string());
+                }
                 for page in &mut self.pager.pages {
                     page.rows.retain(|row| {
                         if row.username == value {
@@ -421,6 +560,9 @@ impl Table {
                 self.rebuild_indexes();
             }
             "email" => {
+                if !self.has_email {
+                    return Err("Column 'email' does not exist".to_string());
+                }
                 for page in &mut self.pager.pages {
                     page.rows.retain(|row| {
                         if row.email == value {
@@ -433,7 +575,22 @@ impl Table {
                 }
                 self.rebuild_indexes();
             }
-            _ => return Err(format!("Invalid column '{}'", column)),
+            _ => {
+                if !self.schema.iter().any(|c| c == column) {
+                    return Err(format!("Invalid column '{}'", column));
+                }
+                for page in &mut self.pager.pages {
+                    page.rows.retain(|row| {
+                        if row.extras.get(column).map(|v| v == value).unwrap_or(false) {
+                            deleted_count += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
+                self.rebuild_indexes();
+            }
         }
         Ok(deleted_count)
     }
@@ -444,15 +601,21 @@ impl Table {
         for (page_index, page) in self.pager.pages.iter().enumerate() {
             for (row_index, row) in page.rows.iter().enumerate() {
                 let pos = (page_index, row_index);
-                self.id_index.insert(row.id, pos);
-                self.username_index
-                    .entry(row.username.clone())
-                    .or_insert(Vec::new())
-                    .push(pos);
-                self.email_index
-                    .entry(row.email.clone())
-                    .or_insert(Vec::new())
-                    .push(pos);
+                if self.has_id {
+                    self.id_index.insert(row.id, pos);
+                }
+                if self.has_username {
+                    self.username_index
+                        .entry(row.username.clone())
+                        .or_insert(Vec::new())
+                        .push(pos);
+                }
+                if self.has_email {
+                    self.email_index
+                        .entry(row.email.clone())
+                        .or_insert(Vec::new())
+                        .push(pos);
+                }
             }
         }
     }
