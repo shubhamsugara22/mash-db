@@ -2169,10 +2169,18 @@ fn main() {
 mod tests {
     use super::*;
 
+    fn default_schema() -> Vec<String> {
+        vec![
+            "id".to_string(),
+            "username".to_string(),
+            "email".to_string(),
+        ]
+    }
+
     #[test]
     fn test_inner_join_basic() {
         // Create and seed two tables: users and orders
-        let mut users = Table::new("test_users.json".to_string());
+        let mut users = Table::new("test_users.json".to_string(), default_schema());
         users.clear();
 
         // Insert test users
@@ -2187,7 +2195,7 @@ mod tests {
             .is_ok());
         users.save().unwrap();
 
-        let mut orders = Table::new("test_orders.json".to_string());
+        let mut orders = Table::new("test_orders.json".to_string(), default_schema());
         orders.clear();
 
         // Insert test orders with matching IDs
@@ -2263,7 +2271,7 @@ mod tests {
     #[test]
     fn test_left_join_execution() {
         // Create test tables
-        let mut users = Table::new("test_left_users.json".to_string());
+        let mut users = Table::new("test_left_users.json".to_string(), default_schema());
         users.clear();
 
         // Insert 3 users
@@ -2278,7 +2286,7 @@ mod tests {
             .is_ok());
         users.save().unwrap();
 
-        let mut orders = Table::new("test_left_orders.json".to_string());
+        let mut orders = Table::new("test_left_orders.json".to_string(), default_schema());
         orders.clear();
 
         // Insert orders for only alice and bob (charlie has no orders)
@@ -2352,7 +2360,7 @@ mod tests {
     #[test]
     fn test_right_join_execution() {
         // Create test tables
-        let mut users = Table::new("test_right_users.json".to_string());
+        let mut users = Table::new("test_right_users.json".to_string(), default_schema());
         users.clear();
 
         // Insert 2 users
@@ -2364,7 +2372,7 @@ mod tests {
             .is_ok());
         users.save().unwrap();
 
-        let mut orders = Table::new("test_right_orders.json".to_string());
+        let mut orders = Table::new("test_right_orders.json".to_string(), default_schema());
         orders.clear();
 
         // Insert orders including one without matching user
@@ -2405,7 +2413,7 @@ mod tests {
     #[test]
     fn test_inner_join_filters_correctly() {
         // Create test tables
-        let mut users = Table::new("test_inner_users.json".to_string());
+        let mut users = Table::new("test_inner_users.json".to_string(), default_schema());
         users.clear();
 
         // Insert 3 users
@@ -2420,7 +2428,7 @@ mod tests {
             .is_ok());
         users.save().unwrap();
 
-        let mut orders = Table::new("test_inner_orders.json".to_string());
+        let mut orders = Table::new("test_inner_orders.json".to_string(), default_schema());
         orders.clear();
 
         // Insert orders for only alice (id=1)

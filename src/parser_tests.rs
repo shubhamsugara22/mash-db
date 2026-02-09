@@ -23,22 +23,24 @@ mod tests {
     fn test_parse_insert_simple_format() {
         let result = parse_insert("INSERT 1 alice alice@example.com");
         assert!(result.is_ok());
-        let (table_name, id, username, email) = result.unwrap();
+        let (table_name, values) = result.unwrap();
         assert!(table_name.is_none());
-        assert_eq!(id, 1);
-        assert_eq!(username, "alice");
-        assert_eq!(email, "alice@example.com");
+        assert_eq!(values.len(), 3);
+        assert_eq!(values[0], "1");
+        assert_eq!(values[1], "alice");
+        assert_eq!(values[2], "alice@example.com");
     }
 
     #[test]
     fn test_parse_insert_full_format() {
         let result = parse_insert("INSERT INTO users VALUES (1, 'alice', 'alice@example.com')");
         assert!(result.is_ok());
-        let (table_name, id, username, email) = result.unwrap();
+        let (table_name, values) = result.unwrap();
         assert_eq!(table_name, Some("users".to_string()));
-        assert_eq!(id, 1);
-        assert_eq!(username, "alice");
-        assert_eq!(email, "alice@example.com");
+        assert_eq!(values.len(), 3);
+        assert_eq!(values[0], "1");
+        assert_eq!(values[1], "alice");
+        assert_eq!(values[2], "alice@example.com");
     }
 
     #[test]

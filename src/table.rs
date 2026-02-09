@@ -638,6 +638,14 @@ impl Table {
 mod tests {
     use super::*;
 
+    fn default_schema() -> Vec<String> {
+        vec![
+            "id".to_string(),
+            "username".to_string(),
+            "email".to_string(),
+        ]
+    }
+
     #[test]
     fn row_validation_rejects_long_username_and_email() {
         let long_username = "a".repeat(COLUMN_USERNAME_SIZE + 1);
@@ -649,7 +657,7 @@ mod tests {
 
     #[test]
     fn insert_prevents_duplicate_id() {
-        let mut table = Table::new("test1.json".to_string());
+        let mut table = Table::new("test1.json".to_string(), default_schema());
 
         let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
         assert!(table.insert(r1).is_ok());
@@ -662,7 +670,7 @@ mod tests {
 
     #[test]
     fn update_modifies_existing_row() {
-        let mut table = Table::new("test2.json".to_string());
+        let mut table = Table::new("test2.json".to_string(), default_schema());
 
         let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
         table.insert(r1).unwrap();
@@ -688,7 +696,7 @@ mod tests {
     }
     #[test]
     fn delete_removes_existing_row() {
-        let mut table = Table::new("test3.json".to_string());
+        let mut table = Table::new("test3.json".to_string(), default_schema());
 
         let r1 = Row::new(1, "alice".to_string(), "alice@example.com".to_string()).unwrap();
         let r2 = Row::new(2, "bob".to_string(), "bob@example.com".to_string()).unwrap();
@@ -705,7 +713,7 @@ mod tests {
     }
     #[test]
     fn delete_where_by_id_removes_row() {
-        let mut table = Table::new("test4.json".to_string());
+        let mut table = Table::new("test4.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -723,7 +731,7 @@ mod tests {
     }
     #[test]
     fn delete_where_by_username() {
-        let mut table = Table::new("test5.json".to_string());
+        let mut table = Table::new("test5.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -744,7 +752,7 @@ mod tests {
     }
     #[test]
     fn delete_where_by_email() {
-        let mut table = Table::new("test6.json".to_string());
+        let mut table = Table::new("test6.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -762,7 +770,7 @@ mod tests {
     }
     #[test]
     fn delete_where_invalid_column_fails() {
-        let mut table = Table::new("test7.json".to_string());
+        let mut table = Table::new("test7.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -773,7 +781,7 @@ mod tests {
     }
     #[test]
     fn delete_where_no_matching_rows_returns_zero() {
-        let mut table = Table::new("test8.json".to_string());
+        let mut table = Table::new("test8.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -787,7 +795,7 @@ mod tests {
     }
     #[test]
     fn delete_all_removes_everything() {
-        let mut table = Table::new("test9.json".to_string());
+        let mut table = Table::new("test9.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -802,7 +810,7 @@ mod tests {
     }
     #[test]
     fn delete_all_on_empty_table() {
-        let mut table = Table::new("test10.json".to_string());
+        let mut table = Table::new("test10.json".to_string(), default_schema());
 
         let deleted = table.clear();
         assert_eq!(deleted, 0);
@@ -810,7 +818,7 @@ mod tests {
     }
     #[test]
     fn select_where_by_id() {
-        let mut table = Table::new("test11.json".to_string());
+        let mut table = Table::new("test11.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -825,7 +833,7 @@ mod tests {
     }
     #[test]
     fn select_where_by_username() {
-        let mut table = Table::new("test12.json".to_string());
+        let mut table = Table::new("test12.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -844,7 +852,7 @@ mod tests {
     }
     #[test]
     fn select_where_by_email() {
-        let mut table = Table::new("test13.json".to_string());
+        let mut table = Table::new("test13.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -859,7 +867,7 @@ mod tests {
     }
     #[test]
     fn select_where_no_matches_returns_empty() {
-        let mut table = Table::new("test14.json".to_string());
+        let mut table = Table::new("test14.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -870,7 +878,7 @@ mod tests {
     }
     #[test]
     fn select_where_invalid_column_fails() {
-        let mut table = Table::new("test15.json".to_string());
+        let mut table = Table::new("test15.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -881,7 +889,7 @@ mod tests {
     }
     #[test]
     fn select_where_complex_and() {
-        let mut table = Table::new("test_and.json".to_string());
+        let mut table = Table::new("test_and.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -907,7 +915,7 @@ mod tests {
 
     #[test]
     fn select_where_complex_or() {
-        let mut table = Table::new("test_or.json".to_string());
+        let mut table = Table::new("test_or.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
@@ -937,7 +945,7 @@ mod tests {
 
     #[test]
     fn select_where_complex_mixed() {
-        let mut table = Table::new("test_mixed.json".to_string());
+        let mut table = Table::new("test_mixed.json".to_string(), default_schema());
 
         table
             .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
