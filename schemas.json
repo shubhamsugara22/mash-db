@@ -6,10 +6,24 @@
     "location",
     "supplier"
   ],
-  "users": [
+  "sales": [
     "id",
-    "username",
-    "email"
+    "store_id",
+    "amount",
+    "date",
+    "product_type"
+  ],
+  "stores": [
+    "id",
+    "name",
+    "city",
+    "opening_year",
+    "manager"
+  ],
+  "aggcheck": [
+    "id",
+    "grp",
+    "val"
   ],
   "orders": [
     "id",
@@ -23,18 +37,9 @@
     "stock",
     "category"
   ],
-  "stores": [
+  "users": [
     "id",
-    "name",
-    "city",
-    "opening_year",
-    "manager"
-  ],
-  "sales": [
-    "id",
-    "store_id",
-    "amount",
-    "date",
-    "product_type"
+    "username",
+    "email"
   ]
 }

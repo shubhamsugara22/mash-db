@@ -377,9 +377,7 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                     .iter()
                     .filter(|row| {
                         if schema.iter().any(|c| c == col) {
-                            row.get_value_ref(col)
-                                .map(|v| !v.is_empty())
-                                .unwrap_or(false)
+                            row.get_value(col).map(|v| !v.is_empty()).unwrap_or(false)
                         } else {
                             false
                         }
@@ -2452,5 +2450,34 @@ mod tests {
         }
 
         assert_eq!(matched_count, 1, "INNER JOIN should match only 1 user");
+    }
+
+    #[test]
+    fn test_count_column_includes_id_values() {
+        let schema = vec!["id".to_string(), "grp".to_string(), "val".to_string()];
+        let rows = vec![
+            Row::from_values(
+                &schema,
+                vec!["1".to_string(), "a".to_string(), "10".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["2".to_string(), "a".to_string(), "20".to_string()],
+            )
+            .unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let count_id = super::compute_aggregate(
+            &AggregateColumn::Count(Some("id".to_string())),
+            &row_refs,
+            &schema,
+        );
+        let count_star =
+            super::compute_aggregate(&AggregateColumn::Count(None), &row_refs, &schema);
+
+        assert_eq!(count_id, "2");
+        assert_eq!(count_star, "2");
     }
 }
