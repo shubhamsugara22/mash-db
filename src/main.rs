@@ -2134,9 +2134,9 @@ fn main() {
             break;
         }
 
-        let input = input.trim();
+        let input = input.trim().trim_end_matches(';').trim();
 
-        if input.is_empty() {
+        if input.is_empty() || input.starts_with("--") {
             continue;
         }
 
