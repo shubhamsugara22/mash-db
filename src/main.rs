@@ -1023,8 +1023,11 @@ fn execute_statement(
             match Row::from_values(&schema, values) {
                 Ok(row) => match table.insert(row) {
                     Ok(()) => {
-                        table.save().unwrap();
-                        println!("Executed.");
+                        if let Err(e) = table.save() {
+                            println!("Error saving table: {}", e);
+                        } else {
+                            println!("Executed.");
+                        }
                     }
                     Err(e) => println!("Error: {}", e),
                 },
@@ -1577,8 +1580,11 @@ fn execute_statement(
             };
             match table.update(id, &column, &value) {
                 Ok(()) => {
-                    table.save().unwrap();
-                    println!("Executed.");
+                    if let Err(e) = table.save() {
+                        println!("Error saving table: {}", e);
+                    } else {
+                        println!("Executed.");
+                    }
                 }
                 Err(e) => println!("Error: {}", e),
             }
@@ -1590,8 +1596,11 @@ fn execute_statement(
             };
             match table.delete(id) {
                 Ok(()) => {
-                    table.save().unwrap();
-                    println!("Executed.");
+                    if let Err(e) = table.save() {
+                        println!("Error saving table: {}", e);
+                    } else {
+                        println!("Executed.");
+                    }
                 }
                 Err(e) => println!("Error: {}", e),
             }
@@ -1607,8 +1616,11 @@ fn execute_statement(
             };
             match table.delete_where(&column, &value) {
                 Ok(count) => {
-                    table.save().unwrap();
-                    println!("Deleted {} rows.", count);
+                    if let Err(e) = table.save() {
+                        println!("Error saving table: {}", e);
+                    } else {
+                        println!("Deleted {} rows.", count);
+                    }
                 }
                 Err(e) => println!("Error: {}", e),
             }
@@ -1620,8 +1632,11 @@ fn execute_statement(
                 .entry("users".to_string())
                 .or_insert_with(|| Table::new(table_file_for("users"), schema));
             let count = table.clear();
-            table.save().unwrap();
-            println!("Deleted {} rows.", count);
+            if let Err(e) = table.save() {
+                println!("Error saving table: {}", e);
+            } else {
+                println!("Deleted {} rows.", count);
+            }
         }
         Statement::CreateTable {
             table_name,
@@ -1830,9 +1845,11 @@ fn execute_statement(
             // Clear the table
             let table = tables.get_mut(&table_name_lower).unwrap();
             let count = table.clear();
-            table.save().unwrap();
-
-            println!("Truncated table '{}' ({} rows deleted)", table_name, count);
+            if let Err(e) = table.save() {
+                println!("Error saving table: {}", e);
+            } else {
+                println!("Truncated table '{}' ({} rows deleted)", table_name, count);
+            }
         }
     }
 }
@@ -1850,7 +1867,18 @@ fn apply_sorting(mut rows: Vec<&Row>, order_by: Option<(String, bool)>) -> Vec<&
                 "id" => a.id.cmp(&b.id),
                 "username" => a.username.cmp(&b.username),
                 "email" => a.email.cmp(&b.email),
-                _ => std::cmp::Ordering::Equal,
+                other => {
+                    // Dynamic schema column stored in extras
+                    let av = a.extras.get(other).map(|s| s.as_str()).unwrap_or("");
+                    let bv = b.extras.get(other).map(|s| s.as_str()).unwrap_or("");
+                    // Try numeric comparison first
+                    match (av.parse::<f64>(), bv.parse::<f64>()) {
+                        (Ok(an), Ok(bn)) => {
+                            an.partial_cmp(&bn).unwrap_or(std::cmp::Ordering::Equal)
+                        }
+                        _ => av.cmp(bv),
+                    }
+                }
             };
             if is_asc {
                 cmp
@@ -2036,8 +2064,15 @@ fn apply_distinct(rows: Vec<&Row>, distinct: bool) -> Vec<&Row> {
     let mut unique_rows = Vec::new();
 
     for row in rows {
-        let row_tuple = (row.id, row.username.clone(), row.email.clone());
-        if seen.insert(row_tuple) {
+        // Include extras in deduplication key so DISTINCT works on dynamic columns
+        let mut extras_vec: Vec<(String, String)> = row
+            .extras
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        extras_vec.sort_unstable();
+        let row_key = (row.id, row.username.clone(), row.email.clone(), extras_vec);
+        if seen.insert(row_key) {
             unique_rows.push(row);
         }
     }

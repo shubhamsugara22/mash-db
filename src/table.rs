@@ -1,4 +1,4 @@
-const COLUMN_USERNAME_SIZE: usize = 32;
+const COLUMN_USERNAME_SIZE: usize = 255;
 const COLUMN_EMAIL_SIZE: usize = 255;
 
 use crate::pager::Pager;
