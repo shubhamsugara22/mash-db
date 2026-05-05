@@ -197,7 +197,28 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                         break;
                     }
                 }
-                tokens.push(Token::Number(num.parse().unwrap()));
+                // Check for decimal point followed by digits (e.g. 19.99)
+                if chars.peek() == Some(&'.') {
+                    // Peek two chars ahead to distinguish 19.99 from table.col
+                    let dot = chars.next().unwrap(); // consume '.'
+                    if chars.peek().map(|ch| ch.is_digit(10)).unwrap_or(false) {
+                        num.push(dot);
+                        while let Some(&ch) = chars.peek() {
+                            if ch.is_digit(10) {
+                                num.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
+                        tokens.push(Token::String(num));
+                    } else {
+                        // Not a float — emit integer then dot
+                        tokens.push(Token::Number(num.parse().unwrap()));
+                        tokens.push(Token::Dot);
+                    }
+                } else {
+                    tokens.push(Token::Number(num.parse().unwrap()));
+                }
             }
             '"' | '\'' => {
                 let mut str = String::new();
