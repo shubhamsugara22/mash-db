@@ -44,6 +44,33 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_insert_full_format_with_unquoted_float() {
+        let result = parse_insert("INSERT INTO products VALUES (1, Widget, 19.99, Tools)");
+        assert!(result.is_ok());
+        let (table_name, values) = result.unwrap();
+        assert_eq!(table_name, Some("products".to_string()));
+        assert_eq!(values.len(), 4);
+        assert_eq!(values[0], "1");
+        assert_eq!(values[1], "Widget");
+        assert_eq!(values[2], "19.99");
+        assert_eq!(values[3], "Tools");
+    }
+
+    #[test]
+    fn test_parse_select_where_with_unquoted_float() {
+        let result = parse_select("SELECT * FROM products WHERE price > 19.99");
+        assert!(result.is_ok());
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        assert!(where_clause.is_some());
+        let (conditions, operators) = where_clause.unwrap();
+        assert_eq!(operators.len(), 0);
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].0, "price");
+        assert_eq!(conditions[0].1, ">");
+        assert_eq!(conditions[0].2, "19.99");
+    }
+
+    #[test]
     fn test_parse_select_with_columns() {
         let result = parse_select("SELECT id, username FROM users");
         assert!(result.is_ok());
