@@ -1,0 +1,9 @@
+CREATE TABLE metrics (id, name, reading, category)
+INSERT INTO metrics VALUES (1, baseline, 19.99, normal)
+INSERT INTO metrics VALUES (2, correction, -12.5, delta)
+INSERT INTO metrics VALUES (3, spike, 1.25e3, anomaly)
+INSERT INTO metrics VALUES (4, tiny, -2.5E-3, anomaly)
+SELECT * FROM metrics
+SELECT name, reading FROM metrics WHERE reading > 1e2
+SELECT name, reading FROM metrics WHERE reading <= -1.0
+.exit

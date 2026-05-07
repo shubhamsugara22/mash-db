@@ -71,6 +71,44 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_where_with_signed_number() {
+        let result = parse_select("SELECT * FROM products WHERE delta <= -12.5");
+        assert!(result.is_ok());
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        assert!(where_clause.is_some());
+        let (conditions, operators) = where_clause.unwrap();
+        assert_eq!(operators.len(), 0);
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].0, "delta");
+        assert_eq!(conditions[0].1, "<=");
+        assert_eq!(conditions[0].2, "-12.5");
+    }
+
+    #[test]
+    fn test_parse_insert_with_scientific_notation() {
+        let result = parse_insert("INSERT INTO metrics VALUES (1, load, 1.25e3)");
+        assert!(result.is_ok());
+        let (table_name, values) = result.unwrap();
+        assert_eq!(table_name, Some("metrics".to_string()));
+        assert_eq!(values.len(), 3);
+        assert_eq!(values[0], "1");
+        assert_eq!(values[1], "load");
+        assert_eq!(values[2], "1.25e3");
+    }
+
+    #[test]
+    fn test_tokenize_scientific_and_signed_literals() {
+        let tokens = tokenize("value >= -2.5E-3 AND value < +1e6");
+        assert_eq!(tokens[0], Token::Identifier("value".to_string()));
+        assert_eq!(tokens[1], Token::Ge);
+        assert_eq!(tokens[2], Token::String("-2.5E-3".to_string()));
+        assert_eq!(tokens[3], Token::And);
+        assert_eq!(tokens[4], Token::Identifier("value".to_string()));
+        assert_eq!(tokens[5], Token::Lt);
+        assert_eq!(tokens[6], Token::String("+1e6".to_string()));
+    }
+
+    #[test]
     fn test_parse_select_with_columns() {
         let result = parse_select("SELECT id, username FROM users");
         assert!(result.is_ok());

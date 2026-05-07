@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::iter::Peekable;
+use std::str::Chars;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
@@ -115,6 +117,102 @@ fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+fn consume_number_literal(first: char, chars: &mut Peekable<Chars<'_>>) -> (String, bool, bool) {
+    let mut literal = String::new();
+    literal.push(first);
+
+    let has_sign = first == '-' || first == '+';
+    let mut has_decimal = false;
+    let mut has_exponent = false;
+
+    // Integer part (or full digits for unsigned input)
+    while let Some(&ch) = chars.peek() {
+        if ch.is_ascii_digit() {
+            literal.push(chars.next().unwrap());
+        } else {
+            break;
+        }
+    }
+
+    // Support signed decimals without leading zero, e.g. -.5
+    if (first == '-' || first == '+') && literal.len() == 1 && chars.peek() == Some(&'.') {
+        let mut lookahead = chars.clone();
+        lookahead.next();
+        if lookahead
+            .peek()
+            .map(|ch| ch.is_ascii_digit())
+            .unwrap_or(false)
+        {
+            has_decimal = true;
+            literal.push(chars.next().unwrap()); // '.'
+            while let Some(&ch) = chars.peek() {
+                if ch.is_ascii_digit() {
+                    literal.push(chars.next().unwrap());
+                } else {
+                    break;
+                }
+            }
+        }
+    } else if chars.peek() == Some(&'.') {
+        // Decimal part only if there is at least one digit after the dot
+        let mut lookahead = chars.clone();
+        lookahead.next();
+        if lookahead
+            .peek()
+            .map(|ch| ch.is_ascii_digit())
+            .unwrap_or(false)
+        {
+            has_decimal = true;
+            literal.push(chars.next().unwrap()); // '.'
+            while let Some(&ch) = chars.peek() {
+                if ch.is_ascii_digit() {
+                    literal.push(chars.next().unwrap());
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Exponent part: e/E followed by optional sign and at least one digit
+    if matches!(chars.peek(), Some('e') | Some('E')) {
+        let mut lookahead = chars.clone();
+        let exp_ch = lookahead.next().unwrap();
+        let mut valid = false;
+        if let Some(next) = lookahead.peek() {
+            if next.is_ascii_digit() {
+                valid = true;
+            } else if *next == '+' || *next == '-' {
+                lookahead.next();
+                if lookahead
+                    .peek()
+                    .map(|d| d.is_ascii_digit())
+                    .unwrap_or(false)
+                {
+                    valid = true;
+                }
+            }
+        }
+
+        if valid {
+            has_exponent = true;
+            literal.push(chars.next().unwrap_or(exp_ch));
+            if matches!(chars.peek(), Some('+') | Some('-')) {
+                literal.push(chars.next().unwrap());
+            }
+            while let Some(&ch) = chars.peek() {
+                if ch.is_ascii_digit() {
+                    literal.push(chars.next().unwrap());
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    (literal, has_sign, has_decimal || has_exponent)
+}
+
 pub fn tokenize(input: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut chars = input.chars().peekable();
@@ -188,36 +286,34 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 tokens.push(token);
             }
             '0'..='9' => {
-                let mut num = String::new();
-                num.push(c);
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_digit(10) {
-                        num.push(chars.next().unwrap());
-                    } else {
-                        break;
-                    }
+                let (num, has_sign, non_integer_form) = consume_number_literal(c, &mut chars);
+                if !has_sign && !non_integer_form {
+                    tokens.push(Token::Number(num.parse().unwrap()));
+                } else {
+                    tokens.push(Token::String(num));
                 }
-                // Check for decimal point followed by digits (e.g. 19.99)
-                if chars.peek() == Some(&'.') {
-                    // Peek two chars ahead to distinguish 19.99 from table.col
-                    let dot = chars.next().unwrap(); // consume '.'
-                    if chars.peek().map(|ch| ch.is_digit(10)).unwrap_or(false) {
-                        num.push(dot);
-                        while let Some(&ch) = chars.peek() {
-                            if ch.is_digit(10) {
-                                num.push(chars.next().unwrap());
-                            } else {
-                                break;
-                            }
-                        }
-                        tokens.push(Token::String(num));
+            }
+            '-' | '+' => {
+                let is_numeric = if let Some(&next) = chars.peek() {
+                    if next.is_ascii_digit() {
+                        true
+                    } else if next == '.' {
+                        let mut lookahead = chars.clone();
+                        lookahead.next();
+                        lookahead
+                            .peek()
+                            .map(|d| d.is_ascii_digit())
+                            .unwrap_or(false)
                     } else {
-                        // Not a float — emit integer then dot
-                        tokens.push(Token::Number(num.parse().unwrap()));
-                        tokens.push(Token::Dot);
+                        false
                     }
                 } else {
-                    tokens.push(Token::Number(num.parse().unwrap()));
+                    false
+                };
+
+                if is_numeric {
+                    let (num, _, _) = consume_number_literal(c, &mut chars);
+                    tokens.push(Token::String(num));
                 }
             }
             '"' | '\'' => {
