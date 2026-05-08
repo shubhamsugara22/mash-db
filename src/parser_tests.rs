@@ -131,6 +131,14 @@ mod tests {
     }
 
     #[test]
+    fn test_tokenize_standalone_dot_stays_dot_token() {
+        let tokens = tokenize("users . id");
+        assert_eq!(tokens[0], Token::Identifier("users".to_string()));
+        assert_eq!(tokens[1], Token::Dot);
+        assert_eq!(tokens[2], Token::Identifier("id".to_string()));
+    }
+
+    #[test]
     fn test_parse_select_with_columns() {
         let result = parse_select("SELECT id, username FROM users");
         assert!(result.is_ok());
