@@ -109,6 +109,28 @@ mod tests {
     }
 
     #[test]
+    fn test_tokenize_unsigned_leading_dot_literal() {
+        let tokens = tokenize("reading >= .5");
+        assert_eq!(tokens[0], Token::Identifier("reading".to_string()));
+        assert_eq!(tokens[1], Token::Ge);
+        assert_eq!(tokens[2], Token::String(".5".to_string()));
+    }
+
+    #[test]
+    fn test_parse_select_where_with_unsigned_leading_dot_literal() {
+        let result = parse_select("SELECT * FROM metrics WHERE reading < .5e2");
+        assert!(result.is_ok());
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        assert!(where_clause.is_some());
+        let (conditions, operators) = where_clause.unwrap();
+        assert_eq!(operators.len(), 0);
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].0, "reading");
+        assert_eq!(conditions[0].1, "<");
+        assert_eq!(conditions[0].2, ".5e2");
+    }
+
+    #[test]
     fn test_parse_select_with_columns() {
         let result = parse_select("SELECT id, username FROM users");
         assert!(result.is_ok());

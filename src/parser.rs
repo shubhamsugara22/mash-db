@@ -331,7 +331,16 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             '(' => tokens.push(Token::LParen),
             ')' => tokens.push(Token::RParen),
             '*' => tokens.push(Token::Star),
-            '.' => tokens.push(Token::Dot),
+            '.' => {
+                // Support unsigned leading-dot numerics such as .5 and .5e2
+                let is_numeric = chars.peek().map(|d| d.is_ascii_digit()).unwrap_or(false);
+                if is_numeric {
+                    let (num, _, _) = consume_number_literal(c, &mut chars);
+                    tokens.push(Token::String(num));
+                } else {
+                    tokens.push(Token::Dot);
+                }
+            }
             '>' => {
                 if chars.peek() == Some(&'=') {
                     chars.next();

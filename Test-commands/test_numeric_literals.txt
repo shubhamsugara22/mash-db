@@ -3,7 +3,10 @@ INSERT INTO metrics VALUES (1, baseline, 19.99, normal)
 INSERT INTO metrics VALUES (2, correction, -12.5, delta)
 INSERT INTO metrics VALUES (3, spike, 1.25e3, anomaly)
 INSERT INTO metrics VALUES (4, tiny, -2.5E-3, anomaly)
+INSERT INTO metrics VALUES (5, half, .5, fraction)
 SELECT * FROM metrics
 SELECT name, reading FROM metrics WHERE reading > 1e2
 SELECT name, reading FROM metrics WHERE reading <= -1.0
+SELECT name, reading FROM metrics WHERE reading >= .5
+SELECT name, reading FROM metrics WHERE reading < .5e2
 .exit
