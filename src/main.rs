@@ -178,7 +178,9 @@ enum Statement {
 
 fn print_prompt() {
     print!("db > ");
-    io::stdout().flush().unwrap();
+    if let Err(e) = io::stdout().flush() {
+        eprintln!("Error flushing prompt: {}", e);
+    }
 }
 
 fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
@@ -1700,13 +1702,12 @@ fn execute_statement(
                 return;
             }
 
-            let old_rows: Vec<Row> = tables
-                .get(&old_name)
-                .unwrap()
-                .select_all()
-                .iter()
-                .map(|r| (*r).clone())
-                .collect();
+            let old_rows: Vec<Row> = if let Some(table) = tables.get(&old_name) {
+                table.select_all().iter().map(|r| (*r).clone()).collect()
+            } else {
+                println!("Error: Table '{}' does not exist", table_name);
+                return;
+            };
 
             let old_file = table_file_for(&old_name);
             let new_file = table_file_for(&new_name_lower);
@@ -1843,7 +1844,10 @@ fn execute_statement(
             }
 
             // Clear the table
-            let table = tables.get_mut(&table_name_lower).unwrap();
+            let Some(table) = tables.get_mut(&table_name_lower) else {
+                println!("Error: Table '{}' does not exist", table_name);
+                return;
+            };
             let count = table.clear();
             if let Err(e) = table.save() {
                 println!("Error saving table: {}", e);
@@ -2160,9 +2164,13 @@ fn main() {
         print_prompt();
 
         let mut input = String::new();
-        let bytes_read = io::stdin()
-            .read_line(&mut input)
-            .expect("Failed to read line");
+        let bytes_read = match io::stdin().read_line(&mut input) {
+            Ok(bytes_read) => bytes_read,
+            Err(e) => {
+                eprintln!("Error reading input: {}", e);
+                break;
+            }
+        };
 
         // Exit on EOF (e.g., from piped input or Ctrl+D)
         if bytes_read == 0 {
