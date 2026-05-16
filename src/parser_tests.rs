@@ -142,7 +142,7 @@ mod tests {
     fn test_parse_select_with_columns() {
         let result = parse_select("SELECT id, username FROM users");
         assert!(result.is_ok());
-        let (distinct, cols, _, _, where_clause, _, _, order_by, _limit, _offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(!distinct);
         assert!(cols.is_some());
         assert_eq!(cols.unwrap().len(), 2);
@@ -306,8 +306,7 @@ mod tests {
     fn test_parse_select_full_clause() {
         let result = parse_select("SELECT id, username WHERE email = test@test.com ORDER BY username DESC LIMIT 15 OFFSET 5");
         assert!(result.is_ok());
-        let (distinct, cols, _, _, where_clause, _, _, _order_by, _limit, _offset) =
-            result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(!distinct);
         assert!(cols.is_some());
         assert!(where_clause.is_some());
@@ -323,7 +322,7 @@ mod tests {
     fn test_parse_select_distinct_star() {
         let result = parse_select("SELECT DISTINCT * FROM users");
         assert!(result.is_ok());
-        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, _offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
         assert!(distinct);
         assert!(cols.is_none());
         assert!(where_clause.is_none());
@@ -336,7 +335,7 @@ mod tests {
     fn test_parse_select_distinct_columns() {
         let result = parse_select("SELECT DISTINCT username, email FROM users");
         assert!(result.is_ok());
-        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, _limit, _offset) = result.unwrap();
         assert!(distinct);
         assert!(cols.is_some());
         let columns = cols.unwrap();
@@ -351,7 +350,8 @@ mod tests {
     fn test_parse_select_distinct_with_where() {
         let result = parse_select("SELECT DISTINCT id WHERE username = alice");
         assert!(result.is_ok());
-        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, _order_by, _limit, _offset) =
+            result.unwrap();
         assert!(distinct);
         assert!(cols.is_some());
         assert!(where_clause.is_some());
@@ -362,7 +362,7 @@ mod tests {
         let result =
             parse_select("SELECT DISTINCT username WHERE id > 5 ORDER BY username ASC LIMIT 10");
         assert!(result.is_ok());
-        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, offset) = result.unwrap();
+        let (distinct, cols, _, _, where_clause, _, _, order_by, limit, _offset) = result.unwrap();
         assert!(distinct);
         assert!(cols.is_some());
         assert!(where_clause.is_some());
