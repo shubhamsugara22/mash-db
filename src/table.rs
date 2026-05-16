@@ -112,6 +112,7 @@ impl Row {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_value_ref(&self, column: &str) -> Option<&str> {
         match column {
             "username" => Some(self.username.as_str()),
@@ -155,6 +156,7 @@ impl Table {
         &self.schema
     }
 
+    #[allow(dead_code)]
     pub fn set_schema(&mut self, schema: Vec<String>) {
         self.schema = schema;
         self.update_schema_flags();
@@ -240,22 +242,22 @@ impl Table {
                         }
                     }
                     Operator::Gt => {
-                        for (id, &(page_index, row_index)) in self.id_index.range((id_val + 1)..) {
+                        for (_id, &(page_index, row_index)) in self.id_index.range((id_val + 1)..) {
                             result.push(&self.pager.pages[page_index].rows[row_index]);
                         }
                     }
                     Operator::Lt => {
-                        for (id, &(page_index, row_index)) in self.id_index.range(..id_val) {
+                        for (_id, &(page_index, row_index)) in self.id_index.range(..id_val) {
                             result.push(&self.pager.pages[page_index].rows[row_index]);
                         }
                     }
                     Operator::Ge => {
-                        for (id, &(page_index, row_index)) in self.id_index.range(id_val..) {
+                        for (_id, &(page_index, row_index)) in self.id_index.range(id_val..) {
                             result.push(&self.pager.pages[page_index].rows[row_index]);
                         }
                     }
                     Operator::Le => {
-                        for (id, &(page_index, row_index)) in self.id_index.range(..=id_val) {
+                        for (_id, &(page_index, row_index)) in self.id_index.range(..=id_val) {
                             result.push(&self.pager.pages[page_index].rows[row_index]);
                         }
                     }
@@ -403,8 +405,8 @@ impl Table {
     /// Pattern matching for LIKE operator
     /// Supports % (zero or more characters) and _ (single character) wildcards
     fn pattern_match(text: &str, pattern: &str) -> bool {
-        let mut text_chars: Vec<char> = text.chars().collect();
-        let mut pattern_chars: Vec<char> = pattern.chars().collect();
+        let text_chars: Vec<char> = text.chars().collect();
+        let pattern_chars: Vec<char> = pattern.chars().collect();
 
         Self::pattern_match_recursive(&text_chars, &pattern_chars, 0, 0)
     }

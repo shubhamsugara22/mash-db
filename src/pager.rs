@@ -63,15 +63,18 @@ impl Pager {
         self.dirty = true;
     }
 
+    #[allow(dead_code)]
     pub fn get_page(&self, page_index: usize) -> Option<&Page> {
         self.pages.get(page_index)
     }
 
+    #[allow(dead_code)]
     pub fn get_page_mut(&mut self, page_index: usize) -> Option<&mut Page> {
         self.dirty = true;
         self.pages.get_mut(page_index)
     }
 
+    #[allow(dead_code)]
     pub fn get_all_rows(&self) -> Vec<&super::table::Row> {
         self.pages.iter().flat_map(|p| &p.rows).collect()
     }

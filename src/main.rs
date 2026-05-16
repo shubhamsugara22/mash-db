@@ -87,6 +87,7 @@ impl AggregateColumn {
     }
 }
 
+#[allow(dead_code)]
 enum MetaCommandResult {
     Success,
     UnrecognizedCommand,
@@ -2375,7 +2376,7 @@ mod tests {
             schema_snapshot: std::collections::HashMap::new(),
         };
 
-        let result = super::execute_statement(
+        let _result = super::execute_statement(
             Statement::Select {
                 distinct: false,
                 columns: None,

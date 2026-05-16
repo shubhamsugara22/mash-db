@@ -113,6 +113,7 @@ pub enum SelectColumn {
     Star,
 }
 
+#[allow(dead_code)]
 fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
@@ -1476,7 +1477,7 @@ fn parse_select_tokens(
                 | Some(Token::Max)
         ) {
             // Parse aggregate function: COUNT(...), SUM(...), etc.
-            let agg_start = i;
+            let _agg_start = i;
             let func_name = match tokens.get(i) {
                 Some(Token::Count) => "count",
                 Some(Token::Sum) => "sum",
@@ -1557,7 +1558,6 @@ fn parse_select_tokens(
     let offset = if tokens.get(i) == Some(&Token::Offset) {
         i += 1;
         if let Some(Token::Number(n)) = tokens.get(i) {
-            i += 1;
             Some(*n)
         } else {
             return Err("Expected number after OFFSET".to_string());
@@ -1890,7 +1890,6 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>), 
                 i += 1;
                 continue;
             } else if tokens.get(i) == Some(&Token::RParen) {
-                i += 1;
                 break;
             } else {
                 return Err("Expected , or ) in column list".to_string());

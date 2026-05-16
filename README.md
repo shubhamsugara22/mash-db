@@ -53,6 +53,7 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
   - **LIMIT/OFFSET**: Paginate results
   - **LIKE Operator**: Pattern matching with `%` and `_` wildcards
   - **WHERE with NULL checks**: `IS NULL` and `IS NOT NULL` predicates
+  - **Extended Numeric Literals**: Unquoted signed numbers (`-12.5`, `+1`), scientific notation (`1e6`, `-2.5E-3`), and leading-dot decimals (`.5`, `.5e2`)
   - **Table Aliases**: Simplified references using aliases
   - **JOIN Operations**: `INNER`, `LEFT`, `RIGHT` with `ON left.col = right.col`
 - **B-Tree Indexing** - Efficient O(log n) lookups for indexed columns
@@ -62,7 +63,7 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
 - **Schema Registry** - Tracks column schemas for each table, persists to schemas.json
 - **Backward Compatibility** - Original (id, username, email) fixed schema still fully supported
 - **Multiple Table Support** - Different tables can have completely different schemas
-- **Comprehensive Testing** - 86+ passing tests covering all SQL features
+- **Comprehensive Testing** - 95+ passing tests covering all SQL features
 
 ## Usage
 
@@ -115,6 +116,11 @@ db > SELECT id, SUM(id) FROM orders GROUP BY id ORDER BY SUM(id) DESC
 Executed.
 db > SELECT username FROM users WHERE username LIKE 'al%'
 (alice)
+Executed.
+db > INSERT INTO metrics VALUES (1, baseline, -12.5, delta)
+Executed.
+db > SELECT name, reading FROM metrics WHERE reading >= .5e2
+(spike, 1.25e3)
 Executed.
 db > .exit
 Bye!
