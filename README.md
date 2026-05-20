@@ -64,7 +64,7 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
 - **Schema Registry** - Tracks column schemas for each table, persists to schemas.json
 - **Backward Compatibility** - Original (id, username, email) fixed schema still fully supported
 - **Multiple Table Support** - Different tables can have completely different schemas
-- **Comprehensive Testing** - 95+ passing tests covering all SQL features
+- **Comprehensive Testing** - 105+ passing tests covering all SQL features
 
 ## Usage
 
