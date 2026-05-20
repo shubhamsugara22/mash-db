@@ -90,25 +90,25 @@ Core execution behavior:
 
 ```mermaid
 flowchart TD
-	A[Start Process] --> B[Load schemas and tables]
-	B --> C[Enter REPL Loop]
-	C --> D[Read user input]
-	D --> E{EOF or .exit?}
-	E -- Yes --> Z[Shutdown]
-	E -- No --> F[Normalize input<br/>trim, strip ;, skip -- comments]
-	F --> G{Meta command?}
-	G -- Yes --> H[Execute meta command]
-	H --> C
-	G -- No --> I[Tokenize SQL]
-	I --> J[Parse into statement]
-	J --> K{Parse success?}
-	K -- No --> L[Print error]
-	L --> C
-	K -- Yes --> M[Execute statement]
-	M --> N{Transaction active?}
-	N -- No --> O[Persist table/schema changes]
-	N -- Yes --> P[Keep changes in transaction state]
-	O --> Q[Print result]
-	P --> Q
-	Q --> C
+    A[Start Process] --> B[Load schemas and tables]
+    B --> C[Enter REPL Loop]
+    C --> D[Read user input]
+    D --> E{EOF or .exit?}
+    E -- Yes --> Z[Shutdown]
+    E -- No --> F[Normalize input<br/>trim, strip ;, skip -- comments]
+    F --> G{Meta command?}
+    G -- Yes --> H[Execute meta command]
+    H --> C
+    G -- No --> I[Tokenize SQL]
+    I --> J[Parse into statement]
+    J --> K{Parse success?}
+    K -- No --> L[Print error]
+    L --> C
+    K -- Yes --> M[Execute statement]
+    M --> N{Transaction active?}
+    N -- No --> O[Persist table/schema changes]
+    N -- Yes --> P[Keep changes in transaction state]
+    O --> Q[Print result]
+    P --> Q
+    Q --> C
 ```

@@ -877,4 +877,92 @@ mod tests {
             .unwrap_err()
             .contains("COUNT(DISTINCT *) is not supported"));
     }
+
+    // ── Numeric-literal negative / regression tests ───────────────────────────
+
+    #[test]
+    fn test_tokenize_double_dot_splits_into_two_string_tokens() {
+        // "1.2.3" must not panic; the second dot+digit becomes a separate String token
+        let tokens = tokenize("1.2.3");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], Token::String("1.2".to_string()));
+        assert_eq!(tokens[1], Token::String(".3".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_incomplete_exponent_not_consumed() {
+        // "5e" — 'e' without a following digit must not be consumed as an exponent
+        let tokens = tokenize("5e");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], Token::Number(5));
+        assert_eq!(tokens[1], Token::Identifier("e".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_exponent_sign_without_digit_not_consumed() {
+        // "5e+" — sign after 'e' but no digit: exponent not consumed, bare '+' is dropped
+        let tokens = tokenize("5e+");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], Token::Number(5));
+        assert_eq!(tokens[1], Token::Identifier("e".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_bare_minus_between_identifiers_is_dropped() {
+        // "x - y" — minus not adjacent to a digit is silently dropped
+        let tokens = tokenize("x - y");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], Token::Identifier("x".to_string()));
+        assert_eq!(tokens[1], Token::Identifier("y".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_bare_plus_between_identifiers_is_dropped() {
+        // "a + b" — plus not adjacent to a digit is silently dropped
+        let tokens = tokenize("a + b");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], Token::Identifier("a".to_string()));
+        assert_eq!(tokens[1], Token::Identifier("b".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_leading_dot_without_digit_is_dot_token() {
+        // ". col" — dot not followed by a digit must produce a Dot token, not a numeric
+        let tokens = tokenize(". col");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], Token::Dot);
+        assert_eq!(tokens[1], Token::Identifier("col".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_sign_then_dot_no_digit_sign_dropped() {
+        // "-. x" — minus then dot but no digit after dot: sign is dropped, dot stays Dot
+        let tokens = tokenize("-. x");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], Token::Dot);
+        assert_eq!(tokens[1], Token::Identifier("x".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_number_followed_by_incomplete_exponent_no_panic() {
+        // Regression guard: "10e abc" must not panic and must not merge tokens
+        let tokens = tokenize("10e abc");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0], Token::Number(10));
+        assert_eq!(tokens[1], Token::Identifier("e".to_string()));
+        assert_eq!(tokens[2], Token::Identifier("abc".to_string()));
+    }
+
+    #[test]
+    fn test_parse_insert_missing_values_keyword_is_error() {
+        // "INSERT INTO users (1, alice)" — VALUES keyword is required; must return Err
+        let result = parse_insert("INSERT INTO users (1, alice)");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_select_double_dot_value_does_not_panic() {
+        // Malformed WHERE value with a double-dot literal must not panic; result is unspecified
+        let _ = parse_select("SELECT * FROM t WHERE x > 1.2.3");
+    }
 }

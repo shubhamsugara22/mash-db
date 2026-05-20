@@ -6,7 +6,8 @@ A simple database implementation in Rust, built from scratch following SQLite ar
 
 **NEW** - The database now supports custom table schemas with arbitrary columns! No longer limited to (id, username, email).
 
-### Examples:
+### Examples
+
 ```sql
 -- Create a custom table with any columns
 CREATE TABLE products (id, name, price, stock, category)
@@ -72,7 +73,8 @@ cargo run
 ```
 
 Example session:
-```
+
+```text
 db > INSERT INTO users VALUES (1, 'alice', 'alice@example.com')
 Executed.
 db > INSERT INTO users VALUES (2, 'bob', 'bob@example.com')
@@ -127,6 +129,7 @@ Bye!
 ```
 
 ### DDL Commands - CREATE TABLE and DROP TABLE
+
 ```sql
 -- Create a new table
 db > CREATE TABLE products (id, name, price)
@@ -148,6 +151,7 @@ Error: Table 'nonexistent' does not exist
 ## Examples - Advanced Usage
 
 ### ORDER BY on Aggregate Functions
+
 ```sql
 -- Count orders per user, sorted by highest count first
 SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC
@@ -160,6 +164,7 @@ SELECT username, COUNT(DISTINCT id) FROM orders GROUP BY username ORDER BY COUNT
 ```
 
 ### GROUP BY with LIMIT/OFFSET on Aggregates
+
 ```sql
 -- Top 3 users by order count
 SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC LIMIT 3
@@ -169,6 +174,7 @@ SELECT username, COUNT(*) FROM orders GROUP BY username ORDER BY COUNT(*) DESC L
 ```
 
 ### Complex Queries Combining All Features
+
 ```sql
 -- High-value orders for users with multiple orders, sorted by total
 SELECT username, COUNT(*), SUM(amount) FROM orders 
@@ -180,6 +186,7 @@ LIMIT 5
 ```
 
 ### LIKE Pattern Matching
+
 ```sql
 -- Starts with 'al'
 SELECT username FROM users WHERE username LIKE 'al%'
@@ -227,5 +234,5 @@ SELECT username FROM users WHERE username LIKE 'b_b'
 
 ## References
 
-- https://cstack.github.io/db_tutorial/parts/part1.html
-- https://medium.com/@paolorechia/building-a-database-from-scratch-in-rust-part-1-6dfef2223673
+- <https://cstack.github.io/db_tutorial/parts/part1.html>
+- <https://medium.com/@paolorechia/building-a-database-from-scratch-in-rust-part-1-6dfef2223673>
