@@ -63,8 +63,7 @@ impl AggregateColumn {
             let inner = &col[6..col.len() - 1];
             if inner == "*" {
                 AggregateColumn::Count(None)
-            } else if inner.starts_with("distinct ") {
-                let col_name = &inner[9..];
+            } else if let Some(col_name) = inner.strip_prefix("distinct ") {
                 AggregateColumn::CountDistinct(col_name.to_string())
             } else {
                 AggregateColumn::Count(Some(inner.to_string()))
@@ -93,6 +92,7 @@ enum MetaCommandResult {
     UnrecognizedCommand,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum PrepareResult {
     Success(Statement),
     UnrecognizedStatement,
@@ -104,6 +104,7 @@ struct TransactionState {
     schema_snapshot: HashMap<String, Vec<String>>,
 }
 
+#[allow(clippy::type_complexity)]
 enum Statement {
     BeginTransaction,
     CommitTransaction,
@@ -351,7 +352,7 @@ fn group_rows_by_columns<'a>(
             }
         }
         let key = group_key.join("|");
-        groups.entry(key).or_insert_with(Vec::new).push(row);
+        groups.entry(key).or_default().push(row);
     }
 
     groups
@@ -525,6 +526,7 @@ fn evaluate_having_condition(
 }
 
 // Helper function to check if grouped results pass HAVING conditions
+#[allow(clippy::type_complexity)]
 fn passes_having_filter(
     having: &Option<(Vec<(String, String, String)>, Vec<String>)>,
     agg_cols: &[AggregateColumn],
