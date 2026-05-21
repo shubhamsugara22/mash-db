@@ -195,13 +195,13 @@ impl Table {
         if self.has_username {
             self.username_index
                 .entry(row.username.clone())
-                .or_insert(Vec::new())
+                .or_default()
                 .push(pos);
         }
         if self.has_email {
             self.email_index
                 .entry(row.email.clone())
-                .or_insert(Vec::new())
+                .or_default()
                 .push(pos);
         }
         Ok(())
@@ -481,7 +481,7 @@ impl Table {
                     // Add to new username index
                     self.username_index
                         .entry(row.username.clone())
-                        .or_insert(Vec::new())
+                        .or_default()
                         .push((page_index, row_index));
                 }
                 "email" => {
@@ -500,7 +500,7 @@ impl Table {
                     // Add to new email index
                     self.email_index
                         .entry(row.email.clone())
-                        .or_insert(Vec::new())
+                        .or_default()
                         .push((page_index, row_index));
                 }
                 "id" => return Err("Cannot update id".to_string()),
@@ -609,13 +609,13 @@ impl Table {
                 if self.has_username {
                     self.username_index
                         .entry(row.username.clone())
-                        .or_insert(Vec::new())
+                        .or_default()
                         .push(pos);
                 }
                 if self.has_email {
                     self.email_index
                         .entry(row.email.clone())
-                        .or_insert(Vec::new())
+                        .or_default()
                         .push(pos);
                 }
             }

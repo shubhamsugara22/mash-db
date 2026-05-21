@@ -319,7 +319,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             }
             '"' | '\'' => {
                 let mut str = String::new();
-                while let Some(ch) = chars.next() {
+                for ch in chars.by_ref() {
                     if ch == c {
                         break;
                     }
@@ -610,6 +610,7 @@ pub fn parse_select_columns(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn parse_select(
     input: &str,
 ) -> Result<
@@ -631,6 +632,7 @@ pub fn parse_select(
     parse_select_tokens(&tokens)
 }
 
+#[allow(clippy::type_complexity)]
 fn parse_select_tokens(
     tokens: &[Token],
 ) -> Result<
@@ -696,7 +698,7 @@ fn parse_select_tokens(
         | Some(Token::Min)
         | Some(Token::Max) => {
             // Use the helper function to parse columns (which might include aggregates)
-            match parse_select_columns(&tokens, &mut i) {
+            match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
                     // Convert SelectColumn to String for backward compatibility
                     // For now, just use column names and ignore aggregate function info
