@@ -47,6 +47,7 @@ pub enum Token {
     Right,
     On,
     In,
+    Union,
     Eq,
     Ne,
     Gt,
@@ -275,6 +276,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "RIGHT" => Token::Right,
                     "ON" => Token::On,
                     "IN" => Token::In,
+                    "UNION" => Token::Union,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -428,6 +430,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Null => "NULL".to_string(),
         Token::Like => "LIKE".to_string(),
         Token::Between => "BETWEEN".to_string(),
+        Token::Union => "UNION".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -900,6 +903,65 @@ fn parse_select_tokens(
                     "BETWEEN".to_string(),
                     format!("{},{}", val1, val2),
                 ));
+            } else if tokens.get(i) == Some(&Token::Not) && tokens.get(i + 1) == Some(&Token::In) {
+                // Handle NOT IN operator
+                i += 2;
+                if tokens.get(i) != Some(&Token::LParen) {
+                    return Err("Expected ( after NOT IN".to_string());
+                }
+                i += 1;
+                let norm_col = resolve_alias(col, &alias_map);
+                if tokens.get(i) == Some(&Token::Select) {
+                    let start = i;
+                    let mut depth = 1;
+                    while i < tokens.len() {
+                        match tokens.get(i) {
+                            Some(Token::LParen) => depth += 1,
+                            Some(Token::RParen) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                    if depth != 0 {
+                        return Err("Unclosed subquery in NOT IN".to_string());
+                    }
+                    let sub_tokens = &tokens[start..i];
+                    let subquery_sql = tokens_to_sql(sub_tokens);
+                    i += 1;
+                    conditions.push((norm_col, "NOT_IN_SUBQUERY".to_string(), subquery_sql));
+                } else {
+                    let mut values = Vec::new();
+                    loop {
+                        let val = if let Some(Token::String(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else if let Some(Token::Number(v)) = tokens.get(i) {
+                            i += 1;
+                            v.to_string()
+                        } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                            i += 1;
+                            v.clone()
+                        } else {
+                            return Err("Expected value in NOT IN list".to_string());
+                        };
+                        values.push(val);
+                        if tokens.get(i) == Some(&Token::Comma) {
+                            i += 1;
+                            continue;
+                        } else if tokens.get(i) == Some(&Token::RParen) {
+                            i += 1;
+                            break;
+                        } else {
+                            return Err("Expected , or ) in NOT IN list".to_string());
+                        }
+                    }
+                    conditions.push((norm_col, "NOT_IN".to_string(), values.join(",")));
+                }
             } else if tokens.get(i) == Some(&Token::In) {
                 // Handle IN operator: column IN (value1, value2, ...) or column IN (SELECT ...)
                 i += 1;
@@ -1066,6 +1128,71 @@ fn parse_select_tokens(
                             "BETWEEN".to_string(),
                             format!("{},{}", val1, val2),
                         ));
+                    } else if tokens.get(i) == Some(&Token::Not)
+                        && tokens.get(i + 1) == Some(&Token::In)
+                    {
+                        // Handle NOT IN operator in subsequent conditions
+                        i += 2;
+                        if tokens.get(i) != Some(&Token::LParen) {
+                            return Err("Expected ( after NOT IN".to_string());
+                        }
+                        i += 1;
+                        let norm_col = resolve_alias(col, &alias_map);
+                        if tokens.get(i) == Some(&Token::Select) {
+                            let start = i;
+                            let mut depth = 1;
+                            while i < tokens.len() {
+                                match tokens.get(i) {
+                                    Some(Token::LParen) => depth += 1,
+                                    Some(Token::RParen) => {
+                                        depth -= 1;
+                                        if depth == 0 {
+                                            break;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                i += 1;
+                            }
+                            if depth != 0 {
+                                return Err("Unclosed subquery in NOT IN".to_string());
+                            }
+                            let sub_tokens = &tokens[start..i];
+                            let subquery_sql = tokens_to_sql(sub_tokens);
+                            i += 1;
+                            conditions.push((
+                                norm_col,
+                                "NOT_IN_SUBQUERY".to_string(),
+                                subquery_sql,
+                            ));
+                        } else {
+                            let mut values = Vec::new();
+                            loop {
+                                let val = if let Some(Token::String(v)) = tokens.get(i) {
+                                    i += 1;
+                                    v.clone()
+                                } else if let Some(Token::Number(v)) = tokens.get(i) {
+                                    i += 1;
+                                    v.to_string()
+                                } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                                    i += 1;
+                                    v.clone()
+                                } else {
+                                    return Err("Expected value in NOT IN list".to_string());
+                                };
+                                values.push(val);
+                                if tokens.get(i) == Some(&Token::Comma) {
+                                    i += 1;
+                                    continue;
+                                } else if tokens.get(i) == Some(&Token::RParen) {
+                                    i += 1;
+                                    break;
+                                } else {
+                                    return Err("Expected , or ) in NOT IN list".to_string());
+                                }
+                            }
+                            conditions.push((norm_col, "NOT_IN".to_string(), values.join(",")));
+                        }
                     } else if tokens.get(i) == Some(&Token::In) {
                         // Handle IN operator in subsequent conditions
                         i += 1;
@@ -1677,12 +1804,14 @@ fn parse_insert_tokens(tokens: &[Token]) -> Result<(Option<String>, Vec<String>)
     Ok((table_name, values))
 }
 
-pub fn parse_update(input: &str) -> Result<(Option<String>, u32, String, String), String> {
+pub fn parse_update(input: &str) -> Result<(Option<String>, u32, Vec<(String, String)>), String> {
     let tokens = tokenize(input);
     parse_update_tokens(&tokens)
 }
 
-fn parse_update_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String, String), String> {
+fn parse_update_tokens(
+    tokens: &[Token],
+) -> Result<(Option<String>, u32, Vec<(String, String)>), String> {
     let mut i = 0;
     if tokens.get(i) != Some(&Token::Update) {
         return Err("Expected UPDATE".to_string());
@@ -1702,7 +1831,6 @@ fn parse_update_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String,
     if first_ident.is_some() && tokens.get(i) == Some(&Token::Set) {
         table_name = first_ident;
     } else if tokens.get(i) != Some(&Token::Set) {
-        // If no SET immediately after first token, check if first was consumed
         return Err("Expected SET".to_string());
     }
 
@@ -1710,22 +1838,38 @@ fn parse_update_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String,
         return Err("Expected SET".to_string());
     }
     i += 1;
-    let column = if let Some(Token::Identifier(col)) = tokens.get(i) {
-        col.clone()
-    } else {
-        return Err("Expected column".to_string());
-    };
-    i += 1;
-    if tokens.get(i) != Some(&Token::Eq) {
-        return Err("Expected =".to_string());
+
+    // Parse one or more col = val assignments separated by commas
+    let mut assignments: Vec<(String, String)> = Vec::new();
+    loop {
+        let column = if let Some(Token::Identifier(col)) = tokens.get(i) {
+            col.clone()
+        } else {
+            return Err("Expected column".to_string());
+        };
+        i += 1;
+        if tokens.get(i) != Some(&Token::Eq) {
+            return Err("Expected =".to_string());
+        }
+        i += 1;
+        let value = if let Some(Token::String(s)) = tokens.get(i) {
+            s.clone()
+        } else if let Some(Token::Number(n)) = tokens.get(i) {
+            n.to_string()
+        } else if let Some(Token::Identifier(s)) = tokens.get(i) {
+            s.clone()
+        } else {
+            return Err("Expected value".to_string());
+        };
+        i += 1;
+        assignments.push((column, value));
+        if tokens.get(i) == Some(&Token::Comma) {
+            i += 1; // consume comma, parse next assignment
+        } else {
+            break; // no more assignments
+        }
     }
-    i += 1;
-    let value = if let Some(Token::String(s)) = tokens.get(i) {
-        s.clone()
-    } else {
-        return Err("Expected value".to_string());
-    };
-    i += 1;
+
     if tokens.get(i) != Some(&Token::Where) {
         return Err("Expected WHERE".to_string());
     }
@@ -1747,7 +1891,7 @@ fn parse_update_tokens(tokens: &[Token]) -> Result<(Option<String>, u32, String,
     if i != tokens.len() {
         return Err("Extra tokens".to_string());
     }
-    Ok((table_name, id, column, value))
+    Ok((table_name, id, assignments))
 }
 
 pub fn parse_delete(input: &str) -> Result<(Option<String>, u32), String> {

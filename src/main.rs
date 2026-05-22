@@ -140,8 +140,12 @@ enum Statement {
     Update {
         table_name: Option<String>,
         id: u32,
-        column: String,
-        value: String,
+        assignments: Vec<(String, String)>,
+    },
+    Union {
+        sql1: String,
+        sql2: String,
+        all: bool,
     },
     Delete {
         table_name: Option<String>,
@@ -194,6 +198,37 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
     }
 }
 
+fn split_on_union(input: &str) -> Option<(String, String, bool)> {
+    let upper = input.to_uppercase();
+    let bytes = input.as_bytes();
+    let ubytes = upper.as_bytes();
+    let len = bytes.len();
+    let mut depth: usize = 0;
+    let mut i = 0;
+    while i < len {
+        if bytes[i] == b'(' {
+            depth += 1;
+        } else if bytes[i] == b')' {
+            if depth > 0 {
+                depth -= 1;
+            }
+        } else if depth == 0 {
+            if i + 11 <= len && &ubytes[i..i + 11] == b" UNION ALL " {
+                let s1 = input[..i].trim().to_string();
+                let s2 = input[i + 11..].trim().to_string();
+                return Some((s1, s2, true));
+            }
+            if i + 7 <= len && &ubytes[i..i + 7] == b" UNION " {
+                let s1 = input[..i].trim().to_string();
+                let s2 = input[i + 7..].trim().to_string();
+                return Some((s1, s2, false));
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
 fn prepare_statement(input: &str) -> PrepareResult {
     let upper = input.to_uppercase();
 
@@ -212,15 +247,17 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if upper.starts_with("UPDATE") {
         match parser::parse_update(input) {
-            Ok((table_name, id, column, value)) => PrepareResult::Success(Statement::Update {
+            Ok((table_name, id, assignments)) => PrepareResult::Success(Statement::Update {
                 table_name,
                 id,
-                column,
-                value,
+                assignments,
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if upper.starts_with("SELECT") {
+        if let Some((sql1, sql2, all)) = split_on_union(input) {
+            return PrepareResult::Success(Statement::Union { sql1, sql2, all });
+        }
         match parser::parse_select(input) {
             Ok((
                 distinct,
@@ -688,6 +725,9 @@ fn execute_statement(
             if op == "IN_SUBQUERY" {
                 let values = execute_subquery_for_in(val, tables, schemas)?;
                 resolved.push((col.clone(), "IN".to_string(), values.join(",")));
+            } else if op == "NOT_IN_SUBQUERY" {
+                let values = execute_subquery_for_in(val, tables, schemas)?;
+                resolved.push((col.clone(), "NOT_IN".to_string(), values.join(",")));
             } else {
                 resolved.push((col.clone(), op.clone(), val.clone()));
             }
@@ -1576,22 +1616,28 @@ fn execute_statement(
         Statement::Update {
             table_name,
             id,
-            column,
-            value,
+            assignments,
         } => {
             let table = match table_name {
                 Some(name) => load_table_by_name(&name, tables, schemas),
                 None => get_default_table(tables, schemas),
             };
-            match table.update(id, &column, &value) {
-                Ok(()) => {
+            let mut update_err: Option<String> = None;
+            for (column, value) in &assignments {
+                if let Err(e) = table.update(id, column, value) {
+                    update_err = Some(e);
+                    break;
+                }
+            }
+            match update_err {
+                Some(e) => println!("Error: {}", e),
+                None => {
                     if let Err(e) = table.save() {
                         println!("Error saving table: {}", e);
                     } else {
                         println!("Executed.");
                     }
                 }
-                Err(e) => println!("Error: {}", e),
             }
         }
         Statement::Delete { table_name, id } => {
@@ -1857,6 +1903,108 @@ fn execute_statement(
             } else {
                 println!("Truncated table '{}' ({} rows deleted)", table_name, count);
             }
+        }
+        Statement::Union { sql1, sql2, all } => {
+            fn collect_rows_for_union(
+                sql: &str,
+                tables: &mut HashMap<String, Table>,
+                schemas: &HashMap<String, Vec<String>>,
+            ) -> Result<Vec<Vec<String>>, String> {
+                let (
+                    distinct,
+                    cols,
+                    from_table,
+                    join,
+                    where_clause,
+                    _group_by,
+                    _having,
+                    order_by,
+                    limit,
+                    offset,
+                ) = parser::parse_select(sql)?;
+                if join.is_some() {
+                    return Err("UNION sub-queries do not support JOIN".to_string());
+                }
+                let table_name = from_table
+                    .as_deref()
+                    .unwrap_or("users")
+                    .to_string();
+                let schema = get_schema_for(&table_name, schemas);
+                // Resolve subquery conditions first, while tables is not also borrowed
+                let resolved_where = if let Some((conditions, operators)) = where_clause {
+                    let resolved = resolve_in_subqueries(&conditions, tables, schemas)?;
+                    Some((resolved, operators))
+                } else {
+                    None
+                };
+                // Clone rows immediately so we can release the table borrow
+                let owned_rows: Vec<Row> = {
+                    let tbl = load_table_by_name(&table_name, tables, schemas);
+                    match resolved_where {
+                        None => tbl.select_all().into_iter().cloned().collect(),
+                        Some((ref conditions, ref operators)) => tbl
+                            .select_where_complex(conditions, operators)?
+                            .into_iter()
+                            .cloned()
+                            .collect(),
+                    }
+                };
+                let row_refs: Vec<&Row> = owned_rows.iter().collect();
+                let row_refs = apply_sorting(row_refs, order_by);
+                let row_refs = apply_distinct(row_refs, distinct);
+                let row_refs = apply_offset_limit(row_refs, offset, limit);
+                let result = row_refs
+                    .iter()
+                    .map(|row| match &cols {
+                        None => schema
+                            .iter()
+                            .map(|col| {
+                                row.get_value(col).unwrap_or_else(|| "NULL".to_string())
+                            })
+                            .collect(),
+                        Some(col_names) if col_names.iter().any(|c| c == "*") => schema
+                            .iter()
+                            .map(|col| {
+                                row.get_value(col).unwrap_or_else(|| "NULL".to_string())
+                            })
+                            .collect(),
+                        Some(col_names) => col_names
+                            .iter()
+                            .map(|col| {
+                                let col_name = extract_column_name(col);
+                                row.get_value(col_name)
+                                    .unwrap_or_else(|| "NULL".to_string())
+                            })
+                            .collect(),
+                    })
+                    .collect();
+                Ok(result)
+            }
+
+            let rows1 = match collect_rows_for_union(&sql1, tables, schemas) {
+                Ok(r) => r,
+                Err(e) => {
+                    println!("Error in first query: {}", e);
+                    return;
+                }
+            };
+            let rows2 = match collect_rows_for_union(&sql2, tables, schemas) {
+                Ok(r) => r,
+                Err(e) => {
+                    println!("Error in second query: {}", e);
+                    return;
+                }
+            };
+            let mut combined = rows1;
+            combined.extend(rows2);
+            if !all {
+                let mut seen = std::collections::HashSet::new();
+                combined.retain(|r| seen.insert(r.join(",")));
+            }
+            for row in &combined {
+                println!("({})", row.join(", "));
+            }
+            println!("Executed.");
         }
     }
 }

@@ -366,6 +366,12 @@ impl Table {
                 return values.iter().any(|v| *v == rv);
             }
             false
+        } else if operator == "NOT_IN" {
+            let values: Vec<&str> = value.split(',').map(|v| v.trim()).collect();
+            if let Some(rv) = row.get_value(column) {
+                return !values.iter().any(|v| *v == rv);
+            }
+            true // NULL not in any list
         } else {
             if let Some(rv) = row.get_value(column) {
                 if operator == "LIKE" {

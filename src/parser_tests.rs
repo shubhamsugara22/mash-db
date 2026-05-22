@@ -202,11 +202,12 @@ mod tests {
     fn test_parse_update() {
         let result = parse_update("UPDATE users SET username = 'newname' WHERE id = 1");
         assert!(result.is_ok());
-        let (table_name, id, column, value) = result.unwrap();
+        let (table_name, id, assignments) = result.unwrap();
         assert_eq!(table_name, Some("users".to_string()));
         assert_eq!(id, 1);
-        assert_eq!(column, "username");
-        assert_eq!(value, "newname");
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].0, "username");
+        assert_eq!(assignments[0].1, "newname");
     }
 
     #[test]
@@ -964,5 +965,66 @@ mod tests {
     fn test_parse_select_double_dot_value_does_not_panic() {
         // Malformed WHERE value with a double-dot literal must not panic; result is unspecified
         let _ = parse_select("SELECT * FROM t WHERE x > 1.2.3");
+    }
+
+    #[test]
+    fn test_parse_select_where_not_in_list() {
+        let result = parse_select("SELECT * FROM users WHERE id NOT IN (1, 2, 3)");
+        assert!(result.is_ok());
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        assert!(where_clause.is_some());
+        let (conditions, _) = where_clause.unwrap();
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].0, "id");
+        assert_eq!(conditions[0].1, "NOT_IN");
+        assert_eq!(conditions[0].2, "1,2,3");
+    }
+
+    #[test]
+    fn test_parse_select_where_not_in_multiple_conditions() {
+        let result =
+            parse_select("SELECT * FROM users WHERE username NOT IN ('alice', 'bob') AND id = 5");
+        assert!(result.is_ok());
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        assert!(where_clause.is_some());
+        let (conditions, operators) = where_clause.unwrap();
+        assert_eq!(conditions.len(), 2);
+        assert_eq!(conditions[0].1, "NOT_IN");
+        assert_eq!(conditions[1].1, "=");
+        assert_eq!(operators[0], "AND");
+    }
+
+    #[test]
+    fn test_parse_update_multi_column() {
+        let result = parse_update(
+            "UPDATE users SET username = 'bob', email = 'bob@example.com' WHERE id = 2",
+        );
+        assert!(result.is_ok());
+        let (table_name, id, assignments) = result.unwrap();
+        assert_eq!(table_name, Some("users".to_string()));
+        assert_eq!(id, 2);
+        assert_eq!(assignments.len(), 2);
+        assert_eq!(assignments[0], ("username".to_string(), "bob".to_string()));
+        assert_eq!(
+            assignments[1],
+            ("email".to_string(), "bob@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_update_numeric_value() {
+        let result = parse_update("UPDATE products SET price = 99 WHERE id = 3");
+        assert!(result.is_ok());
+        let (_, id, assignments) = result.unwrap();
+        assert_eq!(id, 3);
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].0, "price");
+        assert_eq!(assignments[0].1, "99");
+    }
+
+    #[test]
+    fn test_tokenize_union_keyword() {
+        let tokens = tokenize("SELECT * FROM a UNION SELECT * FROM b");
+        assert!(tokens.contains(&Token::Union));
     }
 }
