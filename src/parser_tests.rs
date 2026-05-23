@@ -1027,4 +1027,51 @@ mod tests {
         let tokens = tokenize("SELECT * FROM a UNION SELECT * FROM b");
         assert!(tokens.contains(&Token::Union));
     }
+
+    #[test]
+    fn test_tokenize_exists_keyword() {
+        let tokens = tokenize("SELECT * FROM users WHERE EXISTS (SELECT id FROM orders)");
+        assert!(tokens.contains(&Token::Exists));
+    }
+
+    #[test]
+    fn test_parse_select_where_exists_subquery() {
+        let result = parse_select(
+            "SELECT * FROM users WHERE EXISTS (SELECT id FROM orders WHERE orders.user_id = 1)",
+        );
+        assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
+        let stmt = result.unwrap();
+        let (conditions, _operators) = stmt.where_clause.unwrap();
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].0, "__exists__");
+        assert_eq!(conditions[0].1, "EXISTS_SUBQUERY");
+        assert!(!conditions[0].2.is_empty());
+    }
+
+    #[test]
+    fn test_parse_select_where_not_exists_subquery() {
+        let result = parse_select(
+            "SELECT * FROM users WHERE NOT EXISTS (SELECT id FROM orders WHERE orders.user_id = 1)",
+        );
+        assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
+        let stmt = result.unwrap();
+        let (conditions, _operators) = stmt.where_clause.unwrap();
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].0, "__exists__");
+        assert_eq!(conditions[0].1, "NOT_EXISTS_SUBQUERY");
+        assert!(!conditions[0].2.is_empty());
+    }
+
+    #[test]
+    fn test_parse_select_where_exists_with_and() {
+        let result =
+            parse_select("SELECT * FROM users WHERE id = 1 AND EXISTS (SELECT id FROM orders)");
+        assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
+        let stmt = result.unwrap();
+        let (conditions, operators) = stmt.where_clause.unwrap();
+        assert_eq!(conditions.len(), 2);
+        assert_eq!(operators[0], "AND");
+        assert_eq!(conditions[1].0, "__exists__");
+        assert_eq!(conditions[1].1, "EXISTS_SUBQUERY");
+    }
 }

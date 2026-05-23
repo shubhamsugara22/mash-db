@@ -372,6 +372,10 @@ impl Table {
                 return !values.iter().any(|v| *v == rv);
             }
             true // NULL not in any list
+        } else if operator == "CONST_TRUE" {
+            true
+        } else if operator == "CONST_FALSE" {
+            false
         } else {
             if let Some(rv) = row.get_value(column) {
                 if operator == "LIKE" {

@@ -48,6 +48,7 @@ pub enum Token {
     On,
     In,
     Union,
+    Exists,
     Eq,
     Ne,
     Gt,
@@ -277,6 +278,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "ON" => Token::On,
                     "IN" => Token::In,
                     "UNION" => Token::Union,
+                    "EXISTS" => Token::Exists,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -431,6 +433,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Like => "LIKE".to_string(),
         Token::Between => "BETWEEN".to_string(),
         Token::Union => "UNION".to_string(),
+        Token::Exists => "EXISTS".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -843,7 +846,71 @@ fn parse_select_tokens(
         let mut operators = Vec::new();
 
         // Parse first condition
-        if let Some(Token::Identifier(col)) = tokens.get(i) {
+        if tokens.get(i) == Some(&Token::Exists) {
+            i += 1;
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err("Expected ( after EXISTS".to_string());
+            }
+            i += 1;
+            let start = i;
+            let mut depth = 1;
+            while i < tokens.len() {
+                match tokens.get(i) {
+                    Some(Token::LParen) => depth += 1,
+                    Some(Token::RParen) => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+            if depth != 0 {
+                return Err("Unclosed subquery in EXISTS".to_string());
+            }
+            let sub_tokens = &tokens[start..i];
+            let subquery_sql = tokens_to_sql(sub_tokens);
+            i += 1; // consume closing ')'
+            conditions.push((
+                "__exists__".to_string(),
+                "EXISTS_SUBQUERY".to_string(),
+                subquery_sql,
+            ));
+        } else if tokens.get(i) == Some(&Token::Not) && tokens.get(i + 1) == Some(&Token::Exists) {
+            i += 2;
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err("Expected ( after NOT EXISTS".to_string());
+            }
+            i += 1;
+            let start = i;
+            let mut depth = 1;
+            while i < tokens.len() {
+                match tokens.get(i) {
+                    Some(Token::LParen) => depth += 1,
+                    Some(Token::RParen) => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+            if depth != 0 {
+                return Err("Unclosed subquery in NOT EXISTS".to_string());
+            }
+            let sub_tokens = &tokens[start..i];
+            let subquery_sql = tokens_to_sql(sub_tokens);
+            i += 1; // consume closing ')'
+            conditions.push((
+                "__exists__".to_string(),
+                "NOT_EXISTS_SUBQUERY".to_string(),
+                subquery_sql,
+            ));
+        } else if let Some(Token::Identifier(col)) = tokens.get(i) {
             i += 1;
             // Check for IS NULL / IS NOT NULL
             if tokens.get(i) == Some(&Token::Is) {
@@ -1070,7 +1137,73 @@ fn parse_select_tokens(
                 operators.push(logical_op);
                 i += 1;
 
-                if let Some(Token::Identifier(col)) = tokens.get(i) {
+                if tokens.get(i) == Some(&Token::Exists) {
+                    i += 1;
+                    if tokens.get(i) != Some(&Token::LParen) {
+                        return Err("Expected ( after EXISTS".to_string());
+                    }
+                    i += 1;
+                    let start = i;
+                    let mut depth = 1;
+                    while i < tokens.len() {
+                        match tokens.get(i) {
+                            Some(Token::LParen) => depth += 1,
+                            Some(Token::RParen) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                    if depth != 0 {
+                        return Err("Unclosed subquery in EXISTS".to_string());
+                    }
+                    let sub_tokens = &tokens[start..i];
+                    let subquery_sql = tokens_to_sql(sub_tokens);
+                    i += 1; // consume closing ')'
+                    conditions.push((
+                        "__exists__".to_string(),
+                        "EXISTS_SUBQUERY".to_string(),
+                        subquery_sql,
+                    ));
+                } else if tokens.get(i) == Some(&Token::Not)
+                    && tokens.get(i + 1) == Some(&Token::Exists)
+                {
+                    i += 2;
+                    if tokens.get(i) != Some(&Token::LParen) {
+                        return Err("Expected ( after NOT EXISTS".to_string());
+                    }
+                    i += 1;
+                    let start = i;
+                    let mut depth = 1;
+                    while i < tokens.len() {
+                        match tokens.get(i) {
+                            Some(Token::LParen) => depth += 1,
+                            Some(Token::RParen) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                    if depth != 0 {
+                        return Err("Unclosed subquery in NOT EXISTS".to_string());
+                    }
+                    let sub_tokens = &tokens[start..i];
+                    let subquery_sql = tokens_to_sql(sub_tokens);
+                    i += 1; // consume closing ')'
+                    conditions.push((
+                        "__exists__".to_string(),
+                        "NOT_EXISTS_SUBQUERY".to_string(),
+                        subquery_sql,
+                    ));
+                } else if let Some(Token::Identifier(col)) = tokens.get(i) {
                     i += 1;
                     // Check for IS NULL / IS NOT NULL
                     if tokens.get(i) == Some(&Token::Is) {

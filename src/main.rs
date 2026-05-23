@@ -728,6 +728,14 @@ fn execute_statement(
             } else if op == "NOT_IN_SUBQUERY" {
                 let values = execute_subquery_for_in(val, tables, schemas)?;
                 resolved.push((col.clone(), "NOT_IN".to_string(), values.join(",")));
+            } else if op == "EXISTS_SUBQUERY" {
+                let values = execute_subquery_for_in(val, tables, schemas)?;
+                let resolved_op = if values.is_empty() { "CONST_FALSE" } else { "CONST_TRUE" };
+                resolved.push((col.clone(), resolved_op.to_string(), String::new()));
+            } else if op == "NOT_EXISTS_SUBQUERY" {
+                let values = execute_subquery_for_in(val, tables, schemas)?;
+                let resolved_op = if values.is_empty() { "CONST_TRUE" } else { "CONST_FALSE" };
+                resolved.push((col.clone(), resolved_op.to_string(), String::new()));
             } else {
                 resolved.push((col.clone(), op.clone(), val.clone()));
             }
