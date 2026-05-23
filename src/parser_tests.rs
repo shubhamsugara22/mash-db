@@ -1040,8 +1040,8 @@ mod tests {
             "SELECT * FROM users WHERE EXISTS (SELECT id FROM orders WHERE orders.user_id = 1)",
         );
         assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
-        let stmt = result.unwrap();
-        let (conditions, _operators) = stmt.where_clause.unwrap();
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        let (conditions, _operators) = where_clause.unwrap();
         assert_eq!(conditions.len(), 1);
         assert_eq!(conditions[0].0, "__exists__");
         assert_eq!(conditions[0].1, "EXISTS_SUBQUERY");
@@ -1054,8 +1054,8 @@ mod tests {
             "SELECT * FROM users WHERE NOT EXISTS (SELECT id FROM orders WHERE orders.user_id = 1)",
         );
         assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
-        let stmt = result.unwrap();
-        let (conditions, _operators) = stmt.where_clause.unwrap();
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        let (conditions, _operators) = where_clause.unwrap();
         assert_eq!(conditions.len(), 1);
         assert_eq!(conditions[0].0, "__exists__");
         assert_eq!(conditions[0].1, "NOT_EXISTS_SUBQUERY");
@@ -1067,8 +1067,8 @@ mod tests {
         let result =
             parse_select("SELECT * FROM users WHERE id = 1 AND EXISTS (SELECT id FROM orders)");
         assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
-        let stmt = result.unwrap();
-        let (conditions, operators) = stmt.where_clause.unwrap();
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        let (conditions, operators) = where_clause.unwrap();
         assert_eq!(conditions.len(), 2);
         assert_eq!(operators[0], "AND");
         assert_eq!(conditions[1].0, "__exists__");
