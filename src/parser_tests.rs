@@ -1074,4 +1074,68 @@ mod tests {
         assert_eq!(conditions[1].0, "__exists__");
         assert_eq!(conditions[1].1, "EXISTS_SUBQUERY");
     }
+
+    #[test]
+    fn test_tokenize_upper_lower_length() {
+        use crate::parser::Token;
+        let upper_tokens = crate::parser::tokenize("UPPER(x)");
+        let lower_tokens = crate::parser::tokenize("LOWER(x)");
+        let length_tokens = crate::parser::tokenize("LENGTH(x)");
+        assert!(upper_tokens.contains(&Token::Upper));
+        assert!(lower_tokens.contains(&Token::Lower));
+        assert!(length_tokens.contains(&Token::Length));
+    }
+
+    #[test]
+    fn test_parse_select_upper_column() {
+        let result = parse_select("SELECT UPPER(username) FROM users");
+        assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["upper(username)".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_lower_column() {
+        let result = parse_select("SELECT LOWER(email) FROM users");
+        assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["lower(email)".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_length_column() {
+        let result = parse_select("SELECT LENGTH(username) FROM users");
+        assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["length(username)".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_where_upper_condition() {
+        let result = parse_select("SELECT * FROM users WHERE UPPER(username) = 'ALICE'");
+        assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        let (conditions, _) = where_clause.unwrap();
+        assert_eq!(conditions[0].0, "upper(username)");
+        assert_eq!(conditions[0].1, "=");
+        assert_eq!(conditions[0].2, "ALICE");
+    }
+
+    #[test]
+    fn test_parse_select_where_lower_and_length() {
+        let result = parse_select(
+            "SELECT * FROM users WHERE LOWER(username) = 'alice' AND LENGTH(email) > 5",
+        );
+        assert!(result.is_ok(), "parse_select failed: {:?}", result.err());
+        let (_, _, _, _, where_clause, _, _, _, _, _) = result.unwrap();
+        let (conditions, operators) = where_clause.unwrap();
+        assert_eq!(conditions.len(), 2);
+        assert_eq!(conditions[0].0, "lower(username)");
+        assert_eq!(conditions[0].1, "=");
+        assert_eq!(conditions[0].2, "alice");
+        assert_eq!(conditions[1].0, "length(email)");
+        assert_eq!(conditions[1].1, ">");
+        assert_eq!(conditions[1].2, "5");
+        assert_eq!(operators[0], "AND");
+    }
 }

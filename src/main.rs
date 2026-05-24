@@ -730,11 +730,19 @@ fn execute_statement(
                 resolved.push((col.clone(), "NOT_IN".to_string(), values.join(",")));
             } else if op == "EXISTS_SUBQUERY" {
                 let values = execute_subquery_for_in(val, tables, schemas)?;
-                let resolved_op = if values.is_empty() { "CONST_FALSE" } else { "CONST_TRUE" };
+                let resolved_op = if values.is_empty() {
+                    "CONST_FALSE"
+                } else {
+                    "CONST_TRUE"
+                };
                 resolved.push((col.clone(), resolved_op.to_string(), String::new()));
             } else if op == "NOT_EXISTS_SUBQUERY" {
                 let values = execute_subquery_for_in(val, tables, schemas)?;
-                let resolved_op = if values.is_empty() { "CONST_TRUE" } else { "CONST_FALSE" };
+                let resolved_op = if values.is_empty() {
+                    "CONST_TRUE"
+                } else {
+                    "CONST_FALSE"
+                };
                 resolved.push((col.clone(), resolved_op.to_string(), String::new()));
             } else {
                 resolved.push((col.clone(), op.clone(), val.clone()));
@@ -1320,10 +1328,9 @@ fn execute_statement(
                         Some(cols) => {
                             let mut values: Vec<String> = Vec::new();
                             for col in cols.iter() {
-                                let col_name = extract_column_name(col);
                                 values.push(
-                                    row.get_value(col_name)
-                                        .unwrap_or_else(|| format!("NULL({})", col_name)),
+                                    row.eval_col(col)
+                                        .unwrap_or_else(|| format!("NULL({})", col)),
                                 );
                             }
                             println!("({})", values.join(", "));
@@ -1605,10 +1612,9 @@ fn execute_statement(
                                 Some(cols) => {
                                     let mut values = Vec::new();
                                     for col in cols {
-                                        let col_name = extract_column_name(col);
                                         values.push(
-                                            row.get_value(col_name)
-                                                .unwrap_or_else(|| format!("NULL({})", col_name)),
+                                            row.eval_col(col)
+                                                .unwrap_or_else(|| format!("NULL({})", col)),
                                         );
                                     }
                                     println!("({})", values.join(", "));
@@ -1933,10 +1939,7 @@ fn execute_statement(
                 if join.is_some() {
                     return Err("UNION sub-queries do not support JOIN".to_string());
                 }
-                let table_name = from_table
-                    .as_deref()
-                    .unwrap_or("users")
-                    .to_string();
+                let table_name = from_table.as_deref().unwrap_or("users").to_string();
                 let schema = get_schema_for(&table_name, schemas);
                 // Resolve subquery conditions first, while tables is not also borrowed
                 let resolved_where = if let Some((conditions, operators)) = where_clause {
@@ -1966,23 +1969,15 @@ fn execute_statement(
                     .map(|row| match &cols {
                         None => schema
                             .iter()
-                            .map(|col| {
-                                row.get_value(col).unwrap_or_else(|| "NULL".to_string())
-                            })
+                            .map(|col| row.get_value(col).unwrap_or_else(|| "NULL".to_string()))
                             .collect(),
                         Some(col_names) if col_names.iter().any(|c| c == "*") => schema
                             .iter()
-                            .map(|col| {
-                                row.get_value(col).unwrap_or_else(|| "NULL".to_string())
-                            })
+                            .map(|col| row.get_value(col).unwrap_or_else(|| "NULL".to_string()))
                             .collect(),
                         Some(col_names) => col_names
                             .iter()
-                            .map(|col| {
-                                let col_name = extract_column_name(col);
-                                row.get_value(col_name)
-                                    .unwrap_or_else(|| "NULL".to_string())
-                            })
+                            .map(|col| row.eval_col(col).unwrap_or_else(|| "NULL".to_string()))
                             .collect(),
                     })
                     .collect();

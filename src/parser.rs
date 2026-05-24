@@ -49,6 +49,9 @@ pub enum Token {
     In,
     Union,
     Exists,
+    Upper,
+    Lower,
+    Length,
     Eq,
     Ne,
     Gt,
@@ -279,6 +282,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "IN" => Token::In,
                     "UNION" => Token::Union,
                     "EXISTS" => Token::Exists,
+                    "UPPER" => Token::Upper,
+                    "LOWER" => Token::Lower,
+                    "LENGTH" => Token::Length,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -434,6 +440,9 @@ fn token_to_sql(token: &Token) -> String {
         Token::Between => "BETWEEN".to_string(),
         Token::Union => "UNION".to_string(),
         Token::Exists => "EXISTS".to_string(),
+        Token::Upper => "UPPER".to_string(),
+        Token::Lower => "LOWER".to_string(),
+        Token::Length => "LENGTH".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -2291,46 +2300,6 @@ fn parse_drop_table_tokens(tokens: &[Token]) -> Result<String, String> {
         return Err("Expected DROP".to_string());
     }
     i += 1;
-
-    if tokens.get(i) != Some(&Token::Table) {
-        return Err("Expected TABLE after DROP".to_string());
-    }
-    i += 1;
-
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        name.clone()
-    } else {
-        return Err("Expected table name".to_string());
-    };
-
-    Ok(table_name)
-}
-pub fn parse_truncate_table(input: &str) -> Result<String, String> {
-    let tokens = tokenize(input);
-    parse_truncate_table_tokens(&tokens)
-}
-
-fn parse_truncate_table_tokens(tokens: &[Token]) -> Result<String, String> {
-    let mut i = 0;
-
-    if tokens.get(i) != Some(&Token::Truncate) {
-        return Err("Expected TRUNCATE".to_string());
-    }
-    i += 1;
-
-    if tokens.get(i) != Some(&Token::Table) {
-        return Err("Expected TABLE after TRUNCATE".to_string());
-    }
-    i += 1;
-
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        name.clone()
-    } else {
-        return Err("Expected table name".to_string());
-    };
-
-    Ok(table_name)
-}
 
     if tokens.get(i) != Some(&Token::Table) {
         return Err("Expected TABLE after DROP".to_string());

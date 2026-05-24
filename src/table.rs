@@ -112,6 +112,29 @@ impl Row {
         }
     }
 
+    /// Evaluate a column expression, applying string functions if present.
+    /// Supports `upper(col)`, `lower(col)`, `length(col)`.
+    pub fn eval_col(&self, col_expr: &str) -> Option<String> {
+        if let Some(inner) = col_expr
+            .strip_prefix("upper(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            self.get_value(inner).map(|v| v.to_uppercase())
+        } else if let Some(inner) = col_expr
+            .strip_prefix("lower(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            self.get_value(inner).map(|v| v.to_lowercase())
+        } else if let Some(inner) = col_expr
+            .strip_prefix("length(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            self.get_value(inner).map(|v| v.len().to_string())
+        } else {
+            self.get_value(col_expr)
+        }
+    }
+
     #[allow(dead_code)]
     pub fn get_value_ref(&self, column: &str) -> Option<&str> {
         match column {
@@ -353,7 +376,7 @@ impl Table {
             }
             let min_val: f64 = parts[0].parse().unwrap_or(0.0);
             let max_val: f64 = parts[1].parse().unwrap_or(0.0);
-            let row_val = row.get_value(column);
+            let row_val = row.eval_col(column);
             if let Some(rv) = row_val {
                 if let Ok(num) = rv.parse::<f64>() {
                     return num >= min_val && num <= max_val;
@@ -362,13 +385,13 @@ impl Table {
             false
         } else if operator == "IN" {
             let values: Vec<&str> = value.split(',').map(|v| v.trim()).collect();
-            if let Some(rv) = row.get_value(column) {
+            if let Some(rv) = row.eval_col(column) {
                 return values.iter().any(|v| *v == rv);
             }
             false
         } else if operator == "NOT_IN" {
             let values: Vec<&str> = value.split(',').map(|v| v.trim()).collect();
-            if let Some(rv) = row.get_value(column) {
+            if let Some(rv) = row.eval_col(column) {
                 return !values.iter().any(|v| *v == rv);
             }
             true // NULL not in any list
@@ -377,7 +400,7 @@ impl Table {
         } else if operator == "CONST_FALSE" {
             false
         } else {
-            if let Some(rv) = row.get_value(column) {
+            if let Some(rv) = row.eval_col(column) {
                 if operator == "LIKE" {
                     return Self::pattern_match(&rv, value);
                 }
