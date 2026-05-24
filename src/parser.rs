@@ -481,6 +481,9 @@ pub fn parse_select_columns(
         | Some(Token::Avg)
         | Some(Token::Min)
         | Some(Token::Max)
+        | Some(Token::Upper)
+        | Some(Token::Lower)
+        | Some(Token::Length)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -603,6 +606,37 @@ pub fn parse_select_columns(
                             return Err("Expected column after MAX(".to_string());
                         }
                     }
+                    Some(Token::Upper) | Some(Token::Lower) | Some(Token::Length) => {
+                        let fn_name = match tokens.get(*i) {
+                            Some(Token::Upper) => "upper",
+                            Some(Token::Lower) => "lower",
+                            Some(Token::Length) => "length",
+                            _ => unreachable!(),
+                        };
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err(format!("Expected ( after {}", fn_name.to_uppercase()));
+                        }
+                        *i += 1;
+                        let inner = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err(format!(
+                                "Expected column name inside {}()",
+                                fn_name.to_uppercase()
+                            ));
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err(format!(
+                                "Expected ) after {}(col)",
+                                fn_name.to_uppercase()
+                            ));
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("{}({})", fn_name, inner))
+                    }
                     Some(Token::Identifier(col)) => {
                         let col_name = col.clone();
                         *i += 1;
@@ -711,7 +745,10 @@ fn parse_select_tokens(
         | Some(Token::Sum)
         | Some(Token::Avg)
         | Some(Token::Min)
-        | Some(Token::Max) => {
+        | Some(Token::Max)
+        | Some(Token::Upper)
+        | Some(Token::Lower)
+        | Some(Token::Length) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
@@ -919,6 +956,60 @@ fn parse_select_tokens(
                 "NOT_EXISTS_SUBQUERY".to_string(),
                 subquery_sql,
             ));
+        } else if matches!(
+            tokens.get(i),
+            Some(Token::Upper) | Some(Token::Lower) | Some(Token::Length)
+        ) {
+            let fn_name = match tokens.get(i) {
+                Some(Token::Upper) => "upper",
+                Some(Token::Lower) => "lower",
+                Some(Token::Length) => "length",
+                _ => unreachable!(),
+            };
+            i += 1;
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err(format!("Expected ( after {}", fn_name.to_uppercase()));
+            }
+            i += 1;
+            let inner_col = if let Some(Token::Identifier(c)) = tokens.get(i) {
+                let c = c.clone();
+                i += 1;
+                c
+            } else {
+                return Err(format!(
+                    "Expected column name inside {}()",
+                    fn_name.to_uppercase()
+                ));
+            };
+            if tokens.get(i) != Some(&Token::RParen) {
+                return Err(format!("Expected ) after {}(col)", fn_name.to_uppercase()));
+            }
+            i += 1;
+            let fn_col = format!("{}({})", fn_name, inner_col);
+            let op = match tokens.get(i) {
+                Some(Token::Eq) => "=",
+                Some(Token::Ne) => "!=",
+                Some(Token::Gt) => ">",
+                Some(Token::Lt) => "<",
+                Some(Token::Ge) => ">=",
+                Some(Token::Le) => "<=",
+                Some(Token::Like) => "LIKE",
+                _ => return Err("Expected operator after string function".to_string()),
+            };
+            i += 1;
+            let val = if let Some(Token::String(v)) = tokens.get(i) {
+                i += 1;
+                v.clone()
+            } else if let Some(Token::Number(v)) = tokens.get(i) {
+                i += 1;
+                v.to_string()
+            } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                i += 1;
+                v.clone()
+            } else {
+                return Err("Expected value after operator".to_string());
+            };
+            conditions.push((fn_col, op.to_string(), val));
         } else if let Some(Token::Identifier(col)) = tokens.get(i) {
             i += 1;
             // Check for IS NULL / IS NOT NULL
@@ -1212,6 +1303,60 @@ fn parse_select_tokens(
                         "NOT_EXISTS_SUBQUERY".to_string(),
                         subquery_sql,
                     ));
+                } else if matches!(
+                    tokens.get(i),
+                    Some(Token::Upper) | Some(Token::Lower) | Some(Token::Length)
+                ) {
+                    let fn_name = match tokens.get(i) {
+                        Some(Token::Upper) => "upper",
+                        Some(Token::Lower) => "lower",
+                        Some(Token::Length) => "length",
+                        _ => unreachable!(),
+                    };
+                    i += 1;
+                    if tokens.get(i) != Some(&Token::LParen) {
+                        return Err(format!("Expected ( after {}", fn_name.to_uppercase()));
+                    }
+                    i += 1;
+                    let inner_col = if let Some(Token::Identifier(c)) = tokens.get(i) {
+                        let c = c.clone();
+                        i += 1;
+                        c
+                    } else {
+                        return Err(format!(
+                            "Expected column name inside {}()",
+                            fn_name.to_uppercase()
+                        ));
+                    };
+                    if tokens.get(i) != Some(&Token::RParen) {
+                        return Err(format!("Expected ) after {}(col)", fn_name.to_uppercase()));
+                    }
+                    i += 1;
+                    let fn_col = format!("{}({})", fn_name, inner_col);
+                    let op = match tokens.get(i) {
+                        Some(Token::Eq) => "=",
+                        Some(Token::Ne) => "!=",
+                        Some(Token::Gt) => ">",
+                        Some(Token::Lt) => "<",
+                        Some(Token::Ge) => ">=",
+                        Some(Token::Le) => "<=",
+                        Some(Token::Like) => "LIKE",
+                        _ => return Err("Expected operator after string function".to_string()),
+                    };
+                    i += 1;
+                    let val = if let Some(Token::String(v)) = tokens.get(i) {
+                        i += 1;
+                        v.clone()
+                    } else if let Some(Token::Number(v)) = tokens.get(i) {
+                        i += 1;
+                        v.to_string()
+                    } else if let Some(Token::Identifier(v)) = tokens.get(i) {
+                        i += 1;
+                        v.clone()
+                    } else {
+                        return Err("Expected value after operator".to_string());
+                    };
+                    conditions.push((fn_col, op.to_string(), val));
                 } else if let Some(Token::Identifier(col)) = tokens.get(i) {
                     i += 1;
                     // Check for IS NULL / IS NOT NULL
