@@ -1141,7 +1141,7 @@ mod tests {
 
     #[test]
     fn test_parse_insert_select_basic() {
-        let result = super::parse_insert_select("INSERT INTO backup SELECT * FROM users");
+        let result = parse_insert_select("INSERT INTO backup SELECT * FROM users");
         assert!(
             result.is_ok(),
             "parse_insert_select failed: {:?}",
@@ -1155,9 +1155,8 @@ mod tests {
 
     #[test]
     fn test_parse_insert_select_with_where() {
-        let result = super::parse_insert_select(
-            "INSERT INTO archive SELECT * FROM orders WHERE status = 'closed'",
-        );
+        let result =
+            parse_insert_select("INSERT INTO archive SELECT * FROM orders WHERE status = 'closed'");
         assert!(
             result.is_ok(),
             "parse_insert_select failed: {:?}",
@@ -1184,13 +1183,13 @@ mod tests {
 
     #[test]
     fn test_parse_insert_select_missing_into_fails() {
-        let result = super::parse_insert_select("INSERT backup SELECT * FROM users");
+        let result = parse_insert_select("INSERT backup SELECT * FROM users");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_insert_select_missing_select_fails() {
-        let result = super::parse_insert_select("INSERT INTO backup VALUES (1, 'a', 'b')");
+        let result = parse_insert_select("INSERT INTO backup VALUES (1, 'a', 'b')");
         assert!(result.is_err());
     }
 }

@@ -2009,7 +2009,7 @@ fn execute_statement(
             let mut errors = 0usize;
             for values in result_rows {
                 let tbl = load_table_by_name(&table_name, tables, schemas);
-                match Row::from_values(&target_schema, &values) {
+                match Row::from_values(&target_schema, values) {
                     Ok(row) => match tbl.insert(row) {
                         Ok(()) => inserted += 1,
                         Err(e) => {
