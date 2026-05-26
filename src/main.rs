@@ -147,6 +147,10 @@ enum Statement {
         sql2: String,
         all: bool,
     },
+    InsertSelect {
+        table_name: String,
+        select_sql: String,
+    },
     Delete {
         table_name: Option<String>,
         id: u32,
@@ -239,6 +243,17 @@ fn prepare_statement(input: &str) -> PrepareResult {
     } else if upper == "ROLLBACK" || upper == "ROLLBACK TRANSACTION" {
         PrepareResult::Success(Statement::RollbackTransaction)
     } else if upper.starts_with("INSERT") {
+        if upper.contains(" SELECT ") {
+            match parser::parse_insert_select(input) {
+                Ok((table_name, select_sql)) => {
+                    return PrepareResult::Success(Statement::InsertSelect {
+                        table_name,
+                        select_sql,
+                    });
+                }
+                Err(_) => return PrepareResult::UnrecognizedStatement,
+            }
+        }
         match parser::parse_insert(input) {
             Ok((table_name, values)) => {
                 PrepareResult::Success(Statement::Insert { table_name, values })
@@ -1916,6 +1931,105 @@ fn execute_statement(
                 println!("Error saving table: {}", e);
             } else {
                 println!("Truncated table '{}' ({} rows deleted)", table_name, count);
+            }
+        }
+        Statement::InsertSelect {
+            table_name,
+            select_sql,
+        } => {
+            let (
+                distinct,
+                cols,
+                from_table,
+                _join,
+                where_clause,
+                _group_by,
+                _having,
+                order_by,
+                limit,
+                offset,
+            ) = match parser::parse_select(&select_sql) {
+                Ok(result) => result,
+                Err(e) => {
+                    println!("Error in SELECT: {}", e);
+                    return;
+                }
+            };
+            let src_table_name = from_table.as_deref().unwrap_or("users").to_string();
+            let src_schema = get_schema_for(&src_table_name, schemas);
+            let resolved_where = if let Some((conditions, operators)) = where_clause {
+                match resolve_in_subqueries(&conditions, tables, schemas) {
+                    Ok(resolved) => Some((resolved, operators)),
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
+            let owned_rows: Vec<Row> = {
+                let tbl = load_table_by_name(&src_table_name, tables, schemas);
+                match resolved_where {
+                    None => tbl.select_all().into_iter().cloned().collect(),
+                    Some((ref conditions, ref operators)) => {
+                        match tbl.select_where_complex(conditions, operators) {
+                            Ok(rows) => rows.into_iter().cloned().collect(),
+                            Err(e) => {
+                                println!("Error: {}", e);
+                                return;
+                            }
+                        }
+                    }
+                }
+            };
+            let row_refs: Vec<&Row> = owned_rows.iter().collect();
+            let row_refs = apply_sorting(row_refs, order_by);
+            let row_refs = apply_distinct(row_refs, distinct);
+            let row_refs = apply_offset_limit(row_refs, offset, limit);
+            let target_schema = get_schema_for(&table_name, schemas);
+            let result_rows: Vec<Vec<String>> = row_refs
+                .iter()
+                .map(|row| match &cols {
+                    None => src_schema
+                        .iter()
+                        .map(|col| row.get_value(col).unwrap_or_else(|| "NULL".to_string()))
+                        .collect(),
+                    Some(col_names) if col_names.iter().any(|c| c == "*") => src_schema
+                        .iter()
+                        .map(|col| row.get_value(col).unwrap_or_else(|| "NULL".to_string()))
+                        .collect(),
+                    Some(col_names) => col_names
+                        .iter()
+                        .map(|col| row.eval_col(col).unwrap_or_else(|| "NULL".to_string()))
+                        .collect(),
+                })
+                .collect();
+            let mut inserted = 0usize;
+            let mut errors = 0usize;
+            for values in result_rows {
+                let tbl = load_table_by_name(&table_name, tables, schemas);
+                match Row::from_values(&target_schema, &values) {
+                    Ok(row) => match tbl.insert(row) {
+                        Ok(()) => inserted += 1,
+                        Err(e) => {
+                            println!("Error inserting row: {}", e);
+                            errors += 1;
+                        }
+                    },
+                    Err(e) => {
+                        println!("Error building row: {}", e);
+                        errors += 1;
+                    }
+                }
+            }
+            for tbl in tables.values_mut() {
+                let _ = tbl.save();
+            }
+            if errors == 0 {
+                println!("{} row(s) inserted.", inserted);
+            } else {
+                println!("{} row(s) inserted, {} error(s).", inserted, errors);
             }
         }
         Statement::Union { sql1, sql2, all } => {
