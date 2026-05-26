@@ -1138,4 +1138,59 @@ mod tests {
         assert_eq!(conditions[1].2, "5");
         assert_eq!(operators[0], "AND");
     }
+
+    #[test]
+    fn test_parse_insert_select_basic() {
+        let result = super::parse_insert_select("INSERT INTO backup SELECT * FROM users");
+        assert!(
+            result.is_ok(),
+            "parse_insert_select failed: {:?}",
+            result.err()
+        );
+        let (table, select_sql) = result.unwrap();
+        assert_eq!(table, "backup");
+        assert!(select_sql.to_uppercase().starts_with("SELECT"));
+        assert!(select_sql.to_uppercase().contains("FROM"));
+    }
+
+    #[test]
+    fn test_parse_insert_select_with_where() {
+        let result = super::parse_insert_select(
+            "INSERT INTO archive SELECT * FROM orders WHERE status = 'closed'",
+        );
+        assert!(
+            result.is_ok(),
+            "parse_insert_select failed: {:?}",
+            result.err()
+        );
+        let (table, select_sql) = result.unwrap();
+        assert_eq!(table, "archive");
+        assert!(select_sql.to_uppercase().contains("WHERE"));
+    }
+
+    #[test]
+    fn test_parse_insert_select_specific_columns() {
+        let result =
+            super::parse_insert_select("INSERT INTO summary SELECT username, email FROM users");
+        assert!(
+            result.is_ok(),
+            "parse_insert_select failed: {:?}",
+            result.err()
+        );
+        let (table, select_sql) = result.unwrap();
+        assert_eq!(table, "summary");
+        assert!(select_sql.to_uppercase().contains("USERNAME"));
+    }
+
+    #[test]
+    fn test_parse_insert_select_missing_into_fails() {
+        let result = super::parse_insert_select("INSERT backup SELECT * FROM users");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_insert_select_missing_select_fails() {
+        let result = super::parse_insert_select("INSERT INTO backup VALUES (1, 'a', 'b')");
+        assert!(result.is_err());
+    }
 }

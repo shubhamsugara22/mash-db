@@ -2485,3 +2485,35 @@ fn parse_truncate_table_tokens(tokens: &[Token]) -> Result<String, String> {
 
     Ok(table_name)
 }
+
+/// Parse `INSERT INTO <table> SELECT ...`
+/// Returns (target_table_name, select_sql)
+pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
+    let tokens = tokenize(input);
+    let mut i = 0;
+
+    if tokens.get(i) != Some(&Token::Insert) {
+        return Err("Expected INSERT".to_string());
+    }
+    i += 1;
+
+    if tokens.get(i) != Some(&Token::Into) {
+        return Err("Expected INTO after INSERT".to_string());
+    }
+    i += 1;
+
+    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let name = name.clone();
+        i += 1;
+        name
+    } else {
+        return Err("Expected table name after INSERT INTO".to_string());
+    };
+
+    if tokens.get(i) != Some(&Token::Select) {
+        return Err("Expected SELECT after table name".to_string());
+    }
+
+    let select_sql = tokens_to_sql(&tokens[i..]);
+    Ok((table_name, select_sql))
+}
