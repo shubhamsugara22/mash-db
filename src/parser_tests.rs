@@ -1169,8 +1169,7 @@ mod tests {
 
     #[test]
     fn test_parse_insert_select_specific_columns() {
-        let result =
-            super::parse_insert_select("INSERT INTO summary SELECT username, email FROM users");
+        let result = parse_insert_select("INSERT INTO summary SELECT username, email FROM users");
         assert!(
             result.is_ok(),
             "parse_insert_select failed: {:?}",
