@@ -113,7 +113,7 @@ impl Row {
     }
 
     /// Evaluate a column expression, applying string functions if present.
-    /// Supports `upper(col)`, `lower(col)`, `length(col)`.
+    /// Supports `upper(col)`, `lower(col)`, `length(col)`, `__case__:...` (CASE WHEN).
     pub fn eval_col(&self, col_expr: &str) -> Option<String> {
         if let Some(inner) = col_expr
             .strip_prefix("upper(")
@@ -130,6 +130,51 @@ impl Row {
             .and_then(|s| s.strip_suffix(')'))
         {
             self.get_value(inner).map(|v| v.len().to_string())
+        } else if let Some(rest) = col_expr.strip_prefix("__case__:") {
+            let parts: Vec<&str> = rest.split('\x1E').collect();
+            let mut result: Option<String> = None;
+            for part in &parts {
+                if let Some(ev) = part.strip_prefix("__else__\x1F") {
+                    if result.is_none() {
+                        result = Some(ev.to_string());
+                    }
+                    break;
+                }
+                let fields: Vec<&str> = part.splitn(4, '\x1F').collect();
+                if fields.len() == 4 && result.is_none() {
+                    let (col, op, val, then_val) = (fields[0], fields[1], fields[2], fields[3]);
+                    let row_val = self.get_value(col).unwrap_or_default();
+                    let matched = match op {
+                        "=" => row_val == val,
+                        "!=" | "<>" => row_val != val,
+                        ">" => row_val
+                            .parse::<f64>()
+                            .ok()
+                            .zip(val.parse::<f64>().ok())
+                            .map_or(row_val.as_str() > val, |(a, b)| a > b),
+                        "<" => row_val
+                            .parse::<f64>()
+                            .ok()
+                            .zip(val.parse::<f64>().ok())
+                            .map_or(row_val.as_str() < val, |(a, b)| a < b),
+                        ">=" => row_val
+                            .parse::<f64>()
+                            .ok()
+                            .zip(val.parse::<f64>().ok())
+                            .map_or(row_val.as_str() >= val, |(a, b)| a >= b),
+                        "<=" => row_val
+                            .parse::<f64>()
+                            .ok()
+                            .zip(val.parse::<f64>().ok())
+                            .map_or(row_val.as_str() <= val, |(a, b)| a <= b),
+                        _ => false,
+                    };
+                    if matched {
+                        result = Some(then_val.to_string());
+                    }
+                }
+            }
+            result.or(Some("NULL".to_string()))
         } else {
             self.get_value(col_expr)
         }
@@ -965,51 +1010,6 @@ mod tests {
         let conditions = vec![
             ("id".to_string(), "=".to_string(), "1".to_string()),
             (
-                "username".to_string(),
-                "=".to_string(),
-                "charlie".to_string(),
-            ),
-        ];
-        let operators = vec!["OR".to_string()];
-
-        let rows = table.select_where_complex(&conditions, &operators).unwrap();
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().any(|r| r.id == 1));
-        assert!(rows.iter().any(|r| r.username == "charlie"));
-    }
-
-    #[test]
-    fn select_where_complex_mixed() {
-        let mut table = Table::new("test_mixed.json".to_string(), default_schema());
-
-        table
-            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
-            .unwrap();
-        table
-            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
-            .unwrap();
-        table
-            .insert(Row::new(3, "alice".to_string(), "a2@a.com".to_string()).unwrap())
-            .unwrap();
-        table
-            .insert(Row::new(4, "charlie".to_string(), "c@c.com".to_string()).unwrap())
-            .unwrap();
-
-        let conditions = vec![
-            ("id".to_string(), ">".to_string(), "1".to_string()),
-            ("username".to_string(), "=".to_string(), "alice".to_string()),
-            ("id".to_string(), "!=".to_string(), "4".to_string()),
-        ];
-        let operators = vec!["AND".to_string(), "OR".to_string()];
-
-        let rows = table.select_where_complex(&conditions, &operators).unwrap();
-        // Should match: (id > 1 AND username = alice) OR id != 4
-        // id=3 matches the AND part, id=2 matches the OR part (since id != 4)
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().any(|r| r.id == 2));
-        assert!(rows.iter().any(|r| r.id == 3));
-    }
-}
                 "username".to_string(),
                 "=".to_string(),
                 "charlie".to_string(),

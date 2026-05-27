@@ -1199,10 +1199,11 @@ mod tests {
         let sql = "SELECT CASE WHEN status = 'active' THEN 'yes' END FROM users";
         let result = parse_select(sql);
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
-        let stmt = result.unwrap();
-        assert_eq!(stmt.table_name, "users");
-        assert_eq!(stmt.columns.len(), 1);
-        let col = &stmt.columns[0];
+        let (_distinct, cols, table, ..) = result.unwrap();
+        assert_eq!(table, Some("users".to_string()));
+        let columns = cols.unwrap();
+        assert_eq!(columns.len(), 1);
+        let col = &columns[0];
         assert!(
             col.starts_with("__case__:"),
             "Expected encoded CASE, got: {}",
@@ -1216,8 +1217,9 @@ mod tests {
         let sql = "SELECT CASE WHEN age > 18 THEN 'adult' ELSE 'minor' END FROM people";
         let result = parse_select(sql);
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
-        let stmt = result.unwrap();
-        let col = &stmt.columns[0];
+        let (_distinct, cols, ..) = result.unwrap();
+        let columns = cols.unwrap();
+        let col = &columns[0];
         assert!(
             col.starts_with("__case__:"),
             "Expected encoded CASE, got: {}",
@@ -1235,8 +1237,9 @@ mod tests {
         let sql = "SELECT CASE WHEN score >= 90 THEN 'A' WHEN score >= 80 THEN 'B' ELSE 'C' END FROM grades";
         let result = parse_select(sql);
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
-        let stmt = result.unwrap();
-        let col = &stmt.columns[0];
+        let (_distinct, cols, ..) = result.unwrap();
+        let columns = cols.unwrap();
+        let col = &columns[0];
         assert!(col.contains("score\x1F>=\x1F90\x1FA"), "Missing first WHEN");
         assert!(
             col.contains("score\x1F>=\x1F80\x1FB"),
@@ -1250,10 +1253,11 @@ mod tests {
         let sql = "SELECT name, CASE WHEN active = 1 THEN 'yes' ELSE 'no' END FROM users";
         let result = parse_select(sql);
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
-        let stmt = result.unwrap();
-        assert_eq!(stmt.columns.len(), 2);
-        assert_eq!(stmt.columns[0], "name");
-        assert!(stmt.columns[1].starts_with("__case__:"));
+        let (_distinct, cols, ..) = result.unwrap();
+        let columns = cols.unwrap();
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0], "name");
+        assert!(columns[1].starts_with("__case__:"));
     }
 
     #[test]
