@@ -52,6 +52,11 @@ pub enum Token {
     Upper,
     Lower,
     Length,
+    Case,
+    When,
+    Then,
+    Else,
+    End,
     Eq,
     Ne,
     Gt,
@@ -285,6 +290,11 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "UPPER" => Token::Upper,
                     "LOWER" => Token::Lower,
                     "LENGTH" => Token::Length,
+                    "CASE" => Token::Case,
+                    "WHEN" => Token::When,
+                    "THEN" => Token::Then,
+                    "ELSE" => Token::Else,
+                    "END" => Token::End,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -443,6 +453,11 @@ fn token_to_sql(token: &Token) -> String {
         Token::Upper => "UPPER".to_string(),
         Token::Lower => "LOWER".to_string(),
         Token::Length => "LENGTH".to_string(),
+        Token::Case => "CASE".to_string(),
+        Token::When => "WHEN".to_string(),
+        Token::Then => "THEN".to_string(),
+        Token::Else => "ELSE".to_string(),
+        Token::End => "END".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -484,6 +499,7 @@ pub fn parse_select_columns(
         | Some(Token::Upper)
         | Some(Token::Lower)
         | Some(Token::Length)
+        | Some(Token::Case)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -637,6 +653,133 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Column(format!("{}({})", fn_name, inner))
                     }
+                    Some(Token::Case) => {
+                        *i += 1; // consume CASE
+                        let mut branches: Vec<(String, String, String, String)> = Vec::new();
+                        while tokens.get(*i) == Some(&Token::When) {
+                            *i += 1; // consume WHEN
+                            let cond_col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                                let c = c.clone();
+                                *i += 1;
+                                c
+                            } else {
+                                return Err("Expected column after WHEN".to_string());
+                            };
+                            let op = match tokens.get(*i) {
+                                Some(Token::Eq) => "=",
+                                Some(Token::Ne) => "!=",
+                                Some(Token::Gt) => ">",
+                                Some(Token::Lt) => "<",
+                                Some(Token::Ge) => ">=",
+                                Some(Token::Le) => "<=",
+                                _ => return Err("Expected comparison operator in WHEN".to_string()),
+                            };
+                            *i += 1;
+                            let cond_val = match tokens.get(*i) {
+                                Some(Token::String(s)) => {
+                                    let s = s.clone();
+                                    *i += 1;
+                                    s
+                                }
+                                Some(Token::Number(n)) => {
+                                    let n = *n;
+                                    *i += 1;
+                                    n.to_string()
+                                }
+                                Some(Token::Identifier(s)) => {
+                                    let s = s.clone();
+                                    *i += 1;
+                                    s
+                                }
+                                Some(Token::Null) => {
+                                    *i += 1;
+                                    "NULL".to_string()
+                                }
+                                _ => {
+                                    return Err("Expected value after operator in WHEN".to_string())
+                                }
+                            };
+                            if tokens.get(*i) != Some(&Token::Then) {
+                                return Err("Expected THEN after WHEN condition".to_string());
+                            }
+                            *i += 1;
+                            let then_val = match tokens.get(*i) {
+                                Some(Token::String(s)) => {
+                                    let s = s.clone();
+                                    *i += 1;
+                                    s
+                                }
+                                Some(Token::Number(n)) => {
+                                    let n = *n;
+                                    *i += 1;
+                                    n.to_string()
+                                }
+                                Some(Token::Identifier(s)) => {
+                                    let s = s.clone();
+                                    *i += 1;
+                                    s
+                                }
+                                Some(Token::Null) => {
+                                    *i += 1;
+                                    "NULL".to_string()
+                                }
+                                _ => return Err("Expected value after THEN".to_string()),
+                            };
+                            branches.push((cond_col, op.to_string(), cond_val, then_val));
+                        }
+                        let else_val: Option<String> = if tokens.get(*i) == Some(&Token::Else) {
+                            *i += 1;
+                            let ev = match tokens.get(*i) {
+                                Some(Token::String(s)) => {
+                                    let s = s.clone();
+                                    *i += 1;
+                                    s
+                                }
+                                Some(Token::Number(n)) => {
+                                    let n = *n;
+                                    *i += 1;
+                                    n.to_string()
+                                }
+                                Some(Token::Identifier(s)) => {
+                                    let s = s.clone();
+                                    *i += 1;
+                                    s
+                                }
+                                Some(Token::Null) => {
+                                    *i += 1;
+                                    "NULL".to_string()
+                                }
+                                _ => return Err("Expected value after ELSE".to_string()),
+                            };
+                            Some(ev)
+                        } else {
+                            None
+                        };
+                        if tokens.get(*i) != Some(&Token::End) {
+                            return Err("Expected END after CASE expression".to_string());
+                        }
+                        *i += 1;
+                        // Encode as __case__:col\x1Fop\x1Fval\x1Fthen_val[\x1E...][\ x1E__else__\x1Felse_val]
+                        let mut encoded = String::from("__case__:");
+                        for (idx, (c, o, v, t)) in branches.iter().enumerate() {
+                            if idx > 0 {
+                                encoded.push('\x1E');
+                            }
+                            encoded.push_str(c);
+                            encoded.push('\x1F');
+                            encoded.push_str(o);
+                            encoded.push('\x1F');
+                            encoded.push_str(v);
+                            encoded.push('\x1F');
+                            encoded.push_str(t);
+                        }
+                        if let Some(ev) = &else_val {
+                            encoded.push('\x1E');
+                            encoded.push_str("__else__\x1F");
+                            encoded.push_str(ev);
+                        }
+                        SelectColumn::Column(encoded)
+                    }
                     Some(Token::Identifier(col)) => {
                         let col_name = col.clone();
                         *i += 1;
@@ -748,7 +891,8 @@ fn parse_select_tokens(
         | Some(Token::Max)
         | Some(Token::Upper)
         | Some(Token::Lower)
-        | Some(Token::Length) => {
+        | Some(Token::Length)
+        | Some(Token::Case) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
