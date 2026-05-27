@@ -1191,4 +1191,141 @@ mod tests {
         let result = parse_insert_select("INSERT INTO backup VALUES (1, 'a', 'b')");
         assert!(result.is_err());
     }
+
+    // ── CASE WHEN tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_case_when_basic() {
+        let sql = "SELECT CASE WHEN status = 'active' THEN 'yes' END FROM users";
+        let result = parse_select(sql);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+        let stmt = result.unwrap();
+        assert_eq!(stmt.table_name, "users");
+        assert_eq!(stmt.columns.len(), 1);
+        let col = &stmt.columns[0];
+        assert!(
+            col.starts_with("__case__:"),
+            "Expected encoded CASE, got: {}",
+            col
+        );
+        assert!(col.contains("status\x1F=\x1Factive\x1Fyes"));
+    }
+
+    #[test]
+    fn test_parse_select_case_when_else() {
+        let sql = "SELECT CASE WHEN age > 18 THEN 'adult' ELSE 'minor' END FROM people";
+        let result = parse_select(sql);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+        let stmt = result.unwrap();
+        let col = &stmt.columns[0];
+        assert!(
+            col.starts_with("__case__:"),
+            "Expected encoded CASE, got: {}",
+            col
+        );
+        assert!(
+            col.contains("age\x1F>\x1F18\x1Fadult"),
+            "Missing WHEN branch"
+        );
+        assert!(col.contains("__else__\x1Fminor"), "Missing ELSE branch");
+    }
+
+    #[test]
+    fn test_parse_select_case_when_multiple_branches() {
+        let sql = "SELECT CASE WHEN score >= 90 THEN 'A' WHEN score >= 80 THEN 'B' ELSE 'C' END FROM grades";
+        let result = parse_select(sql);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+        let stmt = result.unwrap();
+        let col = &stmt.columns[0];
+        assert!(col.contains("score\x1F>=\x1F90\x1FA"), "Missing first WHEN");
+        assert!(
+            col.contains("score\x1F>=\x1F80\x1FB"),
+            "Missing second WHEN"
+        );
+        assert!(col.contains("__else__\x1FC"), "Missing ELSE");
+    }
+
+    #[test]
+    fn test_parse_select_case_when_with_other_cols() {
+        let sql = "SELECT name, CASE WHEN active = 1 THEN 'yes' ELSE 'no' END FROM users";
+        let result = parse_select(sql);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+        let stmt = result.unwrap();
+        assert_eq!(stmt.columns.len(), 2);
+        assert_eq!(stmt.columns[0], "name");
+        assert!(stmt.columns[1].starts_with("__case__:"));
+    }
+
+    #[test]
+    fn test_parse_select_case_when_missing_end_fails() {
+        let sql = "SELECT CASE WHEN x = 1 THEN 'a' FROM t";
+        let result = parse_select(sql);
+        assert!(result.is_err(), "Expected error when END is missing");
+    }
+
+    #[test]
+    fn test_eval_col_case_when_match() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("status".to_string(), "active".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        // encoded: status=active → "yes", else "no"
+        let encoded = format!("__case__:status\x1F=\x1Factive\x1Fyes\x1E__else__\x1Fno");
+        assert_eq!(row.eval_col(&encoded), Some("yes".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_case_when_else_branch() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("status".to_string(), "inactive".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__case__:status\x1F=\x1Factive\x1Fyes\x1E__else__\x1Fno");
+        assert_eq!(row.eval_col(&encoded), Some("no".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_case_when_no_match_no_else() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("status".to_string(), "unknown".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = "__case__:status\x1F=\x1Factive\x1Fyes".to_string();
+        assert_eq!(row.eval_col(&encoded), Some("NULL".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_case_when_numeric_comparison() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("score".to_string(), "95".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded =
+            format!("__case__:score\x1F>=\x1F90\x1FA\x1Escore\x1F>=\x1F80\x1FB\x1E__else__\x1FC");
+        assert_eq!(row.eval_col(&encoded), Some("A".to_string()));
+    }
 }
