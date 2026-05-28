@@ -1332,4 +1332,132 @@ mod tests {
             format!("__case__:score\x1F>=\x1F90\x1FA\x1Escore\x1F>=\x1F80\x1FB\x1E__else__\x1FC");
         assert_eq!(row.eval_col(&encoded), Some("A".to_string()));
     }
+
+    // ── COALESCE ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_coalesce_basic() {
+        use crate::parser::parse_select;
+        let result = parse_select("SELECT COALESCE(email, 'none') FROM users");
+        assert!(result.is_ok(), "parse failed: {:?}", result);
+        let (_distinct, cols, table, ..) = result.unwrap();
+        assert_eq!(table, Some("users".to_string()));
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__coalesce__:"),
+            "Expected coalesce encoding, got: {}",
+            cols[0]
+        );
+        assert!(cols[0].contains("email"), "Missing column in encoding");
+        assert!(cols[0].contains("none"), "Missing default in encoding");
+    }
+
+    #[test]
+    fn test_parse_select_coalesce_numeric_default() {
+        use crate::parser::parse_select;
+        let result = parse_select("SELECT COALESCE(username, unknown) FROM users");
+        assert!(result.is_ok(), "parse failed: {:?}", result);
+        let (_distinct, cols, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert!(
+            cols[0].starts_with("__coalesce__:"),
+            "Expected coalesce encoding"
+        );
+        assert!(cols[0].contains("unknown"), "Missing default value");
+    }
+
+    #[test]
+    fn test_eval_col_coalesce_with_value() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("notes".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__coalesce__:notes\x1Fno notes");
+        assert_eq!(row.eval_col(&encoded), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_coalesce_fallback_on_missing() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras: HashMap::new(),
+        };
+        let encoded = format!("__coalesce__:notes\x1Fno notes");
+        assert_eq!(row.eval_col(&encoded), Some("no notes".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_coalesce_fallback_on_empty() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("notes".to_string(), "".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__coalesce__:notes\x1Ffallback");
+        assert_eq!(row.eval_col(&encoded), Some("fallback".to_string()));
+    }
+
+    // ── NULLIF ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_nullif_basic() {
+        use crate::parser::parse_select;
+        let result = parse_select("SELECT NULLIF(username, 'admin') FROM users");
+        assert!(result.is_ok(), "parse failed: {:?}", result);
+        let (_distinct, cols, table, ..) = result.unwrap();
+        assert_eq!(table, Some("users".to_string()));
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__nullif__:"),
+            "Expected nullif encoding, got: {}",
+            cols[0]
+        );
+        assert!(cols[0].contains("username"), "Missing column in encoding");
+        assert!(cols[0].contains("admin"), "Missing comparison value");
+    }
+
+    #[test]
+    fn test_eval_col_nullif_match_returns_null() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "admin".to_string(),
+            email: "e".to_string(),
+            extras: HashMap::new(),
+        };
+        let encoded = format!("__nullif__:username\x1Fadmin");
+        assert_eq!(row.eval_col(&encoded), Some("NULL".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_nullif_no_match_returns_value() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "alice".to_string(),
+            email: "e".to_string(),
+            extras: HashMap::new(),
+        };
+        let encoded = format!("__nullif__:username\x1Fadmin");
+        assert_eq!(row.eval_col(&encoded), Some("alice".to_string()));
+    }
 }

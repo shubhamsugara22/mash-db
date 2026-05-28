@@ -1055,3 +1055,21 @@ mod tests {
         assert!(rows.iter().any(|r| r.id == 3));
     }
 }
+            .insert(Row::new(4, "charlie".to_string(), "c@c.com".to_string()).unwrap())
+            .unwrap();
+
+        let conditions = vec![
+            ("id".to_string(), ">".to_string(), "1".to_string()),
+            ("username".to_string(), "=".to_string(), "alice".to_string()),
+            ("id".to_string(), "!=".to_string(), "4".to_string()),
+        ];
+        let operators = vec!["AND".to_string(), "OR".to_string()];
+
+        let rows = table.select_where_complex(&conditions, &operators).unwrap();
+        // Should match: (id > 1 AND username = alice) OR id != 4
+        // id=3 matches the AND part, id=2 matches the OR part (since id != 4)
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|r| r.id == 2));
+        assert!(rows.iter().any(|r| r.id == 3));
+    }
+}
