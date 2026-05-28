@@ -175,6 +175,24 @@ impl Row {
                 }
             }
             result.or(Some("NULL".to_string()))
+        } else if let Some(rest) = col_expr.strip_prefix("__coalesce__:") {
+            let mut parts = rest.splitn(2, '\x1F');
+            let col = parts.next().unwrap_or("");
+            let default_val = parts.next().unwrap_or("").to_string();
+            match self.get_value(col) {
+                Some(v) if !v.is_empty() => Some(v),
+                _ => Some(default_val),
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__nullif__:") {
+            let mut parts = rest.splitn(2, '\x1F');
+            let col = parts.next().unwrap_or("");
+            let val = parts.next().unwrap_or("");
+            let row_val = self.get_value(col).unwrap_or_default();
+            if row_val == val {
+                Some("NULL".to_string())
+            } else {
+                Some(row_val)
+            }
         } else {
             self.get_value(col_expr)
         }

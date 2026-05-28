@@ -57,6 +57,8 @@ pub enum Token {
     Then,
     Else,
     End,
+    Coalesce,
+    Nullif,
     Eq,
     Ne,
     Gt,
@@ -295,6 +297,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "THEN" => Token::Then,
                     "ELSE" => Token::Else,
                     "END" => Token::End,
+                    "COALESCE" => Token::Coalesce,
+                    "NULLIF" => Token::Nullif,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -458,6 +462,8 @@ fn token_to_sql(token: &Token) -> String {
         Token::Then => "THEN".to_string(),
         Token::Else => "ELSE".to_string(),
         Token::End => "END".to_string(),
+        Token::Coalesce => "COALESCE".to_string(),
+        Token::Nullif => "NULLIF".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -500,6 +506,8 @@ pub fn parse_select_columns(
         | Some(Token::Lower)
         | Some(Token::Length)
         | Some(Token::Case)
+        | Some(Token::Coalesce)
+        | Some(Token::Nullif)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -652,6 +660,56 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("{}({})", fn_name, inner))
+                    }
+                    Some(Token::Coalesce) | Some(Token::Nullif) => {
+                        let fn_prefix = match tokens.get(*i) {
+                            Some(Token::Coalesce) => "__coalesce__:",
+                            Some(Token::Nullif) => "__nullif__:",
+                            _ => unreachable!(),
+                        };
+                        *i += 1; // consume COALESCE/NULLIF
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after function".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name as first argument".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after first argument".to_string());
+                        }
+                        *i += 1;
+                        let val = match tokens.get(*i) {
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::Identifier(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            Some(Token::Null) => {
+                                *i += 1;
+                                "NULL".to_string()
+                            }
+                            _ => return Err("Expected value as second argument".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("{}{}\x1F{}", fn_prefix, col, val))
                     }
                     Some(Token::Case) => {
                         *i += 1; // consume CASE
