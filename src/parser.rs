@@ -950,7 +950,9 @@ fn parse_select_tokens(
         | Some(Token::Upper)
         | Some(Token::Lower)
         | Some(Token::Length)
-        | Some(Token::Case) => {
+        | Some(Token::Case)
+        | Some(Token::Coalesce)
+        | Some(Token::Nullif) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
