@@ -733,7 +733,7 @@ pub fn parse_select_columns(
                         *i += 1;
                         // Parse two arguments (col or string literal)
                         let parse_concat_arg =
-                            |tokens: &Vec<Token>, i: &mut usize| -> Result<String, String> {
+                            |tokens: &[Token], i: &mut usize| -> Result<String, String> {
                                 match tokens.get(*i) {
                                     Some(Token::Identifier(s)) => {
                                         let s = s.clone();

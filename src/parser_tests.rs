@@ -1465,9 +1465,8 @@ mod tests {
 
     #[test]
     fn test_parse_select_trim_basic() {
-        let sql = "SELECT TRIM(username) FROM users";
-        let tokens = tokenize(sql);
-        let result = parse_select(&tokens);
+        use crate::parser::parse_select;
+        let result = parse_select("SELECT TRIM(username) FROM users");
         assert!(result.is_ok());
         let (_distinct, cols, table, ..) = result.unwrap();
         let cols = cols.unwrap();
@@ -1512,9 +1511,8 @@ mod tests {
 
     #[test]
     fn test_parse_select_cast_basic() {
-        let sql = "SELECT CAST(id AS TEXT) FROM users";
-        let tokens = tokenize(sql);
-        let result = parse_select(&tokens);
+        use crate::parser::parse_select;
+        let result = parse_select("SELECT CAST(id AS TEXT) FROM users");
         assert!(result.is_ok());
         let (_distinct, cols, table, ..) = result.unwrap();
         let cols = cols.unwrap();
@@ -1561,9 +1559,8 @@ mod tests {
 
     #[test]
     fn test_parse_select_concat_basic() {
-        let sql = "SELECT CONCAT(username, email) FROM users";
-        let tokens = tokenize(sql);
-        let result = parse_select(&tokens);
+        use crate::parser::parse_select;
+        let result = parse_select("SELECT CONCAT(username, email) FROM users");
         assert!(result.is_ok());
         let (_distinct, cols, table, ..) = result.unwrap();
         let cols = cols.unwrap();
@@ -1578,9 +1575,8 @@ mod tests {
 
     #[test]
     fn test_parse_select_concat_col_and_literal() {
-        let sql = "SELECT CONCAT(username, '@example.com') FROM users";
-        let tokens = tokenize(sql);
-        let result = parse_select(&tokens);
+        use crate::parser::parse_select;
+        let result = parse_select("SELECT CONCAT(username, '@example.com') FROM users");
         assert!(result.is_ok());
         let (_distinct, cols, ..) = result.unwrap();
         let cols = cols.unwrap();
