@@ -193,6 +193,40 @@ impl Row {
             } else {
                 Some(row_val)
             }
+        } else if let Some(col) = col_expr.strip_prefix("__trim__:") {
+            Some(self.get_value(col).unwrap_or_default().trim().to_string())
+        } else if let Some(rest) = col_expr.strip_prefix("__cast__:") {
+            let mut parts = rest.splitn(2, '\x1F');
+            let col = parts.next().unwrap_or("");
+            let cast_type = parts.next().unwrap_or("TEXT");
+            let raw = self.get_value(col).unwrap_or_default();
+            match cast_type {
+                "INTEGER" | "INT" => {
+                    let n = raw.parse::<f64>().ok().map(|f| (f as i64).to_string()).unwrap_or(raw);
+                    Some(n)
+                }
+                "REAL" | "FLOAT" | "DOUBLE" => {
+                    let n = raw.parse::<f64>().ok().map(|f| f.to_string()).unwrap_or(raw);
+                    Some(n)
+                }
+                _ => Some(raw), // TEXT and anything else: no conversion needed
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__concat__:") {
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            let resolve = |arg: &str| -> String {
+                if let Some(col) = arg.strip_prefix("c:") {
+                    self.get_value(col).unwrap_or_default()
+                } else if let Some(s) = arg.strip_prefix("s:") {
+                    s.to_string()
+                } else if let Some(n) = arg.strip_prefix("n:") {
+                    n.to_string()
+                } else {
+                    arg.to_string()
+                }
+            };
+            let a = parts.first().map(|s| resolve(s)).unwrap_or_default();
+            let b = parts.get(1).map(|s| resolve(s)).unwrap_or_default();
+            Some(format!("{}{}", a, b))
         } else {
             self.get_value(col_expr)
         }

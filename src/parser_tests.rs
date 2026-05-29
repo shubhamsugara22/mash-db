@@ -1460,4 +1460,165 @@ mod tests {
         let encoded = format!("__nullif__:username\x1Fadmin");
         assert_eq!(row.eval_col(&encoded), Some("alice".to_string()));
     }
+
+    // --- TRIM tests ---
+
+    #[test]
+    fn test_parse_select_trim_basic() {
+        let sql = "SELECT TRIM(username) FROM users";
+        let tokens = tokenize(sql);
+        let result = parse_select(&tokens);
+        assert!(result.is_ok());
+        let (_distinct, cols, table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__trim__:"),
+            "expected __trim__: prefix, got {}",
+            cols[0]
+        );
+        assert_eq!(table.unwrap(), "users");
+    }
+
+    #[test]
+    fn test_eval_col_trim_strips_whitespace() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("notes".to_string(), "  hello  ".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        assert_eq!(row.eval_col("__trim__:notes"), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_trim_no_whitespace_unchanged() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "alice".to_string(),
+            email: "e".to_string(),
+            extras: HashMap::new(),
+        };
+        assert_eq!(row.eval_col("__trim__:username"), Some("alice".to_string()));
+    }
+
+    // --- CAST tests ---
+
+    #[test]
+    fn test_parse_select_cast_basic() {
+        let sql = "SELECT CAST(id AS TEXT) FROM users";
+        let tokens = tokenize(sql);
+        let result = parse_select(&tokens);
+        assert!(result.is_ok());
+        let (_distinct, cols, table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__cast__:"),
+            "expected __cast__: prefix, got {}",
+            cols[0]
+        );
+        assert_eq!(table.unwrap(), "users");
+    }
+
+    #[test]
+    fn test_eval_col_cast_to_integer() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("price".to_string(), "19.99".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__cast__:price\x1FINTEGER");
+        assert_eq!(row.eval_col(&encoded), Some("19".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_cast_to_text_passthrough() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 42,
+            username: "bob".to_string(),
+            email: "e".to_string(),
+            extras: HashMap::new(),
+        };
+        let encoded = format!("__cast__:username\x1FTEXT");
+        assert_eq!(row.eval_col(&encoded), Some("bob".to_string()));
+    }
+
+    // --- CONCAT tests ---
+
+    #[test]
+    fn test_parse_select_concat_basic() {
+        let sql = "SELECT CONCAT(username, email) FROM users";
+        let tokens = tokenize(sql);
+        let result = parse_select(&tokens);
+        assert!(result.is_ok());
+        let (_distinct, cols, table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__concat__:"),
+            "expected __concat__: prefix, got {}",
+            cols[0]
+        );
+        assert_eq!(table.unwrap(), "users");
+    }
+
+    #[test]
+    fn test_parse_select_concat_col_and_literal() {
+        let sql = "SELECT CONCAT(username, '@example.com') FROM users";
+        let tokens = tokenize(sql);
+        let result = parse_select(&tokens);
+        assert!(result.is_ok());
+        let (_distinct, cols, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert!(
+            cols[0].contains("c:username"),
+            "col arg should be c:username"
+        );
+        assert!(
+            cols[0].contains("s:@example.com"),
+            "literal arg should be s:@example.com"
+        );
+    }
+
+    #[test]
+    fn test_eval_col_concat_two_columns() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "alice".to_string(),
+            email: "@ex.com".to_string(),
+            extras: HashMap::new(),
+        };
+        let encoded = format!("__concat__:c:username\x1Fc:email");
+        assert_eq!(row.eval_col(&encoded), Some("alice@ex.com".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_concat_col_and_string_literal() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "alice".to_string(),
+            email: "e".to_string(),
+            extras: HashMap::new(),
+        };
+        let encoded = format!("__concat__:c:username\x1Fs:@domain.com");
+        assert_eq!(row.eval_col(&encoded), Some("alice@domain.com".to_string()));
+    }
 }

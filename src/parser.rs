@@ -59,6 +59,10 @@ pub enum Token {
     End,
     Coalesce,
     Nullif,
+    Trim,
+    Cast,
+    As,
+    Concat,
     Eq,
     Ne,
     Gt,
@@ -299,6 +303,10 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "END" => Token::End,
                     "COALESCE" => Token::Coalesce,
                     "NULLIF" => Token::Nullif,
+                    "TRIM" => Token::Trim,
+                    "CAST" => Token::Cast,
+                    "AS" => Token::As,
+                    "CONCAT" => Token::Concat,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -464,6 +472,10 @@ fn token_to_sql(token: &Token) -> String {
         Token::End => "END".to_string(),
         Token::Coalesce => "COALESCE".to_string(),
         Token::Nullif => "NULLIF".to_string(),
+        Token::Trim => "TRIM".to_string(),
+        Token::Cast => "CAST".to_string(),
+        Token::As => "AS".to_string(),
+        Token::Concat => "CONCAT".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -508,6 +520,9 @@ pub fn parse_select_columns(
         | Some(Token::Case)
         | Some(Token::Coalesce)
         | Some(Token::Nullif)
+        | Some(Token::Trim)
+        | Some(Token::Cast)
+        | Some(Token::Concat)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -660,6 +675,96 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("{}({})", fn_name, inner))
+                    }
+                    Some(Token::Trim) => {
+                        *i += 1; // consume TRIM
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after TRIM".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside TRIM()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after TRIM(col)".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__trim__:{}", col))
+                    }
+                    Some(Token::Cast) => {
+                        *i += 1; // consume CAST
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after CAST".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name as first CAST argument".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::As) {
+                            return Err("Expected AS in CAST(col AS type)".to_string());
+                        }
+                        *i += 1;
+                        let cast_type = if let Some(Token::Identifier(t)) = tokens.get(*i) {
+                            let t = t.clone();
+                            *i += 1;
+                            t.to_uppercase()
+                        } else {
+                            return Err("Expected type after AS in CAST".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after CAST(col AS type)".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__cast__:{}\x1F{}", col, cast_type))
+                    }
+                    Some(Token::Concat) => {
+                        *i += 1; // consume CONCAT
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after CONCAT".to_string());
+                        }
+                        *i += 1;
+                        // Parse two arguments (col or string literal)
+                        let parse_concat_arg =
+                            |tokens: &Vec<Token>, i: &mut usize| -> Result<String, String> {
+                                match tokens.get(*i) {
+                                    Some(Token::Identifier(s)) => {
+                                        let s = s.clone();
+                                        *i += 1;
+                                        Ok(format!("c:{}", s))
+                                    }
+                                    Some(Token::String(s)) => {
+                                        let s = s.clone();
+                                        *i += 1;
+                                        Ok(format!("s:{}", s))
+                                    }
+                                    Some(Token::Number(n)) => {
+                                        let n = *n;
+                                        *i += 1;
+                                        Ok(format!("n:{}", n))
+                                    }
+                                    _ => Err("Expected column name or string literal in CONCAT"
+                                        .to_string()),
+                                }
+                            };
+                        let arg1 = parse_concat_arg(tokens, i)?;
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , between CONCAT arguments".to_string());
+                        }
+                        *i += 1;
+                        let arg2 = parse_concat_arg(tokens, i)?;
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after CONCAT arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__concat__:{}\x1F{}", arg1, arg2))
                     }
                     Some(Token::Coalesce) | Some(Token::Nullif) => {
                         let fn_prefix = match tokens.get(*i) {
@@ -952,7 +1057,10 @@ fn parse_select_tokens(
         | Some(Token::Length)
         | Some(Token::Case)
         | Some(Token::Coalesce)
-        | Some(Token::Nullif) => {
+        | Some(Token::Nullif)
+        | Some(Token::Trim)
+        | Some(Token::Cast)
+        | Some(Token::Concat) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
