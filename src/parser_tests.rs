@@ -1617,4 +1617,192 @@ mod tests {
         let encoded = format!("__concat__:c:username\x1Fs:@domain.com");
         assert_eq!(row.eval_col(&encoded), Some("alice@domain.com".to_string()));
     }
+
+    // ── IF tests ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_if_basic() {
+        let result = parse_select("SELECT IF(score > 10, 'pass', 'fail') FROM grades");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__if__:"),
+            "expected __if__: prefix, got: {}",
+            cols[0]
+        );
+    }
+
+    #[test]
+    fn test_eval_col_if_condition_true() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("score".to_string(), "15".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__if__:score\x1F>\x1F10\x1Fpass\x1Ffail");
+        assert_eq!(row.eval_col(&encoded), Some("pass".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_if_condition_false() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("score".to_string(), "5".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__if__:score\x1F>\x1F10\x1Fpass\x1Ffail");
+        assert_eq!(row.eval_col(&encoded), Some("fail".to_string()));
+    }
+
+    // ── ABS tests ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_abs_basic() {
+        let result = parse_select("SELECT ABS(balance) FROM accounts");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__abs__:"),
+            "expected __abs__: prefix, got: {}",
+            cols[0]
+        );
+    }
+
+    #[test]
+    fn test_eval_col_abs_negative() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("balance".to_string(), "-42".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = "__abs__:balance".to_string();
+        assert_eq!(row.eval_col(&encoded), Some("42".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_abs_positive() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("balance".to_string(), "7".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = "__abs__:balance".to_string();
+        assert_eq!(row.eval_col(&encoded), Some("7".to_string()));
+    }
+
+    // ── ROUND tests ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_round_basic() {
+        let result = parse_select("SELECT ROUND(price, 2) FROM products");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__round__:"),
+            "expected __round__: prefix, got: {}",
+            cols[0]
+        );
+    }
+
+    #[test]
+    fn test_eval_col_round_two_decimals() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("price".to_string(), "19.456".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__round__:price\x1F2");
+        assert_eq!(row.eval_col(&encoded), Some("19.46".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_round_zero_decimals() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("price".to_string(), "19.5".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__round__:price\x1F0");
+        assert_eq!(row.eval_col(&encoded), Some("20".to_string()));
+    }
+
+    // ── SUBSTR tests ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_substr_basic() {
+        let result = parse_select("SELECT SUBSTR(email, 1, 3) FROM users");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(
+            cols[0].starts_with("__substr__:"),
+            "expected __substr__: prefix, got: {}",
+            cols[0]
+        );
+    }
+
+    #[test]
+    fn test_eval_col_substr_from_start() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("addr".to_string(), "alice@ex.com".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__substr__:addr\x1F1\x1F5");
+        assert_eq!(row.eval_col(&encoded), Some("alice".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_substr_mid() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("addr".to_string(), "alice@ex.com".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__substr__:addr\x1F6\x1F2");
+        assert_eq!(row.eval_col(&encoded), Some("@e".to_string()));
+    }
 }

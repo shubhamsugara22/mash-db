@@ -63,6 +63,10 @@ pub enum Token {
     Cast,
     As,
     Concat,
+    If,
+    Abs,
+    Round,
+    Substr,
     Eq,
     Ne,
     Gt,
@@ -307,6 +311,11 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "CAST" => Token::Cast,
                     "AS" => Token::As,
                     "CONCAT" => Token::Concat,
+                    "IF" => Token::If,
+                    "ABS" => Token::Abs,
+                    "ROUND" => Token::Round,
+                    "SUBSTR" => Token::Substr,
+                    "SUBSTRING" => Token::Substr,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -476,6 +485,10 @@ fn token_to_sql(token: &Token) -> String {
         Token::Cast => "CAST".to_string(),
         Token::As => "AS".to_string(),
         Token::Concat => "CONCAT".to_string(),
+        Token::If => "IF".to_string(),
+        Token::Abs => "ABS".to_string(),
+        Token::Round => "ROUND".to_string(),
+        Token::Substr => "SUBSTR".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -523,6 +536,10 @@ pub fn parse_select_columns(
         | Some(Token::Trim)
         | Some(Token::Cast)
         | Some(Token::Concat)
+        | Some(Token::If)
+        | Some(Token::Abs)
+        | Some(Token::Round)
+        | Some(Token::Substr)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -675,6 +692,231 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("{}({})", fn_name, inner))
+                    }
+                    Some(Token::If) => {
+                        *i += 1; // consume IF
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after IF".to_string());
+                        }
+                        *i += 1;
+                        let cond_col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name in IF condition".to_string());
+                        };
+                        let op_str = match tokens.get(*i) {
+                            Some(Token::Eq) => {
+                                *i += 1;
+                                "="
+                            }
+                            Some(Token::Ne) => {
+                                *i += 1;
+                                "!="
+                            }
+                            Some(Token::Gt) => {
+                                *i += 1;
+                                ">"
+                            }
+                            Some(Token::Lt) => {
+                                *i += 1;
+                                "<"
+                            }
+                            Some(Token::Ge) => {
+                                *i += 1;
+                                ">="
+                            }
+                            Some(Token::Le) => {
+                                *i += 1;
+                                "<="
+                            }
+                            _ => {
+                                return Err(
+                                    "Expected comparison operator in IF condition".to_string()
+                                )
+                            }
+                        };
+                        let cmp_val = match tokens.get(*i) {
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::Identifier(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => {
+                                return Err("Expected comparison value in IF condition".to_string())
+                            }
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after IF condition".to_string());
+                        }
+                        *i += 1;
+                        let then_val = match tokens.get(*i) {
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::Identifier(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected then-value in IF".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , between IF then and else".to_string());
+                        }
+                        *i += 1;
+                        let else_val = match tokens.get(*i) {
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::Identifier(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected else-value in IF".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after IF arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!(
+                            "__if__:{}\x1F{}\x1F{}\x1F{}\x1F{}",
+                            cond_col, op_str, cmp_val, then_val, else_val
+                        ))
+                    }
+                    Some(Token::Abs) => {
+                        *i += 1; // consume ABS
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after ABS".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside ABS()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after ABS(col)".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__abs__:{}", col))
+                    }
+                    Some(Token::Round) => {
+                        *i += 1; // consume ROUND
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after ROUND".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside ROUND()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after column in ROUND".to_string());
+                        }
+                        *i += 1;
+                        let digits = match tokens.get(*i) {
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected digit count in ROUND".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after ROUND arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__round__:{}\x1F{}", col, digits))
+                    }
+                    Some(Token::Substr) => {
+                        *i += 1; // consume SUBSTR/SUBSTRING
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after SUBSTR".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside SUBSTR()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after column in SUBSTR".to_string());
+                        }
+                        *i += 1;
+                        let start = match tokens.get(*i) {
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected start position in SUBSTR".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after start in SUBSTR".to_string());
+                        }
+                        *i += 1;
+                        let len = match tokens.get(*i) {
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected length in SUBSTR".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after SUBSTR arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__substr__:{}\x1F{}\x1F{}", col, start, len))
                     }
                     Some(Token::Trim) => {
                         *i += 1; // consume TRIM
@@ -1060,7 +1302,11 @@ fn parse_select_tokens(
         | Some(Token::Nullif)
         | Some(Token::Trim)
         | Some(Token::Cast)
-        | Some(Token::Concat) => {
+        | Some(Token::Concat)
+        | Some(Token::If)
+        | Some(Token::Abs)
+        | Some(Token::Round)
+        | Some(Token::Substr) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {

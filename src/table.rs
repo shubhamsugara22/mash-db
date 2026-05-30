@@ -227,6 +227,63 @@ impl Row {
             let a = parts.first().map(|s| resolve(s)).unwrap_or_default();
             let b = parts.get(1).map(|s| resolve(s)).unwrap_or_default();
             Some(format!("{}{}", a, b))
+        } else if let Some(rest) = col_expr.strip_prefix("__if__:") {
+            let parts: Vec<&str> = rest.splitn(5, '\x1F').collect();
+            if parts.len() < 5 {
+                return Some("NULL".to_string());
+            }
+            let (col, op, cmp, then_val, else_val) = (parts[0], parts[1], parts[2], parts[3], parts[4]);
+            let row_val = self.get_value(col).unwrap_or_default();
+            let to_f = |s: &str| s.parse::<f64>().unwrap_or(0.0);
+            let matches = match op {
+                "="  => row_val == cmp,
+                "!=" => row_val != cmp,
+                ">"  => to_f(&row_val) > to_f(cmp),
+                "<"  => to_f(&row_val) < to_f(cmp),
+                ">=" => to_f(&row_val) >= to_f(cmp),
+                "<=" => to_f(&row_val) <= to_f(cmp),
+                _    => false,
+            };
+            if matches { Some(then_val.to_string()) } else { Some(else_val.to_string()) }
+        } else if let Some(col) = col_expr.strip_prefix("__abs__:") {
+            let raw = self.get_value(col).unwrap_or_default();
+            let result = raw.parse::<f64>().ok()
+                .map(|f| {
+                    let abs = f.abs();
+                    if abs.fract() == 0.0 && abs < 1e15 { (abs as i64).to_string() } else { abs.to_string() }
+                })
+                .unwrap_or(raw);
+            Some(result)
+        } else if let Some(rest) = col_expr.strip_prefix("__round__:") {
+            let mut parts = rest.splitn(2, '\x1F');
+            let col = parts.next().unwrap_or("");
+            let digits: i32 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+            let raw = self.get_value(col).unwrap_or_default();
+            let result = raw.parse::<f64>().ok()
+                .map(|f| {
+                    let factor = 10f64.powi(digits);
+                    let rounded = (f * factor).round() / factor;
+                    if digits <= 0 {
+                        (rounded as i64).to_string()
+                    } else {
+                        format!("{:.prec$}", rounded, prec = digits as usize)
+                    }
+                })
+                .unwrap_or(raw);
+            Some(result)
+        } else if let Some(rest) = col_expr.strip_prefix("__substr__:") {
+            let parts: Vec<&str> = rest.splitn(3, '\x1F').collect();
+            let col = parts.first().copied().unwrap_or("");
+            let start: usize = parts.get(1)
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(1)
+                .saturating_sub(1); // SQL is 1-based
+            let len: usize = parts.get(2)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(usize::MAX);
+            let raw = self.get_value(col).unwrap_or_default();
+            let result: String = raw.chars().skip(start).take(len).collect();
+            Some(result)
         } else {
             self.get_value(col_expr)
         }
