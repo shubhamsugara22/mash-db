@@ -1805,7 +1805,7 @@ mod tests {
         let encoded = format!("__substr__:addr\x1F6\x1F2");
         assert_eq!(row.eval_col(&encoded), Some("@e".to_string()));
     }
-}
+
     // ── REPLACE tests ─────────────────────────────────────────────────────────
 
     #[test]
@@ -1814,7 +1814,11 @@ mod tests {
         let (_distinct, cols, _table, ..) = result.unwrap();
         let cols = cols.unwrap();
         assert_eq!(cols.len(), 1);
-        assert!(cols[0].starts_with("__replace__:"), "expected __replace__: prefix, got: {}", cols[0]);
+        assert!(
+            cols[0].starts_with("__replace__:"),
+            "expected __replace__: prefix, got: {}",
+            cols[0]
+        );
     }
 
     #[test]
@@ -1853,7 +1857,11 @@ mod tests {
         let (_distinct, cols, _table, ..) = result.unwrap();
         let cols = cols.unwrap();
         assert_eq!(cols.len(), 1);
-        assert!(cols[0].starts_with("__lpad__:"), "expected __lpad__: prefix, got: {}", cols[0]);
+        assert!(
+            cols[0].starts_with("__lpad__:"),
+            "expected __lpad__: prefix, got: {}",
+            cols[0]
+        );
     }
 
     #[test]
@@ -1862,7 +1870,12 @@ mod tests {
         use std::collections::HashMap;
         let mut extras = HashMap::new();
         extras.insert("code".to_string(), "42".to_string());
-        let row = Row { id: 1, username: "u".to_string(), email: "e".to_string(), extras };
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
         let encoded = format!("__lpad__:code\x1F5\x1F0");
         assert_eq!(row.eval_col(&encoded), Some("00042".to_string()));
     }
@@ -1873,7 +1886,12 @@ mod tests {
         use std::collections::HashMap;
         let mut extras = HashMap::new();
         extras.insert("code".to_string(), "123456".to_string());
-        let row = Row { id: 1, username: "u".to_string(), email: "e".to_string(), extras };
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
         let encoded = format!("__lpad__:code\x1F5\x1F0");
         assert_eq!(row.eval_col(&encoded), Some("123456".to_string()));
     }
@@ -1886,7 +1904,11 @@ mod tests {
         let (_distinct, cols, _table, ..) = result.unwrap();
         let cols = cols.unwrap();
         assert_eq!(cols.len(), 1);
-        assert!(cols[0].starts_with("__rpad__:"), "expected __rpad__: prefix, got: {}", cols[0]);
+        assert!(
+            cols[0].starts_with("__rpad__:"),
+            "expected __rpad__: prefix, got: {}",
+            cols[0]
+        );
     }
 
     #[test]
@@ -1895,7 +1917,12 @@ mod tests {
         use std::collections::HashMap;
         let mut extras = HashMap::new();
         extras.insert("label".to_string(), "hi".to_string());
-        let row = Row { id: 1, username: "u".to_string(), email: "e".to_string(), extras };
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
         let encoded = format!("__rpad__:label\x1F5\x1F-");
         assert_eq!(row.eval_col(&encoded), Some("hi---".to_string()));
     }
@@ -1906,7 +1933,12 @@ mod tests {
         use std::collections::HashMap;
         let mut extras = HashMap::new();
         extras.insert("label".to_string(), "toolong".to_string());
-        let row = Row { id: 1, username: "u".to_string(), email: "e".to_string(), extras };
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
         let encoded = format!("__rpad__:label\x1F5\x1F-");
         assert_eq!(row.eval_col(&encoded), Some("toolong".to_string()));
     }
