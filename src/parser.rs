@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+﻿use std::collections::HashMap;
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -3181,96 +3181,6 @@ fn parse_alter_table_tokens(tokens: &[Token]) -> Result<(String, AlterTableActio
         }
         _ => Err("Expected RENAME, ADD, or DROP in ALTER TABLE".to_string()),
     }
-}
-
-// Parse DROP TABLE statement
-// Syntax: DROP TABLE table_name
-pub fn parse_drop_table(input: &str) -> Result<String, String> {
-    let tokens = tokenize(input);
-    parse_drop_table_tokens(&tokens)
-}
-
-fn parse_drop_table_tokens(tokens: &[Token]) -> Result<String, String> {
-    if tokens.len() != 3 {
-        return Err("DROP TABLE requires table name".to_string());
-    }
-
-    let mut i = 0;
-    if tokens.get(i) != Some(&Token::Drop) {
-        return Err("Expected DROP".to_string());
-    }
-    i += 1;
-
-    if tokens.get(i) != Some(&Token::Table) {
-        return Err("Expected TABLE after DROP".to_string());
-    }
-    i += 1;
-
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        name.clone()
-    } else {
-        return Err("Expected table name".to_string());
-    };
-
-    Ok(table_name)
-}
-pub fn parse_truncate_table(input: &str) -> Result<String, String> {
-    let tokens = tokenize(input);
-    parse_truncate_table_tokens(&tokens)
-}
-
-fn parse_truncate_table_tokens(tokens: &[Token]) -> Result<String, String> {
-    let mut i = 0;
-
-    if tokens.get(i) != Some(&Token::Truncate) {
-        return Err("Expected TRUNCATE".to_string());
-    }
-    i += 1;
-
-    if tokens.get(i) != Some(&Token::Table) {
-        return Err("Expected TABLE after TRUNCATE".to_string());
-    }
-    i += 1;
-
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        name.clone()
-    } else {
-        return Err("Expected table name".to_string());
-    };
-
-    Ok(table_name)
-}
-
-/// Parse `INSERT INTO <table> SELECT ...`
-/// Returns (target_table_name, select_sql)
-pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
-    let tokens = tokenize(input);
-    let mut i = 0;
-
-    if tokens.get(i) != Some(&Token::Insert) {
-        return Err("Expected INSERT".to_string());
-    }
-    i += 1;
-
-    if tokens.get(i) != Some(&Token::Into) {
-        return Err("Expected INTO after INSERT".to_string());
-    }
-    i += 1;
-
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        let name = name.clone();
-        i += 1;
-        name
-    } else {
-        return Err("Expected table name after INSERT INTO".to_string());
-    };
-
-    if tokens.get(i) != Some(&Token::Select) {
-        return Err("Expected SELECT after table name".to_string());
-    }
-
-    let select_sql = tokens_to_sql(&tokens[i..]);
-    Ok((table_name, select_sql))
 }
 
 // Parse DROP TABLE statement
