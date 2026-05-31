@@ -3075,3 +3075,18 @@ pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
     let select_sql = tokens_to_sql(&tokens[i..]);
     Ok((table_name, select_sql))
 }
+    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let name = name.clone();
+        i += 1;
+        name
+    } else {
+        return Err("Expected table name after INSERT INTO".to_string());
+    };
+
+    if tokens.get(i) != Some(&Token::Select) {
+        return Err("Expected SELECT after table name".to_string());
+    }
+
+    let select_sql = tokens_to_sql(&tokens[i..]);
+    Ok((table_name, select_sql))
+}
