@@ -67,6 +67,9 @@ pub enum Token {
     Abs,
     Round,
     Substr,
+    Replace,
+    Lpad,
+    Rpad,
     Eq,
     Ne,
     Gt,
@@ -316,6 +319,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "ROUND" => Token::Round,
                     "SUBSTR" => Token::Substr,
                     "SUBSTRING" => Token::Substr,
+                    "REPLACE" => Token::Replace,
+                    "LPAD" => Token::Lpad,
+                    "RPAD" => Token::Rpad,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -489,6 +495,9 @@ fn token_to_sql(token: &Token) -> String {
         Token::Abs => "ABS".to_string(),
         Token::Round => "ROUND".to_string(),
         Token::Substr => "SUBSTR".to_string(),
+        Token::Replace => "REPLACE".to_string(),
+        Token::Lpad => "LPAD".to_string(),
+        Token::Rpad => "RPAD".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -540,6 +549,9 @@ pub fn parse_select_columns(
         | Some(Token::Abs)
         | Some(Token::Round)
         | Some(Token::Substr)
+        | Some(Token::Replace)
+        | Some(Token::Lpad)
+        | Some(Token::Rpad)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -692,6 +704,82 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("{}({})", fn_name, inner))
+                    }
+                    Some(Token::Replace) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) { return Err("Expected ( after REPLACE".to_string()); }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) { let c = c.clone(); *i += 1; c }
+                                  else { return Err("Expected column name inside REPLACE()".to_string()); };
+                        if tokens.get(*i) != Some(&Token::Comma) { return Err("Expected , after column in REPLACE".to_string()); }
+                        *i += 1;
+                        let from_str = match tokens.get(*i) {
+                            Some(Token::String(s)) => { let s = s.clone(); *i += 1; s }
+                            Some(Token::Number(n)) => { let n = *n; *i += 1; n.to_string() }
+                            Some(Token::Identifier(s)) => { let s = s.clone(); *i += 1; s }
+                            _ => return Err("Expected from-string in REPLACE".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) { return Err("Expected , after from-string in REPLACE".to_string()); }
+                        *i += 1;
+                        let to_str = match tokens.get(*i) {
+                            Some(Token::String(s)) => { let s = s.clone(); *i += 1; s }
+                            Some(Token::Number(n)) => { let n = *n; *i += 1; n.to_string() }
+                            Some(Token::Identifier(s)) => { let s = s.clone(); *i += 1; s }
+                            _ => return Err("Expected to-string in REPLACE".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) { return Err("Expected ) after REPLACE arguments".to_string()); }
+                        *i += 1;
+                        SelectColumn::Column(format!("__replace__:{}\x1F{}\x1F{}", col, from_str, to_str))
+                    }
+                    Some(Token::Lpad) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) { return Err("Expected ( after LPAD".to_string()); }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) { let c = c.clone(); *i += 1; c }
+                                  else { return Err("Expected column name inside LPAD()".to_string()); };
+                        if tokens.get(*i) != Some(&Token::Comma) { return Err("Expected , after column in LPAD".to_string()); }
+                        *i += 1;
+                        let width = match tokens.get(*i) {
+                            Some(Token::Number(n)) => { let n = *n; *i += 1; n.to_string() }
+                            Some(Token::String(s)) => { let s = s.clone(); *i += 1; s }
+                            _ => return Err("Expected width in LPAD".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) { return Err("Expected , after width in LPAD".to_string()); }
+                        *i += 1;
+                        let pad = match tokens.get(*i) {
+                            Some(Token::String(s)) => { let s = s.clone(); *i += 1; s }
+                            Some(Token::Number(n)) => { let n = *n; *i += 1; n.to_string() }
+                            Some(Token::Identifier(s)) => { let s = s.clone(); *i += 1; s }
+                            _ => return Err("Expected pad-string in LPAD".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) { return Err("Expected ) after LPAD arguments".to_string()); }
+                        *i += 1;
+                        SelectColumn::Column(format!("__lpad__:{}\x1F{}\x1F{}", col, width, pad))
+                    }
+                    Some(Token::Rpad) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) { return Err("Expected ( after RPAD".to_string()); }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) { let c = c.clone(); *i += 1; c }
+                                  else { return Err("Expected column name inside RPAD()".to_string()); };
+                        if tokens.get(*i) != Some(&Token::Comma) { return Err("Expected , after column in RPAD".to_string()); }
+                        *i += 1;
+                        let width = match tokens.get(*i) {
+                            Some(Token::Number(n)) => { let n = *n; *i += 1; n.to_string() }
+                            Some(Token::String(s)) => { let s = s.clone(); *i += 1; s }
+                            _ => return Err("Expected width in RPAD".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) { return Err("Expected , after width in RPAD".to_string()); }
+                        *i += 1;
+                        let pad = match tokens.get(*i) {
+                            Some(Token::String(s)) => { let s = s.clone(); *i += 1; s }
+                            Some(Token::Number(n)) => { let n = *n; *i += 1; n.to_string() }
+                            Some(Token::Identifier(s)) => { let s = s.clone(); *i += 1; s }
+                            _ => return Err("Expected pad-string in RPAD".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) { return Err("Expected ) after RPAD arguments".to_string()); }
+                        *i += 1;
+                        SelectColumn::Column(format!("__rpad__:{}\x1F{}\x1F{}", col, width, pad))
                     }
                     Some(Token::If) => {
                         *i += 1; // consume IF
@@ -1306,7 +1394,10 @@ fn parse_select_tokens(
         | Some(Token::If)
         | Some(Token::Abs)
         | Some(Token::Round)
-        | Some(Token::Substr) => {
+        | Some(Token::Substr)
+        | Some(Token::Replace)
+        | Some(Token::Lpad)
+        | Some(Token::Rpad) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
@@ -3074,25 +3165,6 @@ pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
 
     let select_sql = tokens_to_sql(&tokens[i..]);
     Ok((table_name, select_sql))
-}
-            i += 1;
-            if tokens.get(i) != Some(&Token::Column) {
-                return Err("Expected COLUMN after DROP".to_string());
-            }
-            i += 1;
-            let col_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-                name.clone()
-            } else {
-                return Err("Expected column name".to_string());
-            };
-            i += 1;
-            if i != tokens.len() {
-                return Err("Extra tokens".to_string());
-            }
-            Ok((table_name, AlterTableAction::DropColumn(col_name)))
-        }
-        _ => Err("Expected RENAME, ADD, or DROP in ALTER TABLE".to_string()),
-    }
 }
 
 // Parse DROP TABLE statement

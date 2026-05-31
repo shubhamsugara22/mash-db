@@ -235,6 +235,39 @@ impl Row {
             let a = parts.first().map(|s| resolve(s)).unwrap_or_default();
             let b = parts.get(1).map(|s| resolve(s)).unwrap_or_default();
             Some(format!("{}{}", a, b))
+        } else if let Some(rest) = col_expr.strip_prefix("__replace__:") {
+            let parts: Vec<&str> = rest.splitn(3, '\x1F').collect();
+            let col = parts.first().copied().unwrap_or("");
+            let from_str = parts.get(1).copied().unwrap_or("");
+            let to_str = parts.get(2).copied().unwrap_or("");
+            let raw = self.get_value(col).unwrap_or_default();
+            Some(raw.replace(from_str, to_str))
+        } else if let Some(rest) = col_expr.strip_prefix("__lpad__:") {
+            let parts: Vec<&str> = rest.splitn(3, '\x1F').collect();
+            let col = parts.first().copied().unwrap_or("");
+            let width: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let pad = parts.get(2).copied().unwrap_or(" ");
+            let raw = self.get_value(col).unwrap_or_default();
+            if raw.chars().count() >= width {
+                Some(raw)
+            } else {
+                let needed = width - raw.chars().count();
+                let fill: String = pad.chars().cycle().take(needed).collect();
+                Some(format!("{}{}", fill, raw))
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__rpad__:") {
+            let parts: Vec<&str> = rest.splitn(3, '\x1F').collect();
+            let col = parts.first().copied().unwrap_or("");
+            let width: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let pad = parts.get(2).copied().unwrap_or(" ");
+            let raw = self.get_value(col).unwrap_or_default();
+            if raw.chars().count() >= width {
+                Some(raw)
+            } else {
+                let needed = width - raw.chars().count();
+                let fill: String = pad.chars().cycle().take(needed).collect();
+                Some(format!("{}{}", raw, fill))
+            }
         } else if let Some(rest) = col_expr.strip_prefix("__if__:") {
             let parts: Vec<&str> = rest.splitn(5, '\x1F').collect();
             if parts.len() < 5 {
