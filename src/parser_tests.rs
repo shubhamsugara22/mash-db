@@ -1806,3 +1806,108 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("@e".to_string()));
     }
 }
+    // ── REPLACE tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_replace_basic() {
+        let result = parse_select("SELECT REPLACE(name, 'a', 'o') FROM users");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__replace__:"), "expected __replace__: prefix, got: {}", cols[0]);
+    }
+
+    #[test]
+    fn test_eval_col_replace_substitutes() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "banana".to_string(),
+            email: "e".to_string(),
+            extras: HashMap::new(),
+        };
+        let encoded = format!("__replace__:username\x1Fa\x1Fo");
+        assert_eq!(row.eval_col(&encoded), Some("bonono".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_replace_no_match_unchanged() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "hello".to_string(),
+            email: "e".to_string(),
+            extras: HashMap::new(),
+        };
+        let encoded = format!("__replace__:username\x1Fz\x1FX");
+        assert_eq!(row.eval_col(&encoded), Some("hello".to_string()));
+    }
+
+    // ── LPAD tests ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_lpad_basic() {
+        let result = parse_select("SELECT LPAD(code, 5, '0') FROM items");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__lpad__:"), "expected __lpad__: prefix, got: {}", cols[0]);
+    }
+
+    #[test]
+    fn test_eval_col_lpad_pads_short_value() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("code".to_string(), "42".to_string());
+        let row = Row { id: 1, username: "u".to_string(), email: "e".to_string(), extras };
+        let encoded = format!("__lpad__:code\x1F5\x1F0");
+        assert_eq!(row.eval_col(&encoded), Some("00042".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_lpad_no_pad_when_already_wide() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("code".to_string(), "123456".to_string());
+        let row = Row { id: 1, username: "u".to_string(), email: "e".to_string(), extras };
+        let encoded = format!("__lpad__:code\x1F5\x1F0");
+        assert_eq!(row.eval_col(&encoded), Some("123456".to_string()));
+    }
+
+    // ── RPAD tests ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_rpad_basic() {
+        let result = parse_select("SELECT RPAD(label, 6, '-') FROM items");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__rpad__:"), "expected __rpad__: prefix, got: {}", cols[0]);
+    }
+
+    #[test]
+    fn test_eval_col_rpad_pads_short_value() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("label".to_string(), "hi".to_string());
+        let row = Row { id: 1, username: "u".to_string(), email: "e".to_string(), extras };
+        let encoded = format!("__rpad__:label\x1F5\x1F-");
+        assert_eq!(row.eval_col(&encoded), Some("hi---".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_rpad_no_pad_when_already_wide() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("label".to_string(), "toolong".to_string());
+        let row = Row { id: 1, username: "u".to_string(), email: "e".to_string(), extras };
+        let encoded = format!("__rpad__:label\x1F5\x1F-");
+        assert_eq!(row.eval_col(&encoded), Some("toolong".to_string()));
+    }
+}

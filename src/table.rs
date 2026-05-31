@@ -202,11 +202,19 @@ impl Row {
             let raw = self.get_value(col).unwrap_or_default();
             match cast_type {
                 "INTEGER" | "INT" => {
-                    let n = raw.parse::<f64>().ok().map(|f| (f as i64).to_string()).unwrap_or(raw);
+                    let n = raw
+                        .parse::<f64>()
+                        .ok()
+                        .map(|f| (f as i64).to_string())
+                        .unwrap_or(raw);
                     Some(n)
                 }
                 "REAL" | "FLOAT" | "DOUBLE" => {
-                    let n = raw.parse::<f64>().ok().map(|f| f.to_string()).unwrap_or(raw);
+                    let n = raw
+                        .parse::<f64>()
+                        .ok()
+                        .map(|f| f.to_string())
+                        .unwrap_or(raw);
                     Some(n)
                 }
                 _ => Some(raw), // TEXT and anything else: no conversion needed
@@ -232,25 +240,36 @@ impl Row {
             if parts.len() < 5 {
                 return Some("NULL".to_string());
             }
-            let (col, op, cmp, then_val, else_val) = (parts[0], parts[1], parts[2], parts[3], parts[4]);
+            let (col, op, cmp, then_val, else_val) =
+                (parts[0], parts[1], parts[2], parts[3], parts[4]);
             let row_val = self.get_value(col).unwrap_or_default();
             let to_f = |s: &str| s.parse::<f64>().unwrap_or(0.0);
             let matches = match op {
-                "="  => row_val == cmp,
+                "=" => row_val == cmp,
                 "!=" => row_val != cmp,
-                ">"  => to_f(&row_val) > to_f(cmp),
-                "<"  => to_f(&row_val) < to_f(cmp),
+                ">" => to_f(&row_val) > to_f(cmp),
+                "<" => to_f(&row_val) < to_f(cmp),
                 ">=" => to_f(&row_val) >= to_f(cmp),
                 "<=" => to_f(&row_val) <= to_f(cmp),
-                _    => false,
+                _ => false,
             };
-            if matches { Some(then_val.to_string()) } else { Some(else_val.to_string()) }
+            if matches {
+                Some(then_val.to_string())
+            } else {
+                Some(else_val.to_string())
+            }
         } else if let Some(col) = col_expr.strip_prefix("__abs__:") {
             let raw = self.get_value(col).unwrap_or_default();
-            let result = raw.parse::<f64>().ok()
+            let result = raw
+                .parse::<f64>()
+                .ok()
                 .map(|f| {
                     let abs = f.abs();
-                    if abs.fract() == 0.0 && abs < 1e15 { (abs as i64).to_string() } else { abs.to_string() }
+                    if abs.fract() == 0.0 && abs < 1e15 {
+                        (abs as i64).to_string()
+                    } else {
+                        abs.to_string()
+                    }
                 })
                 .unwrap_or(raw);
             Some(result)
@@ -259,7 +278,9 @@ impl Row {
             let col = parts.next().unwrap_or("");
             let digits: i32 = parts.next().unwrap_or("0").parse().unwrap_or(0);
             let raw = self.get_value(col).unwrap_or_default();
-            let result = raw.parse::<f64>().ok()
+            let result = raw
+                .parse::<f64>()
+                .ok()
                 .map(|f| {
                     let factor = 10f64.powi(digits);
                     let rounded = (f * factor).round() / factor;
@@ -274,11 +295,13 @@ impl Row {
         } else if let Some(rest) = col_expr.strip_prefix("__substr__:") {
             let parts: Vec<&str> = rest.splitn(3, '\x1F').collect();
             let col = parts.first().copied().unwrap_or("");
-            let start: usize = parts.get(1)
+            let start: usize = parts
+                .get(1)
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(1)
                 .saturating_sub(1); // SQL is 1-based
-            let len: usize = parts.get(2)
+            let len: usize = parts
+                .get(2)
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(usize::MAX);
             let raw = self.get_value(col).unwrap_or_default();
@@ -1131,6 +1154,39 @@ mod tests {
         assert!(rows.iter().any(|r| r.id == 1));
         assert!(rows.iter().any(|r| r.username == "charlie"));
     }
+
+    #[test]
+    fn select_where_complex_mixed() {
+        let mut table = Table::new("test_mixed.json".to_string(), default_schema());
+
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(3, "alice".to_string(), "a2@a.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(4, "charlie".to_string(), "c@c.com".to_string()).unwrap())
+            .unwrap();
+
+        let conditions = vec![
+            ("id".to_string(), ">".to_string(), "1".to_string()),
+            ("username".to_string(), "=".to_string(), "alice".to_string()),
+            ("id".to_string(), "!=".to_string(), "4".to_string()),
+        ];
+        let operators = vec!["AND".to_string(), "OR".to_string()];
+
+        let rows = table.select_where_complex(&conditions, &operators).unwrap();
+        // Should match: (id > 1 AND username = alice) OR id != 4
+        // id=3 matches the AND part, id=2 matches the OR part (since id != 4)
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|r| r.id == 2));
+        assert!(rows.iter().any(|r| r.id == 3));
+    }
+}
 
     #[test]
     fn select_where_complex_mixed() {
