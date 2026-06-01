@@ -268,6 +268,35 @@ impl Row {
                 let fill: String = pad.chars().cycle().take(needed).collect();
                 Some(format!("{}{}", raw, fill))
             }
+        } else if let Some(rest) = col_expr.strip_prefix("__left__:") {
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            let col = parts.first().copied().unwrap_or("");
+            let len: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let raw = self.get_value(col).unwrap_or_default();
+            let result: String = raw.chars().take(len).collect();
+            Some(result)
+        } else if let Some(rest) = col_expr.strip_prefix("__right__:") {
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            let col = parts.first().copied().unwrap_or("");
+            let len: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let raw = self.get_value(col).unwrap_or_default();
+            let char_count = raw.chars().count();
+            if len >= char_count {
+                Some(raw)
+            } else {
+                let result: String = raw.chars().skip(char_count - len).collect();
+                Some(result)
+            }
+        } else if let Some(col) = col_expr.strip_prefix("__reverse__:") {
+            let raw = self.get_value(col).unwrap_or_default();
+            let reversed: String = raw.chars().rev().collect();
+            Some(reversed)
+        } else if let Some(rest) = col_expr.strip_prefix("__repeat__:") {
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            let col = parts.first().copied().unwrap_or("");
+            let count: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let raw = self.get_value(col).unwrap_or_default();
+            Some(raw.repeat(count))
         } else if let Some(rest) = col_expr.strip_prefix("__if__:") {
             let parts: Vec<&str> = rest.splitn(5, '\x1F').collect();
             if parts.len() < 5 {

@@ -1942,4 +1942,176 @@ mod tests {
         let encoded = format!("__rpad__:label\x1F5\x1F-");
         assert_eq!(row.eval_col(&encoded), Some("toolong".to_string()));
     }
+
+    // ── LEFT tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_left_basic() {
+        let result = parse_select("SELECT LEFT(name, 3) FROM users");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__left__:"));
+    }
+
+    #[test]
+    fn test_eval_col_left_extracts_prefix() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__left__:word\x1F3");
+        assert_eq!(row.eval_col(&encoded), Some("hel".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_left_entire_string_when_len_exceeds() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "hi".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__left__:word\x1F10");
+        assert_eq!(row.eval_col(&encoded), Some("hi".to_string()));
+    }
+
+    // ── RIGHT tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_right_basic() {
+        let result = parse_select("SELECT RIGHT(name, 3) FROM users");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__right__:"));
+    }
+
+    #[test]
+    fn test_eval_col_right_extracts_suffix() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__right__:word\x1F3");
+        assert_eq!(row.eval_col(&encoded), Some("llo".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_right_entire_string_when_len_exceeds() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "hi".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__right__:word\x1F10");
+        assert_eq!(row.eval_col(&encoded), Some("hi".to_string()));
+    }
+
+    // ── REVERSE tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_reverse_basic() {
+        let result = parse_select("SELECT REVERSE(name) FROM users");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__reverse__:"));
+    }
+
+    #[test]
+    fn test_eval_col_reverse_flips_string() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__reverse__:word");
+        assert_eq!(row.eval_col(&encoded), Some("olleh".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_reverse_empty_string() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__reverse__:word");
+        assert_eq!(row.eval_col(&encoded), Some("".to_string()));
+    }
+
+    // ── REPEAT tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_repeat_basic() {
+        let result = parse_select("SELECT REPEAT(name, 3) FROM users");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__repeat__:"));
+    }
+
+    #[test]
+    fn test_eval_col_repeat_duplicates_string() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "ha".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__repeat__:word\x1F3");
+        assert_eq!(row.eval_col(&encoded), Some("hahaha".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_repeat_zero_times() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__repeat__:word\x1F0");
+        assert_eq!(row.eval_col(&encoded), Some("".to_string()));
+    }
 }

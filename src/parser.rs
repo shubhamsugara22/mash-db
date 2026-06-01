@@ -70,6 +70,8 @@ pub enum Token {
     Replace,
     Lpad,
     Rpad,
+    Reverse,
+    Repeat,
     Eq,
     Ne,
     Gt,
@@ -322,6 +324,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "REPLACE" => Token::Replace,
                     "LPAD" => Token::Lpad,
                     "RPAD" => Token::Rpad,
+                    "REVERSE" => Token::Reverse,
+                    "REPEAT" => Token::Repeat,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -498,6 +502,8 @@ fn token_to_sql(token: &Token) -> String {
         Token::Replace => "REPLACE".to_string(),
         Token::Lpad => "LPAD".to_string(),
         Token::Rpad => "RPAD".to_string(),
+        Token::Reverse => "REVERSE".to_string(),
+        Token::Repeat => "REPEAT".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -552,6 +558,10 @@ pub fn parse_select_columns(
         | Some(Token::Replace)
         | Some(Token::Lpad)
         | Some(Token::Rpad)
+        | Some(Token::Left)
+        | Some(Token::Right)
+        | Some(Token::Reverse)
+        | Some(Token::Repeat)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -886,6 +896,133 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("__rpad__:{}\x1F{}\x1F{}", col, width, pad))
+                    }
+                    Some(Token::Left) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after LEFT".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside LEFT()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after column in LEFT".to_string());
+                        }
+                        *i += 1;
+                        let len = match tokens.get(*i) {
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected length in LEFT".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after LEFT arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__left__:{}\x1F{}", col, len))
+                    }
+                    Some(Token::Right) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after RIGHT".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside RIGHT()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after column in RIGHT".to_string());
+                        }
+                        *i += 1;
+                        let len = match tokens.get(*i) {
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected length in RIGHT".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after RIGHT arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__right__:{}\x1F{}", col, len))
+                    }
+                    Some(Token::Reverse) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after REVERSE".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside REVERSE()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after REVERSE argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__reverse__:{}", col))
+                    }
+                    Some(Token::Repeat) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after REPEAT".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside REPEAT()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after column in REPEAT".to_string());
+                        }
+                        *i += 1;
+                        let count = match tokens.get(*i) {
+                            Some(Token::Number(n)) => {
+                                let n = *n;
+                                *i += 1;
+                                n.to_string()
+                            }
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected count in REPEAT".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after REPEAT arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__repeat__:{}\x1F{}", col, count))
                     }
                     Some(Token::If) => {
                         *i += 1; // consume IF
@@ -1503,7 +1640,11 @@ fn parse_select_tokens(
         | Some(Token::Substr)
         | Some(Token::Replace)
         | Some(Token::Lpad)
-        | Some(Token::Rpad) => {
+        | Some(Token::Rpad)
+        | Some(Token::Left)
+        | Some(Token::Right)
+        | Some(Token::Reverse)
+        | Some(Token::Repeat) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
