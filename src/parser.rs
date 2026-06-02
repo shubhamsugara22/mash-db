@@ -72,6 +72,9 @@ pub enum Token {
     Rpad,
     Reverse,
     Repeat,
+    Initcap,
+    Floor,
+    Ceil,
     Eq,
     Ne,
     Gt,
@@ -326,6 +329,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "RPAD" => Token::Rpad,
                     "REVERSE" => Token::Reverse,
                     "REPEAT" => Token::Repeat,
+                    "INITCAP" => Token::Initcap,
+                    "FLOOR" => Token::Floor,
+                    "CEIL" => Token::Ceil,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -504,6 +510,9 @@ fn token_to_sql(token: &Token) -> String {
         Token::Rpad => "RPAD".to_string(),
         Token::Reverse => "REVERSE".to_string(),
         Token::Repeat => "REPEAT".to_string(),
+        Token::Initcap => "INITCAP".to_string(),
+        Token::Floor => "FLOOR".to_string(),
+        Token::Ceil => "CEIL".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -562,6 +571,9 @@ pub fn parse_select_columns(
         | Some(Token::Right)
         | Some(Token::Reverse)
         | Some(Token::Repeat)
+        | Some(Token::Initcap)
+        | Some(Token::Floor)
+        | Some(Token::Ceil)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -1023,6 +1035,63 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("__repeat__:{}\x1F{}", col, count))
+                    }
+                    Some(Token::Initcap) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after INITCAP".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside INITCAP()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after INITCAP argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__initcap__:{}", col))
+                    }
+                    Some(Token::Floor) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after FLOOR".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside FLOOR()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after FLOOR argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__floor__:{}", col))
+                    }
+                    Some(Token::Ceil) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after CEIL".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else {
+                            return Err("Expected column name inside CEIL()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after CEIL argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__ceil__:{}", col))
                     }
                     Some(Token::If) => {
                         *i += 1; // consume IF
@@ -1644,7 +1713,10 @@ fn parse_select_tokens(
         | Some(Token::Left)
         | Some(Token::Right)
         | Some(Token::Reverse)
-        | Some(Token::Repeat) => {
+        | Some(Token::Repeat)
+        | Some(Token::Initcap)
+        | Some(Token::Floor)
+        | Some(Token::Ceil) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
@@ -3398,75 +3470,6 @@ pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
     }
     i += 1;
 
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        let name = name.clone();
-        i += 1;
-        name
-    } else {
-        return Err("Expected table name after INSERT INTO".to_string());
-    };
-
-    if tokens.get(i) != Some(&Token::Select) {
-        return Err("Expected SELECT after table name".to_string());
-    }
-
-    let select_sql = tokens_to_sql(&tokens[i..]);
-    Ok((table_name, select_sql))
-}
-
-fn parse_truncate_table_tokens(tokens: &[Token]) -> Result<String, String> {
-    let mut i = 0;
-
-    if tokens.get(i) != Some(&Token::Truncate) {
-        return Err("Expected TRUNCATE".to_string());
-    }
-    i += 1;
-
-    if tokens.get(i) != Some(&Token::Table) {
-        return Err("Expected TABLE after TRUNCATE".to_string());
-    }
-    i += 1;
-
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        name.clone()
-    } else {
-        return Err("Expected table name".to_string());
-    };
-
-    Ok(table_name)
-}
-
-/// Parse `INSERT INTO <table> SELECT ...`
-/// Returns (target_table_name, select_sql)
-pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
-    let tokens = tokenize(input);
-    let mut i = 0;
-
-    if tokens.get(i) != Some(&Token::Insert) {
-        return Err("Expected INSERT".to_string());
-    }
-    i += 1;
-
-    if tokens.get(i) != Some(&Token::Into) {
-        return Err("Expected INTO after INSERT".to_string());
-    }
-    i += 1;
-
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        let name = name.clone();
-        i += 1;
-        name
-    } else {
-        return Err("Expected table name after INSERT INTO".to_string());
-    };
-
-    if tokens.get(i) != Some(&Token::Select) {
-        return Err("Expected SELECT after table name".to_string());
-    }
-
-    let select_sql = tokens_to_sql(&tokens[i..]);
-    Ok((table_name, select_sql))
-}
     let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
         let name = name.clone();
         i += 1;
