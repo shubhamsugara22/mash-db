@@ -297,6 +297,38 @@ impl Row {
             let count: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             let raw = self.get_value(col).unwrap_or_default();
             Some(raw.repeat(count))
+        } else if let Some(col) = col_expr.strip_prefix("__initcap__:") {
+            let raw = self.get_value(col).unwrap_or_default();
+            let mut result = String::new();
+            let mut capitalize_next = true;
+            for c in raw.chars() {
+                if c.is_whitespace() {
+                    result.push(c);
+                    capitalize_next = true;
+                } else if capitalize_next {
+                    result.push_str(&c.to_uppercase().to_string());
+                    capitalize_next = false;
+                } else {
+                    result.push(c);
+                }
+            }
+            Some(result)
+        } else if let Some(col) = col_expr.strip_prefix("__floor__:") {
+            let raw = self.get_value(col).unwrap_or_default();
+            let result = raw
+                .parse::<f64>()
+                .ok()
+                .map(|f| f.floor().to_string())
+                .unwrap_or(raw);
+            Some(result)
+        } else if let Some(col) = col_expr.strip_prefix("__ceil__:") {
+            let raw = self.get_value(col).unwrap_or_default();
+            let result = raw
+                .parse::<f64>()
+                .ok()
+                .map(|f| f.ceil().to_string())
+                .unwrap_or(raw);
+            Some(result)
         } else if let Some(rest) = col_expr.strip_prefix("__if__:") {
             let parts: Vec<&str> = rest.splitn(5, '\x1F').collect();
             if parts.len() < 5 {
