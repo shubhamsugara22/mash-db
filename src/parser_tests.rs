@@ -2114,4 +2114,133 @@ mod tests {
         let encoded = format!("__repeat__:word\x1F0");
         assert_eq!(row.eval_col(&encoded), Some("".to_string()));
     }
+
+    // ── INITCAP tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_initcap_basic() {
+        let result = parse_select("SELECT INITCAP(name) FROM users");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__initcap__:"));
+    }
+
+    #[test]
+    fn test_eval_col_initcap_single_word() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("word".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__initcap__:word");
+        assert_eq!(row.eval_col(&encoded), Some("Hello".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_initcap_multiple_words() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("phrase".to_string(), "hello world test".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__initcap__:phrase");
+        assert_eq!(row.eval_col(&encoded), Some("Hello World Test".to_string()));
+    }
+
+    // ── FLOOR tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_floor_basic() {
+        let result = parse_select("SELECT FLOOR(price) FROM products");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__floor__:"));
+    }
+
+    #[test]
+    fn test_eval_col_floor_rounds_down() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("val".to_string(), "3.7".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__floor__:val");
+        assert_eq!(row.eval_col(&encoded), Some("3".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_floor_negative() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("val".to_string(), "-2.3".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__floor__:val");
+        assert_eq!(row.eval_col(&encoded), Some("-3".to_string()));
+    }
+
+    // ── CEIL tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_select_ceil_basic() {
+        let result = parse_select("SELECT CEIL(price) FROM products");
+        let (_distinct, cols, _table, ..) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__ceil__:"));
+    }
+
+    #[test]
+    fn test_eval_col_ceil_rounds_up() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("val".to_string(), "3.2".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__ceil__:val");
+        assert_eq!(row.eval_col(&encoded), Some("4".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_ceil_negative() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("val".to_string(), "-2.7".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__ceil__:val");
+        assert_eq!(row.eval_col(&encoded), Some("-2".to_string()));
+    }
 }

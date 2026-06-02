@@ -3413,9 +3413,6 @@ pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
     let select_sql = tokens_to_sql(&tokens[i..]);
     Ok((table_name, select_sql))
 }
-    let tokens = tokenize(input);
-    parse_truncate_table_tokens(&tokens)
-}
 
 fn parse_truncate_table_tokens(tokens: &[Token]) -> Result<String, String> {
     let mut i = 0;
