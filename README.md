@@ -48,6 +48,11 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
   - **Aggregate Functions**: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`
     - ✅ **Works with custom columns**: Aggregates compute over any column
     - ✅ **ORDER BY on aggregates**: Sort grouped results by aggregate values (e.g., `ORDER BY COUNT(*) DESC`)
+  - **Scalar Functions**: Over 20 built-in functions for string, numeric, and conditional operations
+    - **String**: `UPPER(col)`, `LOWER(col)`, `LENGTH(col)`, `TRIM(col)`, `CONCAT(col1, col2)`, `REPLACE(col, from, to)`, `SUBSTR(col, start, len)`, `LPAD(col, len, pad)`, `RPAD(col, len, pad)`, `LEFT(col, len)`, `RIGHT(col, len)`, `REVERSE(col)`, `REPEAT(col, n)`, `INITCAP(col)`
+    - **Numeric**: `ABS(col)`, `ROUND(col, decimals)`, `FLOOR(col)`, `CEIL(col)`
+    - **Conditional**: `IF(col op val, then, else)`, `CASE WHEN ... THEN ... ELSE ... END`, `COALESCE(col, default)`, `NULLIF(col, val)`
+    - **Type**: `CAST(col AS type)`
   - **GROUP BY**: Group results by any columns (e.g., `GROUP BY category, supplier`)
   - **HAVING**: Filter grouped results with conditions
   - **ORDER BY (qualified)**: Sort results ASC/DESC with table qualifiers
@@ -64,7 +69,7 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
 - **Schema Registry** - Tracks column schemas for each table, persists to schemas.json
 - **Backward Compatibility** - Original (id, username, email) fixed schema still fully supported
 - **Multiple Table Support** - Different tables can have completely different schemas
-- **Comprehensive Testing** - 105+ passing tests covering all SQL features
+- **Comprehensive Testing** - 194 passing tests covering all SQL features and scalar functions
 
 ## Usage
 
@@ -199,6 +204,32 @@ SELECT username FROM users WHERE username LIKE '%li%'
 
 -- Single character wildcard
 SELECT username FROM users WHERE username LIKE 'b_b'
+```
+
+### Scalar Functions
+
+```sql
+-- String manipulation
+SELECT UPPER(username), LOWER(email) FROM users
+SELECT INITCAP(name) FROM products  -- Capitalize first letter of each word
+SELECT CONCAT(username, '@', 'domain.com') FROM users
+SELECT LEFT(username, 3), RIGHT(email, 10) FROM users
+SELECT REVERSE(username), REPEAT(category, 3) FROM products
+SELECT REPLACE(email, 'example.com', 'newdomain.com') FROM users
+SELECT LPAD(name, 20, '-'), RPAD(category, 15, '.') FROM products
+
+-- Numeric functions
+SELECT ABS(balance), ROUND(price, 2) FROM accounts
+SELECT FLOOR(price), CEIL(price) FROM products  -- Round down/up
+SELECT SUBSTR(description, 1, 50) FROM products
+
+-- Conditional logic
+SELECT IF(stock > 100, 'High', 'Low') FROM products
+SELECT COALESCE(middle_name, 'N/A'), NULLIF(status, 'inactive') FROM users
+SELECT CASE WHEN price > 100 THEN 'Premium' WHEN price > 50 THEN 'Standard' ELSE 'Budget' END FROM products
+
+-- Type conversion
+SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 ```
 
 ## Architecture
