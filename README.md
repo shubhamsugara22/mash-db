@@ -259,9 +259,29 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 - [x] WHERE `IS NULL` / `IS NOT NULL`
 - [x] CREATE TABLE and DROP TABLE commands
 - [x] LIKE operator for pattern matching
+- [x] Extended Numeric Literals (signed, scientific notation, leading-dot decimals)
+- [x] Scalar Functions (20+ functions)
+  - [x] String functions: UPPER, LOWER, LENGTH, TRIM, CONCAT, REPLACE, SUBSTR, LPAD, RPAD, LEFT, RIGHT, REVERSE, REPEAT, INITCAP
+  - [x] Numeric functions: ABS, ROUND, FLOOR, CEIL
+  - [x] Conditional functions: IF, CASE/WHEN/THEN/ELSE/END, COALESCE, NULLIF
+  - [x] Type conversion: CAST
 - [x] ALTER TABLE (add/drop columns, rename) — metadata only
+- [x] Dynamic Schema Support (custom table columns)
+- [x] SHOW TABLES command
+- [x] TRUNCATE TABLE command
 - [x] Subqueries — IN subquery support
 - [x] Transactions — BEGIN/COMMIT/ROLLBACK (snapshot-based)
+- [x] BETWEEN operator for range queries
+- [ ] Window functions (ROW_NUMBER, RANK, PARTITION BY)
+- [ ] Common Table Expressions (WITH/CTE)
+- [ ] More numeric functions (MOD, POWER, SQRT, SIGN)
+- [ ] More string functions (POSITION, INSTR, SUBSTRING_INDEX)
+- [ ] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
+- [ ] Full text search
+- [ ] Foreign key constraints
+- [ ] PRIMARY KEY and UNIQUE constraints
+- [ ] CREATE INDEX on arbitrary columns
+- [ ] Views (CREATE VIEW, DROP VIEW)
 
 ## References
 
