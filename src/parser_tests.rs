@@ -2251,6 +2251,7 @@ mod tests {
         assert!(result.is_ok());
         let (_distinct, cols, _table, _where, _group, _having, _order, _limit, _offset, _join) =
             result.unwrap();
+        let cols = cols.unwrap();
         assert_eq!(cols.len(), 1);
         assert!(cols[0].starts_with("__mod__:"));
     }
@@ -2294,6 +2295,7 @@ mod tests {
         assert!(result.is_ok());
         let (_distinct, cols, _table, _where, _group, _having, _order, _limit, _offset, _join) =
             result.unwrap();
+        let cols = cols.unwrap();
         assert_eq!(cols.len(), 1);
         assert!(cols[0].starts_with("__power__:"));
     }
@@ -2337,6 +2339,7 @@ mod tests {
         assert!(result.is_ok());
         let (_distinct, cols, _table, _where, _group, _having, _order, _limit, _offset, _join) =
             result.unwrap();
+        let cols = cols.unwrap();
         assert_eq!(cols.len(), 1);
         assert!(cols[0].starts_with("__sqrt__:"));
     }
