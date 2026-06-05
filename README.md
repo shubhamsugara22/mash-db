@@ -221,6 +221,7 @@ SELECT LPAD(name, 20, '-'), RPAD(category, 15, '.') FROM products
 -- Numeric functions
 SELECT ABS(balance), ROUND(price, 2) FROM accounts
 SELECT FLOOR(price), CEIL(price) FROM products  -- Round down/up
+SELECT MOD(quantity, 10), POWER(rating, 2), SQRT(area) FROM inventory
 SELECT SUBSTR(description, 1, 50) FROM products
 
 -- Conditional logic
@@ -262,7 +263,7 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 - [x] Extended Numeric Literals (signed, scientific notation, leading-dot decimals)
 - [x] Scalar Functions (20+ functions)
   - [x] String functions: UPPER, LOWER, LENGTH, TRIM, CONCAT, REPLACE, SUBSTR, LPAD, RPAD, LEFT, RIGHT, REVERSE, REPEAT, INITCAP
-  - [x] Numeric functions: ABS, ROUND, FLOOR, CEIL
+  - [x] Numeric functions: ABS, ROUND, FLOOR, CEIL, MOD, POWER, SQRT
   - [x] Conditional functions: IF, CASE/WHEN/THEN/ELSE/END, COALESCE, NULLIF
   - [x] Type conversion: CAST
 - [x] ALTER TABLE (add/drop columns, rename) — metadata only
@@ -274,7 +275,8 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 - [x] BETWEEN operator for range queries
 - [ ] Window functions (ROW_NUMBER, RANK, PARTITION BY)
 - [ ] Common Table Expressions (WITH/CTE)
-- [ ] More numeric functions (MOD, POWER, SQRT, SIGN)
+- [x] More numeric functions: MOD, POWER, SQRT
+- [ ] More numeric functions: SIGN
 - [ ] More string functions (POSITION, INSTR, SUBSTRING_INDEX)
 - [ ] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
 - [ ] Full text search
