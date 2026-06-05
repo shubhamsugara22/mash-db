@@ -2243,4 +2243,135 @@ mod tests {
         let encoded = format!("__ceil__:val");
         assert_eq!(row.eval_col(&encoded), Some("-2".to_string()));
     }
+
+    // MOD tests
+    #[test]
+    fn test_parse_select_mod_basic() {
+        let result = parse_select("SELECT MOD(amount, 3) FROM orders");
+        assert!(result.is_ok());
+        let (_distinct, cols, _table, _where, _group, _having, _order, _limit, _offset, _join) =
+            result.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__mod__:"));
+    }
+
+    #[test]
+    fn test_eval_col_mod_basic() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("num".to_string(), "10".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__mod__:num\x1F3");
+        assert_eq!(row.eval_col(&encoded), Some("1".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_mod_fractional() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("num".to_string(), "7.5".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__mod__:num\x1F2.5");
+        assert_eq!(row.eval_col(&encoded), Some("0".to_string()));
+    }
+
+    // POWER tests
+    #[test]
+    fn test_parse_select_power_basic() {
+        let result = parse_select("SELECT POWER(base, 2) FROM data");
+        assert!(result.is_ok());
+        let (_distinct, cols, _table, _where, _group, _having, _order, _limit, _offset, _join) =
+            result.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__power__:"));
+    }
+
+    #[test]
+    fn test_eval_col_power_square() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("base".to_string(), "3".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__power__:base\x1F2");
+        assert_eq!(row.eval_col(&encoded), Some("9".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_power_cube() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("base".to_string(), "2".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__power__:base\x1F3");
+        assert_eq!(row.eval_col(&encoded), Some("8".to_string()));
+    }
+
+    // SQRT tests
+    #[test]
+    fn test_parse_select_sqrt_basic() {
+        let result = parse_select("SELECT SQRT(area) FROM shapes");
+        assert!(result.is_ok());
+        let (_distinct, cols, _table, _where, _group, _having, _order, _limit, _offset, _join) =
+            result.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__sqrt__:"));
+    }
+
+    #[test]
+    fn test_eval_col_sqrt_perfect_square() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("num".to_string(), "16".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__sqrt__:num");
+        assert_eq!(row.eval_col(&encoded), Some("4".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_sqrt_decimal() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("num".to_string(), "2".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__sqrt__:num");
+        let result = row.eval_col(&encoded).unwrap();
+        let parsed: f64 = result.parse().unwrap();
+        assert!((parsed - 1.414213562).abs() < 0.0001);
+    }
 }
