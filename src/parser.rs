@@ -75,6 +75,9 @@ pub enum Token {
     Initcap,
     Floor,
     Ceil,
+    Mod,
+    Power,
+    Sqrt,
     Eq,
     Ne,
     Gt,
@@ -332,6 +335,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "INITCAP" => Token::Initcap,
                     "FLOOR" => Token::Floor,
                     "CEIL" => Token::Ceil,
+                    "MOD" => Token::Mod,
+                    "POWER" => Token::Power,
+                    "SQRT" => Token::Sqrt,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -513,6 +519,9 @@ fn token_to_sql(token: &Token) -> String {
         Token::Initcap => "INITCAP".to_string(),
         Token::Floor => "FLOOR".to_string(),
         Token::Ceil => "CEIL".to_string(),
+        Token::Mod => "MOD".to_string(),
+        Token::Power => "POWER".to_string(),
+        Token::Sqrt => "SQRT".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -574,6 +583,9 @@ pub fn parse_select_columns(
         | Some(Token::Initcap)
         | Some(Token::Floor)
         | Some(Token::Ceil)
+        | Some(Token::Mod)
+        | Some(Token::Power)
+        | Some(Token::Sqrt)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -1716,7 +1728,10 @@ fn parse_select_tokens(
         | Some(Token::Repeat)
         | Some(Token::Initcap)
         | Some(Token::Floor)
-        | Some(Token::Ceil) => {
+        | Some(Token::Ceil)
+        | Some(Token::Mod)
+        | Some(Token::Power)
+        | Some(Token::Sqrt) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
