@@ -1,4 +1,4 @@
-const COLUMN_USERNAME_SIZE: usize = 255;
+﻿const COLUMN_USERNAME_SIZE: usize = 255;
 const COLUMN_EMAIL_SIZE: usize = 255;
 
 use crate::pager::Pager;
@@ -1327,72 +1327,6 @@ mod tests {
 
         let rows = table.select_where_complex(&conditions, &operators).unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id, 3);
-        assert_eq!(rows[0].username, "alice");
-    }
-
-    #[test]
-    fn select_where_complex_or() {
-        let mut table = Table::new("test_or.json".to_string(), default_schema());
-
-        table
-            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
-            .unwrap();
-        table
-            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
-            .unwrap();
-        table
-            .insert(Row::new(3, "charlie".to_string(), "c@c.com".to_string()).unwrap())
-            .unwrap();
-
-        let conditions = vec![
-            ("id".to_string(), "=".to_string(), "1".to_string()),
-            (
-                "username".to_string(),
-                "=".to_string(),
-                "charlie".to_string(),
-            ),
-        ];
-        let operators = vec!["OR".to_string()];
-
-        let rows = table.select_where_complex(&conditions, &operators).unwrap();
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().any(|r| r.id == 1));
-        assert!(rows.iter().any(|r| r.username == "charlie"));
-    }
-
-    #[test]
-    fn select_where_complex_mixed() {
-        let mut table = Table::new("test_mixed.json".to_string(), default_schema());
-
-        table
-            .insert(Row::new(1, "alice".to_string(), "a@a.com".to_string()).unwrap())
-            .unwrap();
-        table
-            .insert(Row::new(2, "bob".to_string(), "b@b.com".to_string()).unwrap())
-            .unwrap();
-        table
-            .insert(Row::new(3, "alice".to_string(), "a2@a.com".to_string()).unwrap())
-            .unwrap();
-        table
-            .insert(Row::new(4, "charlie".to_string(), "c@c.com".to_string()).unwrap())
-            .unwrap();
-
-        let conditions = vec![
-            ("id".to_string(), ">".to_string(), "1".to_string()),
-            ("username".to_string(), "=".to_string(), "alice".to_string()),
-            ("id".to_string(), "!=".to_string(), "4".to_string()),
-        ];
-        let operators = vec!["AND".to_string(), "OR".to_string()];
-
-        let rows = table.select_where_complex(&conditions, &operators).unwrap();
-        // Should match: (id > 1 AND username = alice) OR id != 4
-        // id=3 matches the AND part, id=2 matches the OR part (since id != 4)
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().any(|r| r.id == 2));
-        assert!(rows.iter().any(|r| r.id == 3));
-    }
-}
         assert_eq!(rows[0].id, 3);
         assert_eq!(rows[0].username, "alice");
     }

@@ -1,4 +1,4 @@
-#[cfg(test)]
+﻿#[cfg(test)]
 mod tests {
     use crate::parser::*;
 
@@ -879,7 +879,7 @@ mod tests {
             .contains("COUNT(DISTINCT *) is not supported"));
     }
 
-    // ── Numeric-literal negative / regression tests ───────────────────────────
+    // â”€â”€ Numeric-literal negative / regression tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_tokenize_double_dot_splits_into_two_string_tokens() {
@@ -892,7 +892,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_incomplete_exponent_not_consumed() {
-        // "5e" — 'e' without a following digit must not be consumed as an exponent
+        // "5e" â€” 'e' without a following digit must not be consumed as an exponent
         let tokens = tokenize("5e");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Number(5));
@@ -901,7 +901,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_exponent_sign_without_digit_not_consumed() {
-        // "5e+" — sign after 'e' but no digit: exponent not consumed, bare '+' is dropped
+        // "5e+" â€” sign after 'e' but no digit: exponent not consumed, bare '+' is dropped
         let tokens = tokenize("5e+");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Number(5));
@@ -910,7 +910,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_bare_minus_between_identifiers_is_dropped() {
-        // "x - y" — minus not adjacent to a digit is silently dropped
+        // "x - y" â€” minus not adjacent to a digit is silently dropped
         let tokens = tokenize("x - y");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Identifier("x".to_string()));
@@ -919,7 +919,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_bare_plus_between_identifiers_is_dropped() {
-        // "a + b" — plus not adjacent to a digit is silently dropped
+        // "a + b" â€” plus not adjacent to a digit is silently dropped
         let tokens = tokenize("a + b");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Identifier("a".to_string()));
@@ -928,7 +928,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_leading_dot_without_digit_is_dot_token() {
-        // ". col" — dot not followed by a digit must produce a Dot token, not a numeric
+        // ". col" â€” dot not followed by a digit must produce a Dot token, not a numeric
         let tokens = tokenize(". col");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Dot);
@@ -937,7 +937,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_sign_then_dot_no_digit_sign_dropped() {
-        // "-. x" — minus then dot but no digit after dot: sign is dropped, dot stays Dot
+        // "-. x" â€” minus then dot but no digit after dot: sign is dropped, dot stays Dot
         let tokens = tokenize("-. x");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Dot);
@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn test_parse_insert_missing_values_keyword_is_error() {
-        // "INSERT INTO users (1, alice)" — VALUES keyword is required; must return Err
+        // "INSERT INTO users (1, alice)" â€” VALUES keyword is required; must return Err
         let result = parse_insert("INSERT INTO users (1, alice)");
         assert!(result.is_err());
     }
@@ -1192,7 +1192,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ── CASE WHEN tests ───────────────────────────────────────────────────────
+    // â”€â”€ CASE WHEN tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_case_when_basic() {
@@ -1279,7 +1279,7 @@ mod tests {
             email: "e".to_string(),
             extras,
         };
-        // encoded: status=active → "yes", else "no"
+        // encoded: status=active â†’ "yes", else "no"
         let encoded = format!("__case__:status\x1F=\x1Factive\x1Fyes\x1E__else__\x1Fno");
         assert_eq!(row.eval_col(&encoded), Some("yes".to_string()));
     }
@@ -1333,7 +1333,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("A".to_string()));
     }
 
-    // ── COALESCE ──────────────────────────────────────────────────────────────
+    // â”€â”€ COALESCE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_coalesce_basic() {
@@ -1413,7 +1413,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("fallback".to_string()));
     }
 
-    // ── NULLIF ────────────────────────────────────────────────────────────────
+    // â”€â”€ NULLIF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_nullif_basic() {
@@ -1618,7 +1618,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("alice@domain.com".to_string()));
     }
 
-    // ── IF tests ──────────────────────────────────────────────────────────────
+    // â”€â”€ IF tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_if_basic() {
@@ -1665,7 +1665,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("fail".to_string()));
     }
 
-    // ── ABS tests ─────────────────────────────────────────────────────────────
+    // â”€â”€ ABS tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_abs_basic() {
@@ -1712,7 +1712,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("7".to_string()));
     }
 
-    // ── ROUND tests ───────────────────────────────────────────────────────────
+    // â”€â”€ ROUND tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_round_basic() {
@@ -1759,7 +1759,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("20".to_string()));
     }
 
-    // ── SUBSTR tests ──────────────────────────────────────────────────────────
+    // â”€â”€ SUBSTR tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_substr_basic() {
@@ -1806,7 +1806,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("@e".to_string()));
     }
 
-    // ── REPLACE tests ─────────────────────────────────────────────────────────
+    // â”€â”€ REPLACE tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_replace_basic() {
@@ -1849,7 +1849,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("hello".to_string()));
     }
 
-    // ── LPAD tests ────────────────────────────────────────────────────────────
+    // â”€â”€ LPAD tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_lpad_basic() {
@@ -1896,7 +1896,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("123456".to_string()));
     }
 
-    // ── RPAD tests ────────────────────────────────────────────────────────────
+    // â”€â”€ RPAD tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_rpad_basic() {
@@ -1943,7 +1943,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("toolong".to_string()));
     }
 
-    // ── LEFT tests ─────────────────────────────────────────────────────────
+    // â”€â”€ LEFT tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_left_basic() {
@@ -1986,7 +1986,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("hi".to_string()));
     }
 
-    // ── RIGHT tests ─────────────────────────────────────────────────────────
+    // â”€â”€ RIGHT tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_right_basic() {
@@ -2029,7 +2029,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("hi".to_string()));
     }
 
-    // ── REVERSE tests ─────────────────────────────────────────────────────────
+    // â”€â”€ REVERSE tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_reverse_basic() {
@@ -2072,7 +2072,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("".to_string()));
     }
 
-    // ── REPEAT tests ─────────────────────────────────────────────────────────
+    // â”€â”€ REPEAT tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_repeat_basic() {
@@ -2115,7 +2115,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("".to_string()));
     }
 
-    // ── INITCAP tests ─────────────────────────────────────────────────────────
+    // â”€â”€ INITCAP tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_initcap_basic() {
@@ -2158,7 +2158,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("Hello World Test".to_string()));
     }
 
-    // ── FLOOR tests ─────────────────────────────────────────────────────────
+    // â”€â”€ FLOOR tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_floor_basic() {
@@ -2201,7 +2201,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("-3".to_string()));
     }
 
-    // ── CEIL tests ─────────────────────────────────────────────────────────
+    // â”€â”€ CEIL tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn test_parse_select_ceil_basic() {
@@ -2506,131 +2506,5 @@ mod tests {
         let encoded = format!("__substring_index__:content\x1F,\x1F-2");
         assert_eq!(row.eval_col(&encoded), Some("b,c".to_string()));
     }
-}
-    // ========== POSITION/INSTR/SUBSTRING_INDEX Tests ==========
-    #[test]
-    fn test_parse_select_position_basic() {
-        let result = parse_select("SELECT POSITION('ll', content) FROM demo");
-        assert!(result.is_ok());
-        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) = result.unwrap();
-        let cols = cols.unwrap();
-        assert_eq!(cols.len(), 1);
-        assert!(cols[0].starts_with("__position__:"));
-    }
 
-    #[test]
-    fn test_eval_col_position_found() {
-        use crate::table::Row;
-        use std::collections::HashMap;
-        let mut extras = HashMap::new();
-        extras.insert("content".to_string(), "hello".to_string());
-        let row = Row {
-            id: 1,
-            username: "u".to_string(),
-            email: "e".to_string(),
-            extras,
-        };
-        let encoded = format!("__position__:ll\x1Fcontent");
-        assert_eq!(row.eval_col(&encoded), Some("3".to_string()));
-    }
-
-    #[test]
-    fn test_eval_col_position_not_found() {
-        use crate::table::Row;
-        use std::collections::HashMap;
-        let mut extras = HashMap::new();
-        extras.insert("content".to_string(), "hello".to_string());
-        let row = Row {
-            id: 1,
-            username: "u".to_string(),
-            email: "e".to_string(),
-            extras,
-        };
-        let encoded = format!("__position__:xyz\x1Fcontent");
-        assert_eq!(row.eval_col(&encoded), Some("0".to_string()));
-    }
-
-    #[test]
-    fn test_parse_select_instr_basic() {
-        let result = parse_select("SELECT INSTR(content, 'el') FROM demo");
-        assert!(result.is_ok());
-        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) = result.unwrap();
-        let cols = cols.unwrap();
-        assert_eq!(cols.len(), 1);
-        assert!(cols[0].starts_with("__instr__:"));
-    }
-
-    #[test]
-    fn test_eval_col_instr_found() {
-        use crate::table::Row;
-        use std::collections::HashMap;
-        let mut extras = HashMap::new();
-        extras.insert("content".to_string(), "hello".to_string());
-        let row = Row {
-            id: 1,
-            username: "u".to_string(),
-            email: "e".to_string(),
-            extras,
-        };
-        let encoded = format!("__instr__:content\x1Fel");
-        assert_eq!(row.eval_col(&encoded), Some("2".to_string()));
-    }
-
-    #[test]
-    fn test_eval_col_instr_not_found() {
-        use crate::table::Row;
-        use std::collections::HashMap;
-        let mut extras = HashMap::new();
-        extras.insert("content".to_string(), "hello".to_string());
-        let row = Row {
-            id: 1,
-            username: "u".to_string(),
-            email: "e".to_string(),
-            extras,
-        };
-        let encoded = format!("__instr__:content\x1Fxyz");
-        assert_eq!(row.eval_col(&encoded), Some("0".to_string()));
-    }
-
-    #[test]
-    fn test_parse_select_substring_index_basic() {
-        let result = parse_select("SELECT SUBSTRING_INDEX(content, ',', 2) FROM demo");
-        assert!(result.is_ok());
-        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) = result.unwrap();
-        let cols = cols.unwrap();
-        assert_eq!(cols.len(), 1);
-        assert!(cols[0].starts_with("__substring_index__:"));
-    }
-
-    #[test]
-    fn test_eval_col_substring_index_positive() {
-        use crate::table::Row;
-        use std::collections::HashMap;
-        let mut extras = HashMap::new();
-        extras.insert("content".to_string(), "a,b,c".to_string());
-        let row = Row {
-            id: 1,
-            username: "u".to_string(),
-            email: "e".to_string(),
-            extras,
-        };
-        let encoded = format!("__substring_index__:content\x1F,\x1F2");
-        assert_eq!(row.eval_col(&encoded), Some("a,b".to_string()));
-    }
-
-    #[test]
-    fn test_eval_col_substring_index_negative() {
-        use crate::table::Row;
-        use std::collections::HashMap;
-        let mut extras = HashMap::new();
-        extras.insert("content".to_string(), "a,b,c".to_string());
-        let row = Row {
-            id: 1,
-            username: "u".to_string(),
-            email: "e".to_string(),
-            extras,
-        };
-        let encoded = format!("__substring_index__:content\x1F,\x1F-2");
-        assert_eq!(row.eval_col(&encoded), Some("b,c".to_string()));
-    }
 }
