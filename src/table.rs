@@ -378,6 +378,69 @@ impl Row {
                 })
                 .unwrap_or(raw);
             Some(result)
+        } else if let Some(rest) = col_expr.strip_prefix("__position__:") {
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            if parts.len() < 2 {
+                return Some("0".to_string());
+            }
+            let substring = self
+                .get_value(parts[0])
+                .unwrap_or_else(|| parts[0].to_string());
+            let string = self
+                .get_value(parts[1])
+                .unwrap_or_else(|| parts[1].to_string());
+
+            match string.find(&substring) {
+                Some(pos) => Some((pos + 1).to_string()), // 1-indexed
+                None => Some("0".to_string()),
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__instr__:") {
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            if parts.len() < 2 {
+                return Some("0".to_string());
+            }
+            let string = self
+                .get_value(parts[0])
+                .unwrap_or_else(|| parts[0].to_string());
+            let substring = self
+                .get_value(parts[1])
+                .unwrap_or_else(|| parts[1].to_string());
+
+            match string.find(&substring) {
+                Some(pos) => Some((pos + 1).to_string()), // 1-indexed
+                None => Some("0".to_string()),
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__substring_index__:") {
+            let parts: Vec<&str> = rest.splitn(3, '\x1F').collect();
+            if parts.len() < 3 {
+                return Some("".to_string());
+            }
+            let string = self
+                .get_value(parts[0])
+                .unwrap_or_else(|| parts[0].to_string());
+            let delimiter = self
+                .get_value(parts[1])
+                .unwrap_or_else(|| parts[1].to_string());
+            let count_str = self
+                .get_value(parts[2])
+                .unwrap_or_else(|| parts[2].to_string());
+
+            let count = count_str.parse::<i32>().unwrap_or(0);
+            if count == 0 {
+                return Some("".to_string());
+            }
+
+            let pieces: Vec<&str> = string.split(&delimiter).collect();
+
+            if count > 0 {
+                // Positive count: take first n pieces
+                let n = count.min(pieces.len() as i32) as usize;
+                Some(pieces[..n].join(&delimiter))
+            } else {
+                // Negative count: take last n pieces
+                let n = (-count).min(pieces.len() as i32) as usize;
+                Some(pieces[pieces.len() - n..].join(&delimiter))
+            }
         } else if let Some(rest) = col_expr.strip_prefix("__if__:") {
             let parts: Vec<&str> = rest.splitn(5, '\x1F').collect();
             if parts.len() < 5 {
@@ -1324,9 +1387,4 @@ mod tests {
 
         let rows = table.select_where_complex(&conditions, &operators).unwrap();
         // Should match: (id > 1 AND username = alice) OR id != 4
-        // id=3 matches the AND part, id=2 matches the OR part (since id != 4)
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().any(|r| r.id == 2));
-        assert!(rows.iter().any(|r| r.id == 3));
-    }
-}
+        // id=3 matches the AND pa

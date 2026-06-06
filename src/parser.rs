@@ -78,6 +78,9 @@ pub enum Token {
     Mod,
     Power,
     Sqrt,
+    Position,
+    Instr,
+    SubstringIndex,
     Eq,
     Ne,
     Gt,
@@ -338,6 +341,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "MOD" => Token::Mod,
                     "POWER" => Token::Power,
                     "SQRT" => Token::Sqrt,
+                    "POSITION" => Token::Position,
+                    "INSTR" => Token::Instr,
+                    "SUBSTRING_INDEX" => Token::SubstringIndex,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -522,6 +528,9 @@ fn token_to_sql(token: &Token) -> String {
         Token::Mod => "MOD".to_string(),
         Token::Power => "POWER".to_string(),
         Token::Sqrt => "SQRT".to_string(),
+        Token::Position => "POSITION".to_string(),
+        Token::Instr => "INSTR".to_string(),
+        Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -586,6 +595,9 @@ pub fn parse_select_columns(
         | Some(Token::Mod)
         | Some(Token::Power)
         | Some(Token::Sqrt)
+        | Some(Token::Position)
+        | Some(Token::Instr)
+        | Some(Token::SubstringIndex)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -1195,6 +1207,175 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("__sqrt__:{}", col))
+                    }
+                    Some(Token::Position) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after POSITION".to_string());
+                        }
+                        *i += 1;
+
+                        // First argument: substring (can be column or string)
+                        let substring = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err(
+                                "Expected substring (column or string) in POSITION".to_string()
+                            );
+                        };
+
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after substring in POSITION".to_string());
+                        }
+                        *i += 1;
+
+                        // Second argument: string (can be column or string)
+                        let string = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err(
+                                "Expected string (column or string) in POSITION".to_string()
+                            );
+                        };
+
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after POSITION arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__position__:{}\x1F{}", substring, string))
+                    }
+                    Some(Token::Instr) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after INSTR".to_string());
+                        }
+                        *i += 1;
+
+                        // First argument: string (can be column or string)
+                        let string = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected string (column or string) in INSTR".to_string());
+                        };
+
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after string in INSTR".to_string());
+                        }
+                        *i += 1;
+
+                        // Second argument: substring (can be column or string)
+                        let substring = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err(
+                                "Expected substring (column or string) in INSTR".to_string()
+                            );
+                        };
+
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after INSTR arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__instr__:{}\x1F{}", string, substring))
+                    }
+                    Some(Token::SubstringIndex) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after SUBSTRING_INDEX".to_string());
+                        }
+                        *i += 1;
+
+                        // First argument: string (can be column or string)
+                        let string = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err(
+                                "Expected string (column or string) in SUBSTRING_INDEX".to_string()
+                            );
+                        };
+
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after string in SUBSTRING_INDEX".to_string());
+                        }
+                        *i += 1;
+
+                        // Second argument: delimiter (can be column or string)
+                        let delimiter = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected delimiter (column or string) in SUBSTRING_INDEX"
+                                .to_string());
+                        };
+
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after delimiter in SUBSTRING_INDEX".to_string());
+                        }
+                        *i += 1;
+
+                        // Third argument: count (can be column, string, or number)
+                        let count = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else if let Some(Token::Number(n)) = tokens.get(*i) {
+                            let n = n.to_string();
+                            *i += 1;
+                            n
+                        } else {
+                            return Err(
+                                "Expected count (column, string, or number) in SUBSTRING_INDEX"
+                                    .to_string(),
+                            );
+                        };
+
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after SUBSTRING_INDEX arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!(
+                            "__substring_index__:{}\x1F{}\x1F{}",
+                            string, delimiter, count
+                        ))
                     }
                     Some(Token::If) => {
                         *i += 1; // consume IF
@@ -1822,7 +2003,10 @@ fn parse_select_tokens(
         | Some(Token::Ceil)
         | Some(Token::Mod)
         | Some(Token::Power)
-        | Some(Token::Sqrt) => {
+        | Some(Token::Sqrt)
+        | Some(Token::Position)
+        | Some(Token::Instr)
+        | Some(Token::SubstringIndex) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
