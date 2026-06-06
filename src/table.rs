@@ -1387,4 +1387,9 @@ mod tests {
 
         let rows = table.select_where_complex(&conditions, &operators).unwrap();
         // Should match: (id > 1 AND username = alice) OR id != 4
-        // id=3 matches the AND pa
+        // id=3 matches the AND part, id=2 matches the OR part (since id != 4)
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|r| r.id == 2));
+        assert!(rows.iter().any(|r| r.id == 3));
+    }
+}
