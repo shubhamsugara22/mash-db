@@ -586,6 +586,9 @@ pub fn parse_select_columns(
         | Some(Token::Mod)
         | Some(Token::Power)
         | Some(Token::Sqrt)
+        | Some(Token::Position)
+        | Some(Token::Instr)
+        | Some(Token::SubstringIndex)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -3582,6 +3585,15 @@ pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
         name
     } else {
         return Err("Expected table name after INSERT INTO".to_string());
+    };
+
+    if tokens.get(i) != Some(&Token::Select) {
+        return Err("Expected SELECT after table name".to_string());
+    }
+
+    let select_sql = tokens_to_sql(&tokens[i..]);
+    Ok((table_name, select_sql))
+}
     };
 
     if tokens.get(i) != Some(&Token::Select) {
