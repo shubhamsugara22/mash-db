@@ -2507,3 +2507,130 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("b,c".to_string()));
     }
 }
+    // ========== POSITION/INSTR/SUBSTRING_INDEX Tests ==========
+    #[test]
+    fn test_parse_select_position_basic() {
+        let result = parse_select("SELECT POSITION('ll', content) FROM demo");
+        assert!(result.is_ok());
+        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__position__:"));
+    }
+
+    #[test]
+    fn test_eval_col_position_found() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("content".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__position__:ll\x1Fcontent");
+        assert_eq!(row.eval_col(&encoded), Some("3".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_position_not_found() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("content".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__position__:xyz\x1Fcontent");
+        assert_eq!(row.eval_col(&encoded), Some("0".to_string()));
+    }
+
+    #[test]
+    fn test_parse_select_instr_basic() {
+        let result = parse_select("SELECT INSTR(content, 'el') FROM demo");
+        assert!(result.is_ok());
+        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__instr__:"));
+    }
+
+    #[test]
+    fn test_eval_col_instr_found() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("content".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__instr__:content\x1Fel");
+        assert_eq!(row.eval_col(&encoded), Some("2".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_instr_not_found() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("content".to_string(), "hello".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__instr__:content\x1Fxyz");
+        assert_eq!(row.eval_col(&encoded), Some("0".to_string()));
+    }
+
+    #[test]
+    fn test_parse_select_substring_index_basic() {
+        let result = parse_select("SELECT SUBSTRING_INDEX(content, ',', 2) FROM demo");
+        assert!(result.is_ok());
+        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__substring_index__:"));
+    }
+
+    #[test]
+    fn test_eval_col_substring_index_positive() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("content".to_string(), "a,b,c".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__substring_index__:content\x1F,\x1F2");
+        assert_eq!(row.eval_col(&encoded), Some("a,b".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_substring_index_negative() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("content".to_string(), "a,b,c".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__substring_index__:content\x1F,\x1F-2");
+        assert_eq!(row.eval_col(&encoded), Some("b,c".to_string()));
+    }
+}
