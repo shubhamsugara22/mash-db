@@ -479,6 +479,18 @@ impl Row {
                 })
                 .unwrap_or(raw);
             Some(result)
+        } else if let Some(col) = col_expr.strip_prefix("__sign__:") {
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            let result = raw.parse::<f64>().ok().map(|f| {
+                if f > 0.0 {
+                    "1".to_string()
+                } else if f < 0.0 {
+                    "-1".to_string()
+                } else {
+                    "0".to_string()
+                }
+            }).unwrap_or(raw);
+            Some(result)
         } else if let Some(rest) = col_expr.strip_prefix("__round__:") {
             let mut parts = rest.splitn(2, '\x1F');
             let col = parts.next().unwrap_or("");

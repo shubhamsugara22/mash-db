@@ -2379,6 +2379,64 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_sign_basic() {
+        let result = parse_select("SELECT SIGN(num) FROM demo");
+        assert!(result.is_ok());
+        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert!(cols[0].starts_with("__sign__:"));
+    }
+
+    #[test]
+    fn test_eval_col_sign_positive() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("num".to_string(), "3.5".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__sign__:num");
+        assert_eq!(row.eval_col(&encoded), Some("1".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_sign_negative() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("num".to_string(), "-2".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__sign__:num");
+        assert_eq!(row.eval_col(&encoded), Some("-1".to_string()));
+    }
+
+    #[test]
+    fn test_eval_col_sign_zero() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("num".to_string(), "0".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = format!("__sign__:num");
+        assert_eq!(row.eval_col(&encoded), Some("0".to_string()));
+    }
+
+    #[test]
     fn test_parse_select_position_basic() {
         let result = parse_select("SELECT POSITION('ll', content) FROM demo");
         assert!(result.is_ok());

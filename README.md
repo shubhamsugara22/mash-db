@@ -51,6 +51,7 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
   - **Scalar Functions**: Over 20 built-in functions for string, numeric, and conditional operations
     - **String**: `UPPER(col)`, `LOWER(col)`, `LENGTH(col)`, `TRIM(col)`, `CONCAT(col1, col2)`, `REPLACE(col, from, to)`, `SUBSTR(col, start, len)`, `LPAD(col, len, pad)`, `RPAD(col, len, pad)`, `LEFT(col, len)`, `RIGHT(col, len)`, `REVERSE(col)`, `REPEAT(col, n)`, `INITCAP(col)`
     - **Numeric**: `ABS(col)`, `ROUND(col, decimals)`, `FLOOR(col)`, `CEIL(col)`
+      - **More Numeric**: `SIGN(col)` — returns -1/0/1 for negative/zero/positive values
     - **Conditional**: `IF(col op val, then, else)`, `CASE WHEN ... THEN ... ELSE ... END`, `COALESCE(col, default)`, `NULLIF(col, val)`
     - **Type**: `CAST(col AS type)`
   - **GROUP BY**: Group results by any columns (e.g., `GROUP BY category, supplier`)
@@ -279,6 +280,7 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 - [x] More numeric functions: MOD, POWER, SQRT
 - [x] More string functions: POSITION, INSTR, SUBSTRING_INDEX
 - [ ] More numeric functions: SIGN
+- [x] More numeric functions: SIGN
 - [ ] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
 - [ ] Full text search
 - [ ] Foreign key constraints

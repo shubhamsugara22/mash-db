@@ -78,6 +78,7 @@ pub enum Token {
     Mod,
     Power,
     Sqrt,
+    Sign,
     Position,
     Instr,
     SubstringIndex,
@@ -341,6 +342,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "MOD" => Token::Mod,
                     "POWER" => Token::Power,
                     "SQRT" => Token::Sqrt,
+                    "SIGN" => Token::Sign,
                     "POSITION" => Token::Position,
                     "INSTR" => Token::Instr,
                     "SUBSTRING_INDEX" => Token::SubstringIndex,
@@ -528,6 +530,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Mod => "MOD".to_string(),
         Token::Power => "POWER".to_string(),
         Token::Sqrt => "SQRT".to_string(),
+        Token::Sign => "SIGN".to_string(),
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
@@ -1207,6 +1210,34 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("__sqrt__:{}", col))
+                    }
+                    Some(Token::Sign) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after SIGN".to_string());
+                        }
+                        *i += 1;
+                        let arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else if let Some(Token::Number(n)) = tokens.get(*i) {
+                            let s = n.to_string();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column, string, or number in SIGN".to_string());
+                        };
+
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after SIGN argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__sign__:{}", arg))
                     }
                     Some(Token::Position) => {
                         *i += 1;
