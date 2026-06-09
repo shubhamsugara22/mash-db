@@ -22,6 +22,9 @@ mod tests {
     #[test]
     fn test_parse_insert_simple_format() {
         let result = parse_insert("INSERT 1 alice alice@example.com");
+        if let Err(e) = &result {
+            panic!("parse_select returned Err: {}", e);
+        }
         assert!(result.is_ok());
         let (table_name, values) = result.unwrap();
         assert!(table_name.is_none());
