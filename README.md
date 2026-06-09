@@ -282,6 +282,7 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 - [ ] More numeric functions: SIGN
 - [x] More numeric functions: SIGN
 - [ ] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
+- [ ] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
 - [ ] Full text search
 - [ ] Foreign key constraints
 - [ ] PRIMARY KEY and UNIQUE constraints

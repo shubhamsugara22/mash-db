@@ -2382,7 +2382,8 @@ mod tests {
     fn test_parse_select_sign_basic() {
         let result = parse_select("SELECT SIGN(num) FROM demo");
         assert!(result.is_ok());
-        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) = result.unwrap();
+        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) =
+            result.unwrap();
         let cols = cols.unwrap();
         assert_eq!(cols.len(), 1);
         assert!(cols[0].starts_with("__sign__:"));
@@ -2434,6 +2435,35 @@ mod tests {
         };
         let encoded = format!("__sign__:num");
         assert_eq!(row.eval_col(&encoded), Some("0".to_string()));
+    }
+
+    #[test]
+    fn test_parse_select_now_basic() {
+        let result = parse_select("SELECT NOW() FROM demo");
+        assert!(result.is_ok());
+        let (_distinct, cols, _table, _where, _join, _group, _having, _order, _limit, _offset) =
+            result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 1);
+        assert_eq!(cols[0], "__now__");
+    }
+
+    #[test]
+    fn test_eval_col_now_returns_number() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let extras = HashMap::new();
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let encoded = String::from("__now__");
+        let val = row.eval_col(&encoded).unwrap();
+        let parsed = val.parse::<u64>();
+        assert!(parsed.is_ok());
+        assert!(parsed.unwrap() > 0);
     }
 
     #[test]
@@ -2564,5 +2594,4 @@ mod tests {
         let encoded = format!("__substring_index__:content\x1F,\x1F-2");
         assert_eq!(row.eval_col(&encoded), Some("b,c".to_string()));
     }
-
 }

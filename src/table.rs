@@ -491,6 +491,13 @@ impl Row {
                 }
             }).unwrap_or(raw);
             Some(result)
+        } else if col_expr == "__now__" {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs().to_string())
+                .unwrap_or_else(|_| "0".to_string());
+            Some(now)
         } else if let Some(rest) = col_expr.strip_prefix("__round__:") {
             let mut parts = rest.splitn(2, '\x1F');
             let col = parts.next().unwrap_or("");

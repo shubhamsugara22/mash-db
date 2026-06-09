@@ -82,6 +82,7 @@ pub enum Token {
     Position,
     Instr,
     SubstringIndex,
+    Now,
     Eq,
     Ne,
     Gt,
@@ -346,6 +347,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "POSITION" => Token::Position,
                     "INSTR" => Token::Instr,
                     "SUBSTRING_INDEX" => Token::SubstringIndex,
+                    "NOW" => Token::Now,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -534,6 +536,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
+        Token::Now => "NOW".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -598,6 +601,7 @@ pub fn parse_select_columns(
         | Some(Token::Mod)
         | Some(Token::Power)
         | Some(Token::Sqrt)
+        | Some(Token::Sign)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex)
@@ -1238,6 +1242,18 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("__sign__:{}", arg))
+                    }
+                    Some(Token::Now) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after NOW".to_string());
+                        }
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after NOW".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column("__now__".to_string())
                     }
                     Some(Token::Position) => {
                         *i += 1;
@@ -2035,6 +2051,7 @@ fn parse_select_tokens(
         | Some(Token::Mod)
         | Some(Token::Power)
         | Some(Token::Sqrt)
+        | Some(Token::Sign)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex) => {
