@@ -298,6 +298,14 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_limit_one() {
+        let result = parse_select("SELECT * LIMIT 1");
+        assert!(result.is_ok());
+        let (_, _, _, _, _, _, _, _order_by, limit, _offset) = result.unwrap();
+        assert_eq!(limit, Some(1));
+    }
+
+    #[test]
     fn test_parse_select_with_offset() {
         let result = parse_select("SELECT * LIMIT 5 OFFSET 20");
         assert!(result.is_ok());
