@@ -348,6 +348,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "SQRT" => Token::Sqrt,
                     "SIGN" => Token::Sign,
                     "ROW_NUMBER" => Token::RowNumber,
+                    "OVER" => Token::Over,
+                    "PARTITION" => Token::Partition,
                     "POSITION" => Token::Position,
                     "INSTR" => Token::Instr,
                     "SUBSTRING_INDEX" => Token::SubstringIndex,

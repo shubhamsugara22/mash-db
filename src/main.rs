@@ -193,6 +193,127 @@ fn print_prompt() {
     }
 }
 
+// Compute ROW_NUMBER values for any encoded __row_number__ columns in the select list.
+fn compute_row_number_map(
+    rows: &Vec<&Row>,
+    columns: &Option<Vec<String>>,
+) -> std::collections::HashMap<String, std::collections::HashMap<u32, String>> {
+    let mut result: std::collections::HashMap<String, std::collections::HashMap<u32, String>> =
+        std::collections::HashMap::new();
+
+    let cols: Vec<String> = match columns {
+        Some(c) => c.clone(),
+        None => Vec::new(),
+    };
+
+    // Find any window column expressions
+    let window_cols: Vec<String> = cols
+        .into_iter()
+        .filter(|c| c.starts_with("__row_number__:"))
+        .collect();
+    if window_cols.is_empty() {
+        return result;
+    }
+
+    for wc in window_cols {
+        // parse encoded: __row_number__:partition_part\x1Forder_part
+        let rest = wc.strip_prefix("__row_number__:").unwrap_or("");
+        let parts: Vec<&str> = rest.split('\x1F').collect();
+        let partition_part = parts.get(0).copied().unwrap_or("");
+        let order_part = parts.get(1).copied().unwrap_or("");
+
+        let partition_cols: Vec<String> = if partition_part.is_empty() {
+            Vec::new()
+        } else {
+            partition_part.split(',').map(|s| s.to_string()).collect()
+        };
+        let order_specs: Vec<(String, bool)> = if order_part.is_empty() {
+            Vec::new()
+        } else {
+            order_part
+                .split(',')
+                .map(|s| {
+                    if s.ends_with(":DESC") {
+                        (s[..s.len() - 5].to_string(), false)
+                    } else {
+                        (s.to_string(), true)
+                    }
+                })
+                .collect()
+        };
+
+        // Group rows by partition key
+        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> =
+            std::collections::HashMap::new();
+        for (idx, row) in rows.iter().enumerate() {
+            let mut key_parts: Vec<String> = Vec::new();
+            for col in &partition_cols {
+                key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
+            }
+            let key = key_parts.join("|");
+            groups.entry(key).or_default().push((row.clone(), idx));
+        }
+
+        let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        for (_k, mut group_rows) in groups.into_iter() {
+            // sort group_rows according to order_specs
+            group_rows.sort_by(|a, b| {
+                let (ra, ia) = a;
+                let (rb, ib) = b;
+                for (col, asc) in &order_specs {
+                    let va = ra.get_value(col).unwrap_or_default();
+                    let vb = rb.get_value(col).unwrap_or_default();
+                    // try numeric compare
+                    if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
+                        if na < nb {
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
+                        }
+                        if na > nb {
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
+                        }
+                    } else {
+                        if va < vb {
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
+                        }
+                        if va > vb {
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
+                        }
+                    }
+                }
+                // tie-breaker: original position
+                ia.cmp(ib)
+            });
+
+            // assign row numbers starting at 1
+            let mut rn: u32 = 1;
+            for (row, _orig_idx) in group_rows {
+                mapping.insert(row.id, rn.to_string());
+                rn += 1;
+            }
+        }
+
+        result.insert(wc, mapping);
+    }
+
+    result
+}
+
 fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
     if input == ".exit" {
         println!("Bye!");
@@ -1237,6 +1358,9 @@ fn execute_statement(
             // No JOIN - handle as before
             let mut rows = rows;
 
+            // Precompute ROW_NUMBER window mappings if requested in columns
+            let window_map = compute_row_number_map(&rows, &columns);
+
             // Check if columns contain any aggregates
             let has_aggregates = match &columns {
                 Some(cols) => cols.iter().any(|c| {
@@ -1343,10 +1467,23 @@ fn execute_statement(
                         Some(cols) => {
                             let mut values: Vec<String> = Vec::new();
                             for col in cols.iter() {
-                                values.push(
-                                    row.eval_col(col)
-                                        .unwrap_or_else(|| format!("NULL({})", col)),
-                                );
+                                if col.starts_with("__row_number__:") {
+                                    if let Some(col_map) = window_map.get(col) {
+                                        values.push(
+                                            col_map
+                                                .get(&row.id)
+                                                .cloned()
+                                                .unwrap_or_else(|| "NULL".to_string()),
+                                        );
+                                    } else {
+                                        values.push("NULL".to_string());
+                                    }
+                                } else {
+                                    values.push(
+                                        row.eval_col(col)
+                                            .unwrap_or_else(|| format!("NULL({})", col)),
+                                    );
+                                }
                             }
                             println!("({})", values.join(", "));
                         }
@@ -1518,6 +1655,9 @@ fn execute_statement(
 
                     // No JOIN - handle as before
                     let mut rows = rows;
+
+                    // Precompute ROW_NUMBER window mappings if requested in columns
+                    let window_map = compute_row_number_map(&rows, &columns);
                     // Check if columns contain any aggregates
                     let has_aggregates = match &columns {
                         Some(cols) => cols.iter().any(|c| {
@@ -1627,10 +1767,23 @@ fn execute_statement(
                                 Some(cols) => {
                                     let mut values = Vec::new();
                                     for col in cols {
-                                        values.push(
-                                            row.eval_col(col)
-                                                .unwrap_or_else(|| format!("NULL({})", col)),
-                                        );
+                                        if col.starts_with("__row_number__:") {
+                                            if let Some(col_map) = window_map.get(col) {
+                                                values.push(
+                                                    col_map
+                                                        .get(&row.id)
+                                                        .cloned()
+                                                        .unwrap_or_else(|| "NULL".to_string()),
+                                                );
+                                            } else {
+                                                values.push("NULL".to_string());
+                                            }
+                                        } else {
+                                            values.push(
+                                                row.eval_col(col)
+                                                    .unwrap_or_else(|| format!("NULL({})", col)),
+                                            );
+                                        }
                                     }
                                     println!("({})", values.join(", "));
                                 }
