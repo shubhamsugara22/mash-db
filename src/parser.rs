@@ -83,6 +83,9 @@ pub enum Token {
     Instr,
     SubstringIndex,
     Now,
+    RowNumber,
+    Over,
+    Partition,
     Eq,
     Ne,
     Gt,
@@ -344,6 +347,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "POWER" => Token::Power,
                     "SQRT" => Token::Sqrt,
                     "SIGN" => Token::Sign,
+                    "ROW_NUMBER" => Token::RowNumber,
                     "POSITION" => Token::Position,
                     "INSTR" => Token::Instr,
                     "SUBSTRING_INDEX" => Token::SubstringIndex,
@@ -537,6 +541,9 @@ fn token_to_sql(token: &Token) -> String {
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
         Token::Now => "NOW".to_string(),
+        Token::RowNumber => "ROW_NUMBER".to_string(),
+        Token::Over => "OVER".to_string(),
+        Token::Partition => "PARTITION".to_string(),
         Token::Comma => ",".to_string(),
         Token::LParen => "(".to_string(),
         Token::RParen => ")".to_string(),
@@ -609,6 +616,7 @@ pub fn parse_select_columns(
         | Some(Token::Power)
         | Some(Token::Sqrt)
         | Some(Token::Sign)
+        | Some(Token::RowNumber)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex)
@@ -1249,6 +1257,102 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("__sign__:{}", arg))
+                    }
+                    Some(Token::RowNumber) => {
+                        *i += 1; // consume ROW_NUMBER
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after ROW_NUMBER".to_string());
+                        }
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after ROW_NUMBER".to_string());
+                        }
+                        *i += 1;
+
+                        // Optional OVER(...) clause
+                        let mut partition_cols: Vec<String> = Vec::new();
+                        let mut order_specs: Vec<(String, bool)> = Vec::new();
+                        if tokens.get(*i) == Some(&Token::Over) {
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::LParen) {
+                                return Err("Expected ( after OVER".to_string());
+                            }
+                            *i += 1;
+
+                            // Optional PARTITION BY
+                            if tokens.get(*i) == Some(&Token::Partition) {
+                                *i += 1;
+                                if tokens.get(*i) != Some(&Token::By) {
+                                    return Err("Expected BY after PARTITION".to_string());
+                                }
+                                *i += 1;
+                                loop {
+                                    if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                                        partition_cols.push(c.clone());
+                                        *i += 1;
+                                    } else {
+                                        return Err(
+                                            "Expected column name in PARTITION BY".to_string()
+                                        );
+                                    }
+                                    if tokens.get(*i) == Some(&Token::Comma) {
+                                        *i += 1;
+                                        continue;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Optional ORDER BY
+                            if tokens.get(*i) == Some(&Token::Order) {
+                                *i += 1;
+                                if tokens.get(*i) != Some(&Token::By) {
+                                    return Err("Expected BY after ORDER".to_string());
+                                }
+                                *i += 1;
+                                loop {
+                                    if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                                        let col_name = c.clone();
+                                        *i += 1;
+                                        let mut asc = true;
+                                        if tokens.get(*i) == Some(&Token::Asc) {
+                                            asc = true;
+                                            *i += 1;
+                                        } else if tokens.get(*i) == Some(&Token::Desc) {
+                                            asc = false;
+                                            *i += 1;
+                                        }
+                                        order_specs.push((col_name, asc));
+                                    } else {
+                                        return Err("Expected column name in ORDER BY".to_string());
+                                    }
+                                    if tokens.get(*i) == Some(&Token::Comma) {
+                                        *i += 1;
+                                        continue;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after OVER(...)".to_string());
+                            }
+                            *i += 1;
+                        }
+
+                        // Encode as __row_number__:part1,part2\x1Fcol1:DESC,...
+                        let partition_part = partition_cols.join(",");
+                        let order_part = order_specs
+                            .into_iter()
+                            .map(|(c, asc)| if asc { c } else { format!("{}:DESC", c) })
+                            .collect::<Vec<String>>()
+                            .join(",");
+                        SelectColumn::Column(format!(
+                            "__row_number__:{}\x1F{}",
+                            partition_part, order_part
+                        ))
                     }
                     Some(Token::Now) => {
                         *i += 1;
