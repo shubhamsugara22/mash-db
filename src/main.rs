@@ -194,7 +194,7 @@ fn print_prompt() {
 }
 
 // Compute ROW_NUMBER values for any encoded __row_number__ columns in the select list.
-fn compute_row_number_map(
+pub fn compute_row_number_map(
     rows: &Vec<&Row>,
     columns: &Option<Vec<String>>,
 ) -> std::collections::HashMap<String, std::collections::HashMap<u32, String>> {
