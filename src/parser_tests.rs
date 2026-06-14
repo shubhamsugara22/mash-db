@@ -1,8 +1,8 @@
 ﻿#[cfg(test)]
 mod tests {
+    use crate::compute_row_number_map;
     use crate::parser::*;
     use crate::table::{Row, Table};
-    use crate::compute_row_number_map;
 
     #[test]
     fn test_tokenize_simple_select() {
@@ -115,10 +115,23 @@ mod tests {
 
     #[test]
     fn test_row_number_runtime() {
-        let mut table = Table::new("test_rows.json".to_string(), vec!["id".to_string(), "username".to_string(), "email".to_string()]);
-        table.insert(Row::new(1, "alice".to_string(), "a@e.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(2, "alice".to_string(), "a2@e.com".to_string()).unwrap()).unwrap();
-        table.insert(Row::new(3, "bob".to_string(), "b@e.com".to_string()).unwrap()).unwrap();
+        let mut table = Table::new(
+            "test_rows.json".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+        table
+            .insert(Row::new(1, "alice".to_string(), "a@e.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "alice".to_string(), "a2@e.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(3, "bob".to_string(), "b@e.com".to_string()).unwrap())
+            .unwrap();
 
         let rows = table.select_all();
         let encoded = "__row_number__:username\x1Fid".to_string();

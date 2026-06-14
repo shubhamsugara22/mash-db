@@ -2169,6 +2169,7 @@ fn parse_select_tokens(
         | Some(Token::Power)
         | Some(Token::Sqrt)
         | Some(Token::Sign)
+        | Some(Token::RowNumber)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex) => {
