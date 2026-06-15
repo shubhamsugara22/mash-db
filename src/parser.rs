@@ -84,6 +84,7 @@ pub enum Token {
     SubstringIndex,
     Now,
     RowNumber,
+    Rank,
     Over,
     Partition,
     Eq,
@@ -348,6 +349,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "SQRT" => Token::Sqrt,
                     "SIGN" => Token::Sign,
                     "ROW_NUMBER" => Token::RowNumber,
+                    "RANK" => Token::Rank,
                     "OVER" => Token::Over,
                     "PARTITION" => Token::Partition,
                     "POSITION" => Token::Position,
@@ -544,6 +546,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
         Token::Now => "NOW".to_string(),
         Token::RowNumber => "ROW_NUMBER".to_string(),
+        Token::Rank => "RANK".to_string(),
         Token::Over => "OVER".to_string(),
         Token::Partition => "PARTITION".to_string(),
         Token::Comma => ",".to_string(),
@@ -619,6 +622,7 @@ pub fn parse_select_columns(
         | Some(Token::Sqrt)
         | Some(Token::Sign)
         | Some(Token::RowNumber)
+        | Some(Token::Rank)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex)
@@ -1260,14 +1264,15 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Column(format!("__sign__:{}", arg))
                     }
-                    Some(Token::RowNumber) => {
-                        *i += 1; // consume ROW_NUMBER
+                    Some(Token::RowNumber) | Some(Token::Rank) => {
+                        let is_rank = matches!(tokens.get(*i), Some(Token::Rank));
+                        *i += 1; // consume ROW_NUMBER or RANK
                         if tokens.get(*i) != Some(&Token::LParen) {
-                            return Err("Expected ( after ROW_NUMBER".to_string());
+                            return Err("Expected ( after ROW_NUMBER or RANK".to_string());
                         }
                         *i += 1;
                         if tokens.get(*i) != Some(&Token::RParen) {
-                            return Err("Expected ) after ROW_NUMBER".to_string());
+                            return Err("Expected ) after ROW_NUMBER or RANK".to_string());
                         }
                         *i += 1;
 
@@ -1344,17 +1349,24 @@ pub fn parse_select_columns(
                             *i += 1;
                         }
 
-                        // Encode as __row_number__:part1,part2\x1Fcol1:DESC,...
+                        // Encode as __row_number__ or __rank__:partition_cols\x1Forder_spec
                         let partition_part = partition_cols.join(",");
                         let order_part = order_specs
                             .into_iter()
                             .map(|(c, asc)| if asc { c } else { format!("{}:DESC", c) })
                             .collect::<Vec<String>>()
                             .join(",");
-                        SelectColumn::Column(format!(
-                            "__row_number__:{}\x1F{}",
-                            partition_part, order_part
-                        ))
+                        if is_rank {
+                            SelectColumn::Column(format!(
+                                "__rank__:{}\x1F{}",
+                                partition_part, order_part
+                            ))
+                        } else {
+                            SelectColumn::Column(format!(
+                                "__row_number__:{}\x1F{}",
+                                partition_part, order_part
+                            ))
+                        }
                     }
                     Some(Token::Now) => {
                         *i += 1;
@@ -2170,6 +2182,7 @@ fn parse_select_tokens(
         | Some(Token::Sqrt)
         | Some(Token::Sign)
         | Some(Token::RowNumber)
+        | Some(Token::Rank)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex) => {

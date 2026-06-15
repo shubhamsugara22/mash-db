@@ -1,5 +1,6 @@
 ﻿#[cfg(test)]
 mod tests {
+    use crate::compute_rank_map;
     use crate::compute_row_number_map;
     use crate::parser::*;
     use crate::table::{Row, Table};
@@ -140,6 +141,47 @@ mod tests {
         assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("1"));
         assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("2"));
         assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("1"));
+    }
+
+    #[test]
+    fn test_parse_rank_basic() {
+        let result = parse_select("SELECT RANK() OVER (ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        assert!(cols[0].starts_with("__rank__:"));
+        // Expect no partition and order by id encoded after separator
+        assert!(cols[0].ends_with("\x1Fid"));
+    }
+
+    #[test]
+    fn test_rank_runtime() {
+        let mut table = Table::new(
+            "test_rows_rank.json".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+        table
+            .insert(Row::new(1, "10".to_string(), "a@e.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(2, "10".to_string(), "a2@e.com".to_string()).unwrap())
+            .unwrap();
+        table
+            .insert(Row::new(3, "5".to_string(), "b@e.com".to_string()).unwrap())
+            .unwrap();
+
+        let rows = table.select_all();
+        let encoded = "__rank__:\x1Fusername:DESC".to_string();
+        let mapping = compute_rank_map(&rows, &Some(vec![encoded.clone()]));
+        let col_map = mapping.get(&encoded).expect("mapping present");
+        assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("1"));
+        assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("1"));
+        assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("3"));
     }
 
     #[test]

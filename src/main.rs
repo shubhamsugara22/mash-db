@@ -314,6 +314,117 @@ pub fn compute_row_number_map(
     result
 }
 
+// Compute RANK values for any encoded __rank__ columns in the select list.
+pub fn compute_rank_map(
+    rows: &Vec<&Row>,
+    columns: &Option<Vec<String>>,
+) -> std::collections::HashMap<String, std::collections::HashMap<u32, String>> {
+    let mut result: std::collections::HashMap<String, std::collections::HashMap<u32, String>> =
+        std::collections::HashMap::new();
+
+    let cols: Vec<String> = match columns {
+        Some(c) => c.clone(),
+        None => Vec::new(),
+    };
+
+    // Find any window column expressions for rank
+    let window_cols: Vec<String> = cols.into_iter().filter(|c| c.starts_with("__rank__:")).collect();
+    if window_cols.is_empty() {
+        return result;
+    }
+
+    for wc in window_cols {
+        let rest = wc.strip_prefix("__rank__:").unwrap_or("");
+        let parts: Vec<&str> = rest.split('\x1F').collect();
+        let partition_part = parts.get(0).copied().unwrap_or("");
+        let order_part = parts.get(1).copied().unwrap_or("");
+
+        let partition_cols: Vec<String> = if partition_part.is_empty() {
+            Vec::new()
+        } else {
+            partition_part.split(',').map(|s| s.to_string()).collect()
+        };
+        let order_specs: Vec<(String, bool)> = if order_part.is_empty() {
+            Vec::new()
+        } else {
+            order_part
+                .split(',')
+                .map(|s| {
+                    if s.ends_with(":DESC") {
+                        (s[..s.len() - 5].to_string(), false)
+                    } else {
+                        (s.to_string(), true)
+                    }
+                })
+                .collect()
+        };
+
+        // Group rows by partition key
+        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> = std::collections::HashMap::new();
+        for (idx, row) in rows.iter().enumerate() {
+            let mut key_parts: Vec<String> = Vec::new();
+            for col in &partition_cols {
+                key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
+            }
+            let key = key_parts.join("|");
+            groups.entry(key).or_default().push((row.clone(), idx));
+        }
+
+        let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        for (_k, mut group_rows) in groups.into_iter() {
+            // sort group_rows according to order_specs
+            group_rows.sort_by(|a, b| {
+                let (ra, ia) = a;
+                let (rb, ib) = b;
+                for (col, asc) in &order_specs {
+                    let va = ra.get_value(col).unwrap_or_default();
+                    let vb = rb.get_value(col).unwrap_or_default();
+                    // try numeric compare
+                    if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
+                        if na < nb {
+                            return if *asc { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                        }
+                        if na > nb {
+                            return if *asc { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                        }
+                    } else {
+                        if va < vb {
+                            return if *asc { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                        }
+                        if va > vb {
+                            return if *asc { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                        }
+                    }
+                }
+                // tie-breaker: original position
+                ia.cmp(ib)
+            });
+
+            // assign ranks: ties receive same rank, next rank increases by count (RANK semantics)
+            let mut prev_vals: Option<Vec<String>> = None;
+            let mut prev_rank: u32 = 0;
+            let mut idx_counter: u32 = 0;
+            for (row, _orig_idx) in &group_rows {
+                idx_counter += 1;
+                let mut key_vals: Vec<String> = Vec::new();
+                for (col, _) in &order_specs {
+                    key_vals.push(row.get_value(col).unwrap_or_default());
+                }
+                if prev_vals.is_none() || prev_vals.as_ref().unwrap() != &key_vals {
+                    // new value, rank equals current position (which accounts for previous ties)
+                    prev_rank = idx_counter;
+                    prev_vals = Some(key_vals);
+                }
+                mapping.insert(row.id, prev_rank.to_string());
+            }
+        }
+
+        result.insert(wc, mapping);
+    }
+
+    result
+}
+
 fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
     if input == ".exit" {
         println!("Bye!");
@@ -1359,7 +1470,9 @@ fn execute_statement(
             let mut rows = rows;
 
             // Precompute ROW_NUMBER window mappings if requested in columns
-            let window_map = compute_row_number_map(&rows, &columns);
+                let mut window_map = compute_row_number_map(&rows, &columns);
+                let rank_map = compute_rank_map(&rows, &columns);
+                window_map.extend(rank_map);
 
             // Check if columns contain any aggregates
             let has_aggregates = match &columns {
@@ -1467,7 +1580,7 @@ fn execute_statement(
                         Some(cols) => {
                             let mut values: Vec<String> = Vec::new();
                             for col in cols.iter() {
-                                if col.starts_with("__row_number__:") {
+                                if col.starts_with("__row_number__:") || col.starts_with("__rank__:") {
                                     if let Some(col_map) = window_map.get(col) {
                                         values.push(
                                             col_map
@@ -1657,7 +1770,9 @@ fn execute_statement(
                     let mut rows = rows;
 
                     // Precompute ROW_NUMBER window mappings if requested in columns
-                    let window_map = compute_row_number_map(&rows, &columns);
+                    let mut window_map = compute_row_number_map(&rows, &columns);
+                    let rank_map = compute_rank_map(&rows, &columns);
+                    window_map.extend(rank_map);
                     // Check if columns contain any aggregates
                     let has_aggregates = match &columns {
                         Some(cols) => cols.iter().any(|c| {
@@ -1767,7 +1882,7 @@ fn execute_statement(
                                 Some(cols) => {
                                     let mut values = Vec::new();
                                     for col in cols {
-                                        if col.starts_with("__row_number__:") {
+                                        if col.starts_with("__row_number__:") || col.starts_with("__rank__:") {
                                             if let Some(col_map) = window_map.get(col) {
                                                 values.push(
                                                     col_map
