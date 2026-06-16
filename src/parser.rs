@@ -85,6 +85,7 @@ pub enum Token {
     Now,
     RowNumber,
     Rank,
+    DenseRank,
     Over,
     Partition,
     Eq,
@@ -350,6 +351,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "SIGN" => Token::Sign,
                     "ROW_NUMBER" => Token::RowNumber,
                     "RANK" => Token::Rank,
+                    "DENSE_RANK" => Token::DenseRank,
                     "OVER" => Token::Over,
                     "PARTITION" => Token::Partition,
                     "POSITION" => Token::Position,
@@ -547,6 +549,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Now => "NOW".to_string(),
         Token::RowNumber => "ROW_NUMBER".to_string(),
         Token::Rank => "RANK".to_string(),
+        Token::DenseRank => "DENSE_RANK".to_string(),
         Token::Over => "OVER".to_string(),
         Token::Partition => "PARTITION".to_string(),
         Token::Comma => ",".to_string(),
@@ -622,6 +625,8 @@ pub fn parse_select_columns(
         | Some(Token::Sqrt)
         | Some(Token::Sign)
         | Some(Token::RowNumber)
+        | Some(Token::Rank)
+        | Some(Token::DenseRank)
         | Some(Token::Rank)
         | Some(Token::Position)
         | Some(Token::Instr)
@@ -1264,9 +1269,11 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Column(format!("__sign__:{}", arg))
                     }
-                    Some(Token::RowNumber) | Some(Token::Rank) => {
-                        let is_rank = matches!(tokens.get(*i), Some(Token::Rank));
-                        *i += 1; // consume ROW_NUMBER or RANK
+                    Some(Token::RowNumber) | Some(Token::Rank) | Some(Token::DenseRank) => {
+                        let token_here = tokens.get(*i).cloned();
+                        let is_rank = matches!(token_here, Some(Token::Rank));
+                        let is_dense = matches!(token_here, Some(Token::DenseRank));
+                        *i += 1; // consume ROW_NUMBER, RANK, or DENSE_RANK
                         if tokens.get(*i) != Some(&Token::LParen) {
                             return Err("Expected ( after ROW_NUMBER or RANK".to_string());
                         }
@@ -1356,7 +1363,12 @@ pub fn parse_select_columns(
                             .map(|(c, asc)| if asc { c } else { format!("{}:DESC", c) })
                             .collect::<Vec<String>>()
                             .join(",");
-                        if is_rank {
+                        if is_dense {
+                            SelectColumn::Column(format!(
+                                "__dense_rank__:{}\x1F{}",
+                                partition_part, order_part
+                            ))
+                        } else if is_rank {
                             SelectColumn::Column(format!(
                                 "__rank__:{}\x1F{}",
                                 partition_part, order_part
@@ -2182,6 +2194,8 @@ fn parse_select_tokens(
         | Some(Token::Sqrt)
         | Some(Token::Sign)
         | Some(Token::RowNumber)
+        | Some(Token::Rank)
+        | Some(Token::DenseRank)
         | Some(Token::Rank)
         | Some(Token::Position)
         | Some(Token::Instr)
