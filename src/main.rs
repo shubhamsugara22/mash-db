@@ -328,7 +328,10 @@ pub fn compute_rank_map(
     };
 
     // Find any window column expressions for rank
-    let window_cols: Vec<String> = cols.into_iter().filter(|c| c.starts_with("__rank__:")).collect();
+    let window_cols: Vec<String> = cols
+        .into_iter()
+        .filter(|c| c.starts_with("__rank__:"))
+        .collect();
     if window_cols.is_empty() {
         return result;
     }
@@ -360,7 +363,8 @@ pub fn compute_rank_map(
         };
 
         // Group rows by partition key
-        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> = std::collections::HashMap::new();
+        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> =
+            std::collections::HashMap::new();
         for (idx, row) in rows.iter().enumerate() {
             let mut key_parts: Vec<String> = Vec::new();
             for col in &partition_cols {
@@ -382,17 +386,33 @@ pub fn compute_rank_map(
                     // try numeric compare
                     if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
                         if na < nb {
-                            return if *asc { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
                         }
                         if na > nb {
-                            return if *asc { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
                         }
                     } else {
                         if va < vb {
-                            return if *asc { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
                         }
                         if va > vb {
-                            return if *asc { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
                         }
                     }
                 }
@@ -439,7 +459,10 @@ pub fn compute_dense_rank_map(
     };
 
     // Find any window column expressions for dense rank
-    let window_cols: Vec<String> = cols.into_iter().filter(|c| c.starts_with("__dense_rank__:")).collect();
+    let window_cols: Vec<String> = cols
+        .into_iter()
+        .filter(|c| c.starts_with("__dense_rank__:"))
+        .collect();
     if window_cols.is_empty() {
         return result;
     }
@@ -471,7 +494,8 @@ pub fn compute_dense_rank_map(
         };
 
         // Group rows by partition key
-        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> = std::collections::HashMap::new();
+        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> =
+            std::collections::HashMap::new();
         for (idx, row) in rows.iter().enumerate() {
             let mut key_parts: Vec<String> = Vec::new();
             for col in &partition_cols {
@@ -493,17 +517,33 @@ pub fn compute_dense_rank_map(
                     // try numeric compare
                     if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
                         if na < nb {
-                            return if *asc { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
                         }
                         if na > nb {
-                            return if *asc { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
                         }
                     } else {
                         if va < vb {
-                            return if *asc { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
                         }
                         if va > vb {
-                            return if *asc { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
                         }
                     }
                 }
@@ -1578,11 +1618,11 @@ fn execute_statement(
             let mut rows = rows;
 
             // Precompute ROW_NUMBER window mappings if requested in columns
-                let mut window_map = compute_row_number_map(&rows, &columns);
-                let rank_map = compute_rank_map(&rows, &columns);
-                window_map.extend(rank_map);
-                let dense_map = compute_dense_rank_map(&rows, &columns);
-                window_map.extend(dense_map);
+            let mut window_map = compute_row_number_map(&rows, &columns);
+            let rank_map = compute_rank_map(&rows, &columns);
+            window_map.extend(rank_map);
+            let dense_map = compute_dense_rank_map(&rows, &columns);
+            window_map.extend(dense_map);
 
             // Check if columns contain any aggregates
             let has_aggregates = match &columns {
@@ -1690,7 +1730,10 @@ fn execute_statement(
                         Some(cols) => {
                             let mut values: Vec<String> = Vec::new();
                             for col in cols.iter() {
-                                if col.starts_with("__row_number__:") || col.starts_with("__rank__:") || col.starts_with("__dense_rank__:") {
+                                if col.starts_with("__row_number__:")
+                                    || col.starts_with("__rank__:")
+                                    || col.starts_with("__dense_rank__:")
+                                {
                                     if let Some(col_map) = window_map.get(col) {
                                         values.push(
                                             col_map
@@ -1994,7 +2037,10 @@ fn execute_statement(
                                 Some(cols) => {
                                     let mut values = Vec::new();
                                     for col in cols {
-                                        if col.starts_with("__row_number__:") || col.starts_with("__rank__:") || col.starts_with("__dense_rank__:") {
+                                        if col.starts_with("__row_number__:")
+                                            || col.starts_with("__rank__:")
+                                            || col.starts_with("__dense_rank__:")
+                                        {
                                             if let Some(col_map) = window_map.get(col) {
                                                 values.push(
                                                     col_map
