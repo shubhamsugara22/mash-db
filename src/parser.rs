@@ -3971,17 +3971,7 @@ pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
     let select_sql = tokens_to_sql(&tokens[i..]);
     Ok((table_name, select_sql))
 }
-            } else {
-                return Err("Expected column name".to_string());
-            };
-            i += 1;
-            if i != tokens.len() {
-                return Err("Extra tokens".to_string());
-            }
-            Ok((table_name, AlterTableAction::DropColumn(col_name)))
-        }
-        _ => Err("Expected RENAME, ADD, or DROP in ALTER TABLE".to_string()),
-    }
+
 }
 
 // Parse DROP TABLE statement
