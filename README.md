@@ -49,11 +49,18 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
     - ✅ **Works with custom columns**: Aggregates compute over any column
     - ✅ **ORDER BY on aggregates**: Sort grouped results by aggregate values (e.g., `ORDER BY COUNT(*) DESC`)
   - **Scalar Functions**: Over 20 built-in functions for string, numeric, and conditional operations
-    - **String**: `UPPER(col)`, `LOWER(col)`, `LENGTH(col)`, `TRIM(col)`, `CONCAT(col1, col2)`, `REPLACE(col, from, to)`, `SUBSTR(col, start, len)`, `LPAD(col, len, pad)`, `RPAD(col, len, pad)`, `LEFT(col, len)`, `RIGHT(col, len)`, `REVERSE(col)`, `REPEAT(col, n)`, `INITCAP(col)`
+    - **String**: `UPPER(col)`, `LOWER(col)`, `LENGTH(col)`, `TRIM(col)`, `CONCAT(col1, col2)`, `REPLACE(col, from, to)`, `SUBSTR(col, start, len)`, `LPAD(col, len, pad)`, `RPAD(col, len, pad)`, `LEFT(col, len, pad)`, `RIGHT(col, len)`, `REVERSE(col)`, `REPEAT(col, n)`, `INITCAP(col)`
     - **Numeric**: `ABS(col)`, `ROUND(col, decimals)`, `FLOOR(col)`, `CEIL(col)`
       - **More Numeric**: `SIGN(col)` — returns -1/0/1 for negative/zero/positive values
     - **Conditional**: `IF(col op val, then, else)`, `CASE WHEN ... THEN ... ELSE ... END`, `COALESCE(col, default)`, `NULLIF(col, val)`
     - **Type**: `CAST(col AS type)`
+  - **Window Functions**: Analytic functions that operate over partitions of rows
+    - `ROW_NUMBER() OVER (PARTITION BY col ORDER BY col2)` - Sequential number within partition
+    - `RANK() OVER (ORDER BY col)` - Ranking with gaps for ties
+    - `DENSE_RANK() OVER (ORDER BY col)` - Ranking without gaps
+    - `LEAD(col, offset, default) OVER (PARTITION BY col2 ORDER BY col3)` - Value from subsequent row
+      - `offset` (optional, default 1): Number of rows to look ahead
+      - `default` (optional, default NULL): Value when no subsequent row exists
   - **GROUP BY**: Group results by any columns (e.g., `GROUP BY category, supplier`)
   - **HAVING**: Filter grouped results with conditions
   - **ORDER BY (qualified)**: Sort results ASC/DESC with table qualifiers
