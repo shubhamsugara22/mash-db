@@ -1272,17 +1272,70 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Column(format!("__sign__:{}", arg))
                     }
-                    Some(Token::RowNumber) | Some(Token::Rank) | Some(Token::DenseRank) => {
+                    Some(Token::RowNumber) | Some(Token::Rank) | Some(Token::DenseRank) | Some(Token::Lead) => {
                         let token_here = tokens.get(*i).cloned();
                         let is_rank = matches!(token_here, Some(Token::Rank));
                         let is_dense = matches!(token_here, Some(Token::DenseRank));
-                        *i += 1; // consume ROW_NUMBER, RANK, or DENSE_RANK
+                        let is_lead = matches!(token_here, Some(Token::Lead));
+                        *i += 1; // consume ROW_NUMBER, RANK, DENSE_RANK, or LEAD
                         if tokens.get(*i) != Some(&Token::LParen) {
-                            return Err("Expected ( after ROW_NUMBER or RANK".to_string());
+                            return Err("Expected ( after window function".to_string());
                         }
                         *i += 1;
+                        
+                        // For LEAD, parse column, offset, and default value
+                        let mut lead_column = String::new();
+                        let mut lead_offset = String::from("1");
+                        let mut lead_default = String::from("NULL");
+                        
+                        if is_lead {
+                            // Parse column
+                            if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                                lead_column = col.clone();
+                                *i += 1;
+                            } else {
+                                return Err("Expected column name after LEAD(".to_string());
+                            }
+                            
+                            // Optional: parse offset
+                            if tokens.get(*i) == Some(&Token::Comma) {
+                                *i += 1;
+                                match tokens.get(*i) {
+                                    Some(Token::Number(n)) => {
+                                        lead_offset = n.to_string();
+                                        *i += 1;
+                                    }
+                                    Some(Token::String(s)) => {
+                                        lead_offset = s.clone();
+                                        *i += 1;
+                                    }
+                                    _ => return Err("Expected number for LEAD offset".to_string()),
+                                }
+                                
+                                // Optional: parse default value
+                                if tokens.get(*i) == Some(&Token::Comma) {
+                                    *i += 1;
+                                    match tokens.get(*i) {
+                                        Some(Token::String(s)) => {
+                                            lead_default = s.clone();
+                                            *i += 1;
+                                        }
+                                        Some(Token::Number(n)) => {
+                                            lead_default = n.to_string();
+                                            *i += 1;
+                                        }
+                                        Some(Token::Null) => {
+                                            lead_default = String::from("NULL");
+                                            *i += 1;
+                                        }
+                                        _ => return Err("Expected value for LEAD default".to_string()),
+                                    }
+                                }
+                            }
+                        }
+                        
                         if tokens.get(*i) != Some(&Token::RParen) {
-                            return Err("Expected ) after ROW_NUMBER or RANK".to_string());
+                            return Err("Expected ) after window function arguments".to_string());
                         }
                         *i += 1;
 
@@ -1359,14 +1412,19 @@ pub fn parse_select_columns(
                             *i += 1;
                         }
 
-                        // Encode as __row_number__ or __rank__:partition_cols\x1Forder_spec
+                        // Encode as __row_number__, __rank__, __dense_rank__, or __lead__:...
                         let partition_part = partition_cols.join(",");
                         let order_part = order_specs
                             .into_iter()
                             .map(|(c, asc)| if asc { c } else { format!("{}:DESC", c) })
                             .collect::<Vec<String>>()
                             .join(",");
-                        if is_dense {
+                        if is_lead {
+                            SelectColumn::Column(format!(
+                                "__lead__:{}\x1F{}\x1F{}\x1F{}\x1F{}",
+                                lead_column, lead_offset, lead_default, partition_part, order_part
+                            ))
+                        } else if is_dense {
                             SelectColumn::Column(format!(
                                 "__dense_rank__:{}\x1F{}",
                                 partition_part, order_part
