@@ -275,7 +275,7 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 - [x] Subqueries — IN subquery support
 - [x] Transactions — BEGIN/COMMIT/ROLLBACK (snapshot-based)
 - [x] BETWEEN operator for range queries
-- [ ] Window functions (ROW_NUMBER, RANK, PARTITION BY)
+- [x] Window functions (ROW_NUMBER, RANK, DENSE_RANK, LEAD with offset/default) — PARTITION BY and ORDER BY supported
 - [ ] Common Table Expressions (WITH/CTE)
 - [x] More numeric functions: MOD, POWER, SQRT
 - [x] More string functions: POSITION, INSTR, SUBSTRING_INDEX
