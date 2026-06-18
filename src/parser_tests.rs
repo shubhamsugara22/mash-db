@@ -2731,7 +2731,6 @@ mod tests {
         let encoded = format!("__substring_index__:content\x1F,\x1F-2");
         assert_eq!(row.eval_col(&encoded), Some("b,c".to_string()));
     }
-}
 
     #[test]
     fn test_parse_lead_basic() {
