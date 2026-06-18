@@ -630,7 +630,7 @@ pub fn parse_select_columns(
         | Some(Token::RowNumber)
         | Some(Token::Rank)
         | Some(Token::DenseRank)
-        | Some(Token::Rank)
+        | Some(Token::Lead)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex)
@@ -2257,7 +2257,7 @@ fn parse_select_tokens(
         | Some(Token::RowNumber)
         | Some(Token::Rank)
         | Some(Token::DenseRank)
-        | Some(Token::Rank)
+        | Some(Token::Lead)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex) => {

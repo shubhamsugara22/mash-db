@@ -2732,3 +2732,141 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("b,c".to_string()));
     }
 }
+
+    #[test]
+    fn test_parse_lead_basic() {
+        let result = parse_select("SELECT LEAD(username) OVER (ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        assert!(cols[0].starts_with("__lead__:"));
+        // Expect: __lead__:username\x1F1\x1FNULL\x1F\x1Fid
+        assert!(cols[0].contains("username"));
+    }
+
+    #[test]
+    fn test_parse_lead_with_offset() {
+        let result = parse_select("SELECT LEAD(username, 2) OVER (ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        // Should encode offset as 2
+        assert!(cols[0].contains("\x1F2\x1F"));
+    }
+
+    #[test]
+    fn test_parse_lead_with_default() {
+        let result = parse_select("SELECT LEAD(username, 1, 'N/A') OVER (ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        // Should encode default value as 'N/A'
+        assert!(cols[0].contains("N/A"));
+    }
+
+    #[test]
+    fn test_parse_lead_with_partition() {
+        let result = parse_select("SELECT LEAD(username) OVER (PARTITION BY email ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        // Should encode partition column
+        assert!(cols[0].contains("email"));
+    }
+
+    #[test]
+    fn test_lead_runtime() {
+        use crate::compute_lead_map;
+        
+        let mut table = Table::new(
+            "test_lead.json".to_string(),
+            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+        );
+        
+        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+        
+        let rows = table.select_all();
+        
+        // Test basic LEAD with offset 1
+        let encoded = "__lead__:username\x1F1\x1FNULL\x1F\x1Fid".to_string();
+        let mapping = compute_lead_map(&rows, &Some(vec![encoded.clone()]));
+        let col_map = mapping.get(&encoded).expect("mapping present");
+        
+        // Row 1 should get row 2's username
+        assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("bob"));
+        // Row 2 should get row 3's username
+        assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("charlie"));
+        // Row 3 has no next row, should get NULL
+        assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("NULL"));
+        
+        // Clean up
+        let _ = std::fs::remove_file("test_lead.json");
+    }
+
+    #[test]
+    fn test_lead_with_offset() {
+        use crate::compute_lead_map;
+        
+        let mut table = Table::new(
+            "test_lead_offset.json".to_string(),
+            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+        );
+        
+        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(4, "dave".to_string(), "dave@test.com".to_string()).unwrap());
+        
+        let rows = table.select_all();
+        
+        // Test LEAD with offset 2
+        let encoded = "__lead__:username\x1F2\x1FNULL\x1F\x1Fid".to_string();
+        let mapping = compute_lead_map(&rows, &Some(vec![encoded.clone()]));
+        let col_map = mapping.get(&encoded).expect("mapping present");
+        
+        // Row 1 should get row 3's username (offset 2)
+        assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("charlie"));
+        // Row 2 should get row 4's username
+        assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("dave"));
+        // Row 3 and 4 get NULL
+        assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("NULL"));
+        assert_eq!(col_map.get(&4).map(|s| s.as_str()), Some("NULL"));
+        
+        // Clean up
+        let _ = std::fs::remove_file("test_lead_offset.json");
+    }
+
+    #[test]
+    fn test_lead_with_default_value() {
+        use crate::compute_lead_map;
+        
+        let mut table = Table::new(
+            "test_lead_default.json".to_string(),
+            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+        );
+        
+        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
+        
+        let rows = table.select_all();
+        
+        // Test LEAD with custom default value 'N/A'
+        let encoded = "__lead__:username\x1F1\x1FN/A\x1F\x1Fid".to_string();
+        let mapping = compute_lead_map(&rows, &Some(vec![encoded.clone()]));
+        let col_map = mapping.get(&encoded).expect("mapping present");
+        
+        // Row 1 should get row 2's username
+        assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("bob"));
+        // Row 2 has no next row, should get custom default 'N/A'
+        assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("N/A"));
+        
+        // Clean up
+        let _ = std::fs::remove_file("test_lead_default.json");
+    }
+}
