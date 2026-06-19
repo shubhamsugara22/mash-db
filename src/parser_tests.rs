@@ -2869,3 +2869,141 @@ mod tests {
         let _ = std::fs::remove_file("test_lead_default.json");
     }
 }
+
+    #[test]
+    fn test_parse_lag_basic() {
+        let result = parse_select("SELECT LAG(username) OVER (ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        assert!(cols[0].starts_with("__lag__:"));
+        // Expect: __lag__:username\x1F1\x1FNULL\x1F\x1Fid
+        assert!(cols[0].contains("username"));
+    }
+
+    #[test]
+    fn test_parse_lag_with_offset() {
+        let result = parse_select("SELECT LAG(username, 2) OVER (ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        // Should encode offset as 2
+        assert!(cols[0].contains("\x1F2\x1F"));
+    }
+
+    #[test]
+    fn test_parse_lag_with_default() {
+        let result = parse_select("SELECT LAG(username, 1, 'N/A') OVER (ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        // Should encode default value as 'N/A'
+        assert!(cols[0].contains("N/A"));
+    }
+
+    #[test]
+    fn test_parse_lag_with_partition() {
+        let result = parse_select("SELECT LAG(username) OVER (PARTITION BY email ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        // Should encode partition column
+        assert!(cols[0].contains("email"));
+    }
+
+    #[test]
+    fn test_lag_runtime() {
+        use crate::compute_lag_map;
+        
+        let mut table = Table::new(
+            "test_lag.json".to_string(),
+            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+        );
+        
+        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+        
+        let rows = table.select_all();
+        
+        // Test basic LAG with offset 1
+        let encoded = "__lag__:username\x1F1\x1FNULL\x1F\x1Fid".to_string();
+        let mapping = compute_lag_map(&rows, &Some(vec![encoded.clone()]));
+        let col_map = mapping.get(&encoded).expect("mapping present");
+        
+        // Row 1 has no previous row, should get NULL
+        assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("NULL"));
+        // Row 2 should get row 1's username
+        assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("alice"));
+        // Row 3 should get row 2's username
+        assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("bob"));
+        
+        // Clean up
+        let _ = std::fs::remove_file("test_lag.json");
+    }
+
+    #[test]
+    fn test_lag_with_offset() {
+        use crate::compute_lag_map;
+        
+        let mut table = Table::new(
+            "test_lag_offset.json".to_string(),
+            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+        );
+        
+        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(4, "dave".to_string(), "dave@test.com".to_string()).unwrap());
+        
+        let rows = table.select_all();
+        
+        // Test LAG with offset 2
+        let encoded = "__lag__:username\x1F2\x1FNULL\x1F\x1Fid".to_string();
+        let mapping = compute_lag_map(&rows, &Some(vec![encoded.clone()]));
+        let col_map = mapping.get(&encoded).expect("mapping present");
+        
+        // Rows 1 and 2 don't have rows 2 behind them, should get NULL
+        assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("NULL"));
+        assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("NULL"));
+        // Row 3 should get row 1's username (offset 2)
+        assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("alice"));
+        // Row 4 should get row 2's username
+        assert_eq!(col_map.get(&4).map(|s| s.as_str()), Some("bob"));
+        
+        // Clean up
+        let _ = std::fs::remove_file("test_lag_offset.json");
+    }
+
+    #[test]
+    fn test_lag_with_default_value() {
+        use crate::compute_lag_map;
+        
+        let mut table = Table::new(
+            "test_lag_default.json".to_string(),
+            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+        );
+        
+        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
+        
+        let rows = table.select_all();
+        
+        // Test LAG with custom default value 'START'
+        let encoded = "__lag__:username\x1F1\x1FSTART\x1F\x1Fid".to_string();
+        let mapping = compute_lag_map(&rows, &Some(vec![encoded.clone()]));
+        let col_map = mapping.get(&encoded).expect("mapping present");
+        
+        // Row 1 has no previous row, should get custom default 'START'
+        assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("START"));
+        // Row 2 should get row 1's username
+        assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("alice"));
+        
+        // Clean up
+        let _ = std::fs::remove_file("test_lag_default.json");
+    }
+}
