@@ -708,6 +708,140 @@ pub fn compute_lead_map(
     result
 }
 
+// Compute LAG values for any encoded __lag__ columns in the select list.
+// LAG(column, offset, default) returns the value of column from offset rows behind in the window.
+pub fn compute_lag_map(
+    rows: &Vec<&Row>,
+    columns: &Option<Vec<String>>,
+) -> std::collections::HashMap<String, std::collections::HashMap<u32, String>> {
+    let mut result: std::collections::HashMap<String, std::collections::HashMap<u32, String>> =
+        std::collections::HashMap::new();
+
+    let cols: Vec<String> = match columns {
+        Some(c) => c.clone(),
+        None => Vec::new(),
+    };
+
+    // Find any window column expressions for LAG
+    let window_cols: Vec<String> = cols
+        .into_iter()
+        .filter(|c| c.starts_with("__lag__:"))
+        .collect();
+    if window_cols.is_empty() {
+        return result;
+    }
+
+    for wc in window_cols {
+        // parse encoded: __lag__:column\x1Foffset\x1Fdefault\x1Fpartition_part\x1Forder_part
+        let rest = wc.strip_prefix("__lag__:").unwrap_or("");
+        let parts: Vec<&str> = rest.split('\x1F').collect();
+        if parts.len() < 5 {
+            continue; // Invalid format
+        }
+        
+        let lag_column = parts[0].to_string();
+        let offset: usize = parts[1].parse().unwrap_or(1);
+        let default_value = parts[2].to_string();
+        let partition_part = parts[3];
+        let order_part = parts[4];
+
+        let partition_cols: Vec<String> = if partition_part.is_empty() {
+            Vec::new()
+        } else {
+            partition_part.split(',').map(|s| s.to_string()).collect()
+        };
+        let order_specs: Vec<(String, bool)> = if order_part.is_empty() {
+            Vec::new()
+        } else {
+            order_part
+                .split(',')
+                .map(|s| {
+                    if s.ends_with(":DESC") {
+                        (s[..s.len() - 5].to_string(), false)
+                    } else {
+                        (s.to_string(), true)
+                    }
+                })
+                .collect()
+        };
+
+        // Group rows by partition key
+        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> =
+            std::collections::HashMap::new();
+        for (idx, row) in rows.iter().enumerate() {
+            let mut key_parts: Vec<String> = Vec::new();
+            for col in &partition_cols {
+                key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
+            }
+            let key = key_parts.join("|");
+            groups.entry(key).or_default().push((row.clone(), idx));
+        }
+
+        let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        for (_k, mut group_rows) in groups.into_iter() {
+            // sort group_rows according to order_specs
+            group_rows.sort_by(|a, b| {
+                let (ra, ia) = a;
+                let (rb, ib) = b;
+                for (col, asc) in &order_specs {
+                    let va = ra.get_value(col).unwrap_or_default();
+                    let vb = rb.get_value(col).unwrap_or_default();
+                    // try numeric compare
+                    if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
+                        if na < nb {
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
+                        }
+                        if na > nb {
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
+                        }
+                    } else {
+                        if va < vb {
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
+                        }
+                        if va > vb {
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
+                        }
+                    }
+                }
+                // tie-breaker: original position
+                ia.cmp(ib)
+            });
+
+            // Compute LAG values: for each row, get the value from offset rows behind
+            for (current_idx, (row, _orig_idx)) in group_rows.iter().enumerate() {
+                let lag_value = if current_idx >= offset {
+                    // Get the lag row's column value
+                    group_rows[current_idx - offset].0.get_value(&lag_column).unwrap_or_else(|| default_value.clone())
+                } else {
+                    // Out of bounds, use default
+                    default_value.clone()
+                };
+                mapping.insert(row.id, lag_value);
+            }
+        }
+
+        result.insert(wc, mapping);
+    }
+
+    result
+}
+
 fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
     if input == ".exit" {
         println!("Bye!");
@@ -1760,6 +1894,8 @@ fn execute_statement(
             window_map.extend(dense_map);
             let lead_map = compute_lead_map(&rows, &columns);
             window_map.extend(lead_map);
+            let lag_map = compute_lag_map(&rows, &columns);
+            window_map.extend(lag_map);
 
             // Check if columns contain any aggregates
             let has_aggregates = match &columns {
@@ -1871,6 +2007,7 @@ fn execute_statement(
                                     || col.starts_with("__rank__:")
                                     || col.starts_with("__dense_rank__:")
                                     || col.starts_with("__lead__:")
+                                    || col.starts_with("__lag__:")
                                 {
                                     if let Some(col_map) = window_map.get(col) {
                                         values.push(
@@ -2068,6 +2205,8 @@ fn execute_statement(
                     window_map.extend(dense_map);
                     let lead_map = compute_lead_map(&rows, &columns);
                     window_map.extend(lead_map);
+                    let lag_map = compute_lag_map(&rows, &columns);
+                    window_map.extend(lag_map);
                     // Check if columns contain any aggregates
                     let has_aggregates = match &columns {
                         Some(cols) => cols.iter().any(|c| {
@@ -2181,6 +2320,7 @@ fn execute_statement(
                                             || col.starts_with("__rank__:")
                                             || col.starts_with("__dense_rank__:")
                                             || col.starts_with("__lead__:")
+                                            || col.starts_with("__lag__:")
                                         {
                                             if let Some(col_map) = window_map.get(col) {
                                                 values.push(

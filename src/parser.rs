@@ -87,6 +87,7 @@ pub enum Token {
     Rank,
     DenseRank,
     Lead,
+    Lag,
     Over,
     Partition,
     Eq,
@@ -354,6 +355,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "RANK" => Token::Rank,
                     "DENSE_RANK" => Token::DenseRank,
                     "LEAD" => Token::Lead,
+                    "LAG" => Token::Lag,
                     "OVER" => Token::Over,
                     "PARTITION" => Token::Partition,
                     "POSITION" => Token::Position,
@@ -553,6 +555,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Rank => "RANK".to_string(),
         Token::DenseRank => "DENSE_RANK".to_string(),
         Token::Lead => "LEAD".to_string(),
+        Token::Lag => "LAG".to_string(),
         Token::Over => "OVER".to_string(),
         Token::Partition => "PARTITION".to_string(),
         Token::Comma => ",".to_string(),
@@ -1272,29 +1275,30 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Column(format!("__sign__:{}", arg))
                     }
-                    Some(Token::RowNumber) | Some(Token::Rank) | Some(Token::DenseRank) | Some(Token::Lead) => {
+                    Some(Token::RowNumber) | Some(Token::Rank) | Some(Token::DenseRank) | Some(Token::Lead) | Some(Token::Lag) => {
                         let token_here = tokens.get(*i).cloned();
                         let is_rank = matches!(token_here, Some(Token::Rank));
                         let is_dense = matches!(token_here, Some(Token::DenseRank));
                         let is_lead = matches!(token_here, Some(Token::Lead));
-                        *i += 1; // consume ROW_NUMBER, RANK, DENSE_RANK, or LEAD
+                        let is_lag = matches!(token_here, Some(Token::Lag));
+                        *i += 1; // consume ROW_NUMBER, RANK, DENSE_RANK, LEAD, or LAG
                         if tokens.get(*i) != Some(&Token::LParen) {
                             return Err("Expected ( after window function".to_string());
                         }
                         *i += 1;
                         
-                        // For LEAD, parse column, offset, and default value
-                        let mut lead_column = String::new();
-                        let mut lead_offset = String::from("1");
-                        let mut lead_default = String::from("NULL");
+                        // For LEAD/LAG, parse column, offset, and default value
+                        let mut window_column = String::new();
+                        let mut window_offset = String::from("1");
+                        let mut window_default = String::from("NULL");
                         
-                        if is_lead {
+                        if is_lead || is_lag {
                             // Parse column
                             if let Some(Token::Identifier(col)) = tokens.get(*i) {
-                                lead_column = col.clone();
+                                window_column = col.clone();
                                 *i += 1;
                             } else {
-                                return Err("Expected column name after LEAD(".to_string());
+                                return Err(format!("Expected column name after {}(", if is_lead { "LEAD" } else { "LAG" }));
                             }
                             
                             // Optional: parse offset
@@ -1302,14 +1306,14 @@ pub fn parse_select_columns(
                                 *i += 1;
                                 match tokens.get(*i) {
                                     Some(Token::Number(n)) => {
-                                        lead_offset = n.to_string();
+                                        window_offset = n.to_string();
                                         *i += 1;
                                     }
                                     Some(Token::String(s)) => {
-                                        lead_offset = s.clone();
+                                        window_offset = s.clone();
                                         *i += 1;
                                     }
-                                    _ => return Err("Expected number for LEAD offset".to_string()),
+                                    _ => return Err(format!("Expected number for {} offset", if is_lead { "LEAD" } else { "LAG" })),
                                 }
                                 
                                 // Optional: parse default value
@@ -1317,18 +1321,18 @@ pub fn parse_select_columns(
                                     *i += 1;
                                     match tokens.get(*i) {
                                         Some(Token::String(s)) => {
-                                            lead_default = s.clone();
+                                            window_default = s.clone();
                                             *i += 1;
                                         }
                                         Some(Token::Number(n)) => {
-                                            lead_default = n.to_string();
+                                            window_default = n.to_string();
                                             *i += 1;
                                         }
                                         Some(Token::Null) => {
-                                            lead_default = String::from("NULL");
+                                            window_default = String::from("NULL");
                                             *i += 1;
                                         }
-                                        _ => return Err("Expected value for LEAD default".to_string()),
+                                        _ => return Err(format!("Expected value for {} default", if is_lead { "LEAD" } else { "LAG" })),
                                     }
                                 }
                             }
@@ -1412,17 +1416,22 @@ pub fn parse_select_columns(
                             *i += 1;
                         }
 
-                        // Encode as __row_number__, __rank__, __dense_rank__, or __lead__:...
+                        // Encode as __row_number__, __rank__, __dense_rank__, __lead__, or __lag__:...
                         let partition_part = partition_cols.join(",");
                         let order_part = order_specs
                             .into_iter()
                             .map(|(c, asc)| if asc { c } else { format!("{}:DESC", c) })
                             .collect::<Vec<String>>()
                             .join(",");
-                        if is_lead {
+                        if is_lag {
+                            SelectColumn::Column(format!(
+                                "__lag__:{}\x1F{}\x1F{}\x1F{}\x1F{}",
+                                window_column, window_offset, window_default, partition_part, order_part
+                            ))
+                        } else if is_lead {
                             SelectColumn::Column(format!(
                                 "__lead__:{}\x1F{}\x1F{}\x1F{}\x1F{}",
-                                lead_column, lead_offset, lead_default, partition_part, order_part
+                                window_column, window_offset, window_default, partition_part, order_part
                             ))
                         } else if is_dense {
                             SelectColumn::Column(format!(
@@ -2258,6 +2267,7 @@ fn parse_select_tokens(
         | Some(Token::Rank)
         | Some(Token::DenseRank)
         | Some(Token::Lead)
+        | Some(Token::Lag)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex) => {
