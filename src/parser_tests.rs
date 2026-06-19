@@ -3,6 +3,8 @@ mod tests {
     use crate::compute_rank_map;
     use crate::compute_row_number_map;
     use crate::compute_dense_rank_map;
+    use crate::compute_lead_map;
+    use crate::compute_lag_map;
     use crate::parser::*;
     use crate::table::{Row, Table};
 
@@ -2868,7 +2870,6 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_file("test_lead_default.json");
     }
-}
 
     #[test]
     fn test_parse_lag_basic() {
@@ -2917,8 +2918,6 @@ mod tests {
 
     #[test]
     fn test_lag_runtime() {
-        use crate::compute_lag_map;
-        
         let mut table = Table::new(
             "test_lag.json".to_string(),
             vec!["id".to_string(), "username".to_string(), "email".to_string()],
@@ -2948,8 +2947,6 @@ mod tests {
 
     #[test]
     fn test_lag_with_offset() {
-        use crate::compute_lag_map;
-        
         let mut table = Table::new(
             "test_lag_offset.json".to_string(),
             vec!["id".to_string(), "username".to_string(), "email".to_string()],
@@ -2981,8 +2978,6 @@ mod tests {
 
     #[test]
     fn test_lag_with_default_value() {
-        use crate::compute_lag_map;
-        
         let mut table = Table::new(
             "test_lag_default.json".to_string(),
             vec!["id".to_string(), "username".to_string(), "email".to_string()],
