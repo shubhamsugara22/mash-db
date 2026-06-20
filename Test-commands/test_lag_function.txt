@@ -1,0 +1,35 @@
+# Test LAG Window Function
+
+# Create test table
+CREATE TABLE sales (id, employee, amount, sale_date)
+
+# Insert test data (same as LEAD examples but we'll see different results)
+INSERT INTO sales VALUES (1, 'Alice', '1000', '2024-01-01')
+INSERT INTO sales VALUES (2, 'Bob', '1500', '2024-01-02')
+INSERT INTO sales VALUES (3, 'Alice', '2000', '2024-01-03')
+INSERT INTO sales VALUES (4, 'Bob', '1200', '2024-01-04')
+INSERT INTO sales VALUES (5, 'Alice', '3000', '2024-01-05')
+
+# Test 1: Basic LAG - show each employee's previous sale amount
+SELECT employee, amount, LAG(amount) OVER (ORDER BY id) FROM sales
+
+# Test 2: LAG with offset 2 - look back 2 rows
+SELECT employee, amount, LAG(amount, 2) OVER (ORDER BY id) FROM sales
+
+# Test 3: LAG with custom default - use 'No Previous Sales' when no previous row
+SELECT employee, amount, LAG(amount, 1, 'No Previous Sales') OVER (ORDER BY id) FROM sales
+
+# Test 4: LAG with PARTITION BY - previous sale within same employee
+SELECT employee, amount, LAG(amount) OVER (PARTITION BY employee ORDER BY id) FROM sales
+
+# Test 5: LAG with DESC ordering
+SELECT employee, amount, LAG(amount) OVER (ORDER BY id DESC) FROM sales
+
+# Test 6: Multiple LAG functions
+SELECT employee, amount, LAG(amount, 1, 'N/A') OVER (ORDER BY id), LAG(employee) OVER (ORDER BY id) FROM sales
+
+# Test 7: Compare LEAD vs LAG side-by-side (different logical behavior)
+SELECT id, employee, LAG(amount) OVER (ORDER BY id), amount, LEAD(amount) OVER (ORDER BY id) FROM sales
+
+# Clean up
+DROP TABLE sales

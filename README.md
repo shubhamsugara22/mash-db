@@ -61,6 +61,9 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
     - `LEAD(col, offset, default) OVER (PARTITION BY col2 ORDER BY col3)` - Value from subsequent row
       - `offset` (optional, default 1): Number of rows to look ahead
       - `default` (optional, default NULL): Value when no subsequent row exists
+    - `LAG(col, offset, default) OVER (PARTITION BY col2 ORDER BY col3)` - Value from preceding row
+      - `offset` (optional, default 1): Number of rows to look back
+      - `default` (optional, default NULL): Value when no preceding row exists
   - **GROUP BY**: Group results by any columns (e.g., `GROUP BY category, supplier`)
   - **HAVING**: Filter grouped results with conditions
   - **ORDER BY (qualified)**: Sort results ASC/DESC with table qualifiers
@@ -282,7 +285,7 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 - [x] Subqueries — IN subquery support
 - [x] Transactions — BEGIN/COMMIT/ROLLBACK (snapshot-based)
 - [x] BETWEEN operator for range queries
-- [x] Window functions (ROW_NUMBER, RANK, DENSE_RANK, LEAD with offset/default) — PARTITION BY and ORDER BY supported
+- [x] Window functions (ROW_NUMBER, RANK, DENSE_RANK, LEAD, LAG with offset/default) — PARTITION BY and ORDER BY supported
 - [ ] Common Table Expressions (WITH/CTE)
 - [x] More numeric functions: MOD, POWER, SQRT
 - [x] More string functions: POSITION, INSTR, SUBSTRING_INDEX
