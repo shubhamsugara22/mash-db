@@ -634,6 +634,7 @@ pub fn parse_select_columns(
         | Some(Token::Rank)
         | Some(Token::DenseRank)
         | Some(Token::Lead)
+        | Some(Token::Lag)
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex)
