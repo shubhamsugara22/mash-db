@@ -3001,4 +3001,354 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_file("test_lag_default.json");
     }
+
+    // ===== DATE/TIME FUNCTION TESTS =====
+
+    #[test]
+    fn test_tokenize_date_time_functions() {
+        let tokens = tokenize("NOW() DATE() TIME() YEAR() MONTH() DAY()");
+        assert!(tokens.contains(&Token::Now));
+        assert!(tokens.contains(&Token::Date));
+        assert!(tokens.contains(&Token::Time));
+        assert!(tokens.contains(&Token::Year));
+        assert!(tokens.contains(&Token::Month));
+        assert!(tokens.contains(&Token::Day));
+    }
+
+    #[test]
+    fn test_parse_select_now_function() {
+        let result = parse_select("SELECT NOW() FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["__now__".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_date_function() {
+        let result = parse_select("SELECT DATE(created) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["__date__:created".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_time_function() {
+        let result = parse_select("SELECT TIME(created) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["__time__:created".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_year_function() {
+        let result = parse_select("SELECT YEAR(birthdate) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["__year__:birthdate".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_month_function() {
+        let result = parse_select("SELECT MONTH(created) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["__month__:created".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_day_function() {
+        let result = parse_select("SELECT DAY(created) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert_eq!(cols, Some(vec!["__day__:created".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_select_multiple_date_functions() {
+        let result = parse_select("SELECT YEAR(d), MONTH(d), DAY(d) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        let cols = cols.unwrap();
+        assert_eq!(cols.len(), 3);
+        assert_eq!(cols[0], "__year__:d");
+        assert_eq!(cols[1], "__month__:d");
+        assert_eq!(cols[2], "__day__:d");
+    }
+
+    #[test]
+    fn test_eval_col_date_from_timestamp() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("created".to_string(), "1704067200".to_string()); // 2024-01-01 00:00:00 UTC
+        let row = Row {
+            id: 1,
+            username: "alice".to_string(),
+            email: "alice@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__date__:created");
+        assert!(result.is_some());
+        let date_str = result.unwrap();
+        // Should return a date in YYYY-MM-DD format
+        assert!(date_str.contains('-'));
+        assert_eq!(date_str.len(), 10);
+    }
+
+    #[test]
+    fn test_eval_col_date_from_date_string() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("created".to_string(), "2024-01-15 14:30:45".to_string());
+        let row = Row {
+            id: 1,
+            username: "bob".to_string(),
+            email: "bob@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__date__:created");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "2024-01-15");
+    }
+
+    #[test]
+    fn test_eval_col_time_from_timestamp() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("created".to_string(), "1704067200".to_string()); // 2024-01-01 00:00:00 UTC
+        let row = Row {
+            id: 1,
+            username: "charlie".to_string(),
+            email: "charlie@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__time__:created");
+        assert!(result.is_some());
+        let time_str = result.unwrap();
+        // Should return time in HH:MM:SS format
+        assert_eq!(time_str.len(), 8);
+        assert!(time_str.contains(':'));
+    }
+
+    #[test]
+    fn test_eval_col_time_from_datetime_string() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("created".to_string(), "2024-01-15 14:30:45".to_string());
+        let row = Row {
+            id: 1,
+            username: "diana".to_string(),
+            email: "diana@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__time__:created");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "14:30:45");
+    }
+
+    #[test]
+    fn test_eval_col_year_from_timestamp() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("birthdate".to_string(), "1704067200".to_string()); // 2024-01-01
+        let row = Row {
+            id: 1,
+            username: "eve".to_string(),
+            email: "eve@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__year__:birthdate");
+        assert!(result.is_some());
+        let year_str = result.unwrap();
+        assert!(year_str.parse::<u64>().is_ok());
+        assert!(year_str.as_str() >= "1970");
+    }
+
+    #[test]
+    fn test_eval_col_year_from_date_string() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("birthdate".to_string(), "1990-05-20".to_string());
+        let row = Row {
+            id: 1,
+            username: "frank".to_string(),
+            email: "frank@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__year__:birthdate");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "1990");
+    }
+
+    #[test]
+    fn test_eval_col_month_from_timestamp() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("created".to_string(), "1704067200".to_string()); // 2024-01-01
+        let row = Row {
+            id: 1,
+            username: "grace".to_string(),
+            email: "grace@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__month__:created");
+        assert!(result.is_some());
+        let month_str = result.unwrap();
+        let month: u64 = month_str.parse().unwrap_or(0);
+        assert!(month >= 1 && month <= 12);
+    }
+
+    #[test]
+    fn test_eval_col_month_from_date_string() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("event_date".to_string(), "2024-07-15".to_string());
+        let row = Row {
+            id: 1,
+            username: "henry".to_string(),
+            email: "henry@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__month__:event_date");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "07");
+    }
+
+    #[test]
+    fn test_eval_col_day_from_timestamp() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("created".to_string(), "1704067200".to_string()); // 2024-01-01
+        let row = Row {
+            id: 1,
+            username: "iris".to_string(),
+            email: "iris@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__day__:created");
+        assert!(result.is_some());
+        let day_str = result.unwrap();
+        let day: u64 = day_str.parse().unwrap_or(0);
+        assert!(day >= 1 && day <= 31);
+    }
+
+    #[test]
+    fn test_eval_col_day_from_date_string() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+
+        let mut extras = HashMap::new();
+        extras.insert("event_date".to_string(), "2024-07-25".to_string());
+        let row = Row {
+            id: 1,
+            username: "jack".to_string(),
+            email: "jack@example.com".to_string(),
+            extras,
+        };
+
+        let result = row.eval_col("__day__:event_date");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "25");
+    }
+
+    #[test]
+    fn test_select_now_runtime() {
+        use std::collections::HashMap;
+
+        let mut table = Table::new("test_now.json".to_string(), vec!["id".to_string(), "username".to_string(), "email".to_string()]);
+
+        let mut extras = HashMap::new();
+        table
+            .insert(Row { id: 1, username: "alice".to_string(), email: "alice@example.com".to_string(), extras: extras.clone() })
+            .unwrap();
+
+        let rows = table.select("__now__", "users");
+        assert!(rows.is_ok());
+        let rows = rows.unwrap();
+        assert_eq!(rows.len(), 1);
+        // NOW() should return a timestamp (all digits)
+        assert!(rows[0].parse::<u64>().is_ok());
+
+        // Clean up
+        let _ = std::fs::remove_file("test_now.json");
+    }
+
+    #[test]
+    fn test_select_date_runtime() {
+        use std::collections::HashMap;
+
+        let mut table = Table::new("test_date.json".to_string(), vec!["id".to_string(), "username".to_string(), "created".to_string()]);
+
+        let mut extras = HashMap::new();
+        extras.insert("created".to_string(), "2024-06-15 10:30:00".to_string());
+        table
+            .insert(Row { id: 1, username: "bob".to_string(), email: "bob@example.com".to_string(), extras })
+            .unwrap();
+
+        let rows = table.select("__date__:created", "test");
+        assert!(rows.is_ok());
+        let rows = rows.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0], "2024-06-15");
+
+        // Clean up
+        let _ = std::fs::remove_file("test_date.json");
+    }
+
+    #[test]
+    fn test_select_year_month_day_runtime() {
+        use std::collections::HashMap;
+
+        let mut table = Table::new("test_ymd.json".to_string(), vec!["id".to_string(), "username".to_string(), "birthdate".to_string()]);
+
+        let mut extras = HashMap::new();
+        extras.insert("birthdate".to_string(), "1995-03-22".to_string());
+        table
+            .insert(Row { id: 1, username: "carol".to_string(), email: "carol@example.com".to_string(), extras })
+            .unwrap();
+
+        // Test YEAR
+        let year_rows = table.select("__year__:birthdate", "test");
+        assert!(year_rows.is_ok());
+        assert_eq!(year_rows.unwrap()[0], "1995");
+
+        // Test MONTH
+        let month_rows = table.select("__month__:birthdate", "test");
+        assert!(month_rows.is_ok());
+        assert_eq!(month_rows.unwrap()[0], "03");
+
+        // Test DAY
+        let day_rows = table.select("__day__:birthdate", "test");
+        assert!(day_rows.is_ok());
+        assert_eq!(day_rows.unwrap()[0], "22");
+
+        // Clean up
+        let _ = std::fs::remove_file("test_ymd.json");
+    }
 }
