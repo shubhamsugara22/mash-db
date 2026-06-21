@@ -64,6 +64,13 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
     - `LAG(col, offset, default) OVER (PARTITION BY col2 ORDER BY col3)` - Value from preceding row
       - `offset` (optional, default 1): Number of rows to look back
       - `default` (optional, default NULL): Value when no preceding row exists
+  - **Date/Time Functions**: Temporal data manipulation
+    - `NOW()` - Current UNIX timestamp
+    - `DATE(col)` - Extract date (YYYY-MM-DD) from timestamp or datetime
+    - `TIME(col)` - Extract time (HH:MM:SS) from timestamp or datetime
+    - `YEAR(col)` - Extract year from date/timestamp
+    - `MONTH(col)` - Extract month (1-12) from date/timestamp
+    - `DAY(col)` - Extract day (1-31) from date/timestamp
   - **GROUP BY**: Group results by any columns (e.g., `GROUP BY category, supplier`)
   - **HAVING**: Filter grouped results with conditions
   - **ORDER BY (qualified)**: Sort results ASC/DESC with table qualifiers
@@ -243,6 +250,13 @@ SELECT CASE WHEN price > 100 THEN 'Premium' WHEN price > 50 THEN 'Standard' ELSE
 
 -- Type conversion
 SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
+
+-- Date/Time functions
+SELECT NOW() FROM users  -- Current UNIX timestamp
+SELECT DATE(created_at), TIME(created_at) FROM events
+SELECT YEAR(birthdate), MONTH(birthdate), DAY(birthdate) FROM users
+SELECT * FROM orders WHERE YEAR(order_date) = 2024
+SELECT MONTH(purchase_date), COUNT(*) FROM sales GROUP BY MONTH(purchase_date)
 ```
 
 ## Architecture
@@ -286,13 +300,8 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 - [x] Transactions — BEGIN/COMMIT/ROLLBACK (snapshot-based)
 - [x] BETWEEN operator for range queries
 - [x] Window functions (ROW_NUMBER, RANK, DENSE_RANK, LEAD, LAG with offset/default) — PARTITION BY and ORDER BY supported
+- [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
 - [ ] Common Table Expressions (WITH/CTE)
-- [x] More numeric functions: MOD, POWER, SQRT
-- [x] More string functions: POSITION, INSTR, SUBSTRING_INDEX
-- [ ] More numeric functions: SIGN
-- [x] More numeric functions: SIGN
-- [ ] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
-- [ ] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
 - [ ] Full text search
 - [ ] Foreign key constraints
 - [ ] PRIMARY KEY and UNIQUE constraints

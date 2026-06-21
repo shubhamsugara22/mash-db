@@ -3288,12 +3288,15 @@ mod tests {
             .insert(Row { id: 1, username: "alice".to_string(), email: "alice@example.com".to_string(), extras: extras.clone() })
             .unwrap();
 
-        let rows = table.select("__now__", "users");
-        assert!(rows.is_ok());
-        let rows = rows.unwrap();
+        let rows = table.select_all();
         assert_eq!(rows.len(), 1);
+        
+        // Test NOW() evaluation
+        let result = rows[0].eval_col("__now__");
+        assert!(result.is_some());
+        let now_val = result.unwrap();
         // NOW() should return a timestamp (all digits)
-        assert!(rows[0].parse::<u64>().is_ok());
+        assert!(now_val.parse::<u64>().is_ok());
 
         // Clean up
         let _ = std::fs::remove_file("test_now.json");
@@ -3311,11 +3314,12 @@ mod tests {
             .insert(Row { id: 1, username: "bob".to_string(), email: "bob@example.com".to_string(), extras })
             .unwrap();
 
-        let rows = table.select("__date__:created", "test");
-        assert!(rows.is_ok());
-        let rows = rows.unwrap();
+        let rows = table.select_all();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0], "2024-06-15");
+        
+        let result = rows[0].eval_col("__date__:created");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "2024-06-15");
 
         // Clean up
         let _ = std::fs::remove_file("test_date.json");
@@ -3333,20 +3337,23 @@ mod tests {
             .insert(Row { id: 1, username: "carol".to_string(), email: "carol@example.com".to_string(), extras })
             .unwrap();
 
+        let rows = table.select_all();
+        assert_eq!(rows.len(), 1);
+
         // Test YEAR
-        let year_rows = table.select("__year__:birthdate", "test");
-        assert!(year_rows.is_ok());
-        assert_eq!(year_rows.unwrap()[0], "1995");
+        let year_result = rows[0].eval_col("__year__:birthdate");
+        assert!(year_result.is_some());
+        assert_eq!(year_result.unwrap(), "1995");
 
         // Test MONTH
-        let month_rows = table.select("__month__:birthdate", "test");
-        assert!(month_rows.is_ok());
-        assert_eq!(month_rows.unwrap()[0], "03");
+        let month_result = rows[0].eval_col("__month__:birthdate");
+        assert!(month_result.is_some());
+        assert_eq!(month_result.unwrap(), "03");
 
         // Test DAY
-        let day_rows = table.select("__day__:birthdate", "test");
-        assert!(day_rows.is_ok());
-        assert_eq!(day_rows.unwrap()[0], "22");
+        let day_result = rows[0].eval_col("__day__:birthdate");
+        assert!(day_result.is_some());
+        assert_eq!(day_result.unwrap(), "22");
 
         // Clean up
         let _ = std::fs::remove_file("test_ymd.json");
