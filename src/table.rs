@@ -498,6 +498,95 @@ impl Row {
                 .map(|d| d.as_secs().to_string())
                 .unwrap_or_else(|_| "0".to_string());
             Some(now)
+        } else if let Some(col) = col_expr.strip_prefix("__date__:") {
+            // Extract date from timestamp or date string (YYYY-MM-DD)
+            // If it's a UNIX timestamp (all digits), convert to date
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                // Convert UNIX timestamp to date
+                let days_since_epoch = timestamp / 86400;
+                let year = 1970 + (days_since_epoch / 365);
+                let day_of_year = days_since_epoch % 365;
+                let month = (day_of_year / 30).min(11) + 1;
+                let day = (day_of_year % 30) + 1;
+                Some(format!("{:04}-{:02}-{:02}", year, month, day))
+            } else if raw.contains('-') && raw.len() >= 10 {
+                // Already in date format, return first 10 chars (YYYY-MM-DD)
+                Some(raw.chars().take(10).collect())
+            } else {
+                Some(raw)
+            }
+        } else if let Some(col) = col_expr.strip_prefix("__time__:") {
+            // Extract time from timestamp or datetime string (HH:MM:SS)
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                // Convert UNIX timestamp to time (UTC)
+                let secs_in_day = timestamp % 86400;
+                let hours = secs_in_day / 3600;
+                let mins = (secs_in_day % 3600) / 60;
+                let secs = secs_in_day % 60;
+                Some(format!("{:02}:{:02}:{:02}", hours, mins, secs))
+            } else if raw.contains(':') {
+                // Already has time component, extract HH:MM:SS
+                if let Some(time_part) = raw.split(' ').nth(1) {
+                    Some(time_part.chars().take(8).collect())
+                } else {
+                    Some(raw.chars().take(8).collect())
+                }
+            } else {
+                Some("00:00:00".to_string())
+            }
+        } else if let Some(col) = col_expr.strip_prefix("__year__:") {
+            // Extract year from date/timestamp
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                let days_since_epoch = timestamp / 86400;
+                let year = 1970 + (days_since_epoch / 365);
+                Some(year.to_string())
+            } else if raw.len() >= 4 && raw.chars().next().map_or(false, |c| c.is_digit(10)) {
+                // Try to extract first 4 characters as year
+                Some(raw.chars().take(4).collect())
+            } else {
+                Some("1970".to_string())
+            }
+        } else if let Some(col) = col_expr.strip_prefix("__month__:") {
+            // Extract month from date/timestamp
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                let days_since_epoch = timestamp / 86400;
+                let day_of_year = days_since_epoch % 365;
+                let month = ((day_of_year / 30).min(11) + 1) as u64;
+                Some(month.to_string())
+            } else if raw.contains('-') && raw.len() >= 7 {
+                // Try to extract month from YYYY-MM-DD format
+                let parts: Vec<&str> = raw.split('-').collect();
+                if parts.len() >= 2 {
+                    Some(parts[1].to_string())
+                } else {
+                    Some("1".to_string())
+                }
+            } else {
+                Some("1".to_string())
+            }
+        } else if let Some(col) = col_expr.strip_prefix("__day__:") {
+            // Extract day from date/timestamp
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                let days_since_epoch = timestamp / 86400;
+                let day_of_year = days_since_epoch % 365;
+                let day = (day_of_year % 30) + 1;
+                Some(day.to_string())
+            } else if raw.contains('-') && raw.len() >= 10 {
+                // Try to extract day from YYYY-MM-DD format
+                let parts: Vec<&str> = raw.split('-').collect();
+                if parts.len() >= 3 {
+                    Some(parts[2].to_string())
+                } else {
+                    Some("1".to_string())
+                }
+            } else {
+                Some("1".to_string())
+            }
         } else if let Some(rest) = col_expr.strip_prefix("__round__:") {
             let mut parts = rest.splitn(2, '\x1F');
             let col = parts.next().unwrap_or("");

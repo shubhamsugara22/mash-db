@@ -83,6 +83,11 @@ pub enum Token {
     Instr,
     SubstringIndex,
     Now,
+    Date,
+    Time,
+    Year,
+    Month,
+    Day,
     RowNumber,
     Rank,
     DenseRank,
@@ -362,6 +367,11 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "INSTR" => Token::Instr,
                     "SUBSTRING_INDEX" => Token::SubstringIndex,
                     "NOW" => Token::Now,
+                    "DATE" => Token::Date,
+                    "TIME" => Token::Time,
+                    "YEAR" => Token::Year,
+                    "MONTH" => Token::Month,
+                    "DAY" => Token::Day,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -551,6 +561,11 @@ fn token_to_sql(token: &Token) -> String {
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
         Token::Now => "NOW".to_string(),
+        Token::Date => "DATE".to_string(),
+        Token::Time => "TIME".to_string(),
+        Token::Year => "YEAR".to_string(),
+        Token::Month => "MONTH".to_string(),
+        Token::Day => "DAY".to_string(),
         Token::RowNumber => "ROW_NUMBER".to_string(),
         Token::Rank => "RANK".to_string(),
         Token::DenseRank => "DENSE_RANK".to_string(),
@@ -638,6 +653,11 @@ pub fn parse_select_columns(
         | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex)
+        | Some(Token::Date)
+        | Some(Token::Time)
+        | Some(Token::Year)
+        | Some(Token::Month)
+        | Some(Token::Day)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -1632,6 +1652,121 @@ pub fn parse_select_columns(
                             string, delimiter, count
                         ))
                     }
+                    Some(Token::Date) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after DATE".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in DATE()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after DATE argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__date__:{}", col))
+                    }
+                    Some(Token::Time) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after TIME".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in TIME()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after TIME argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__time__:{}", col))
+                    }
+                    Some(Token::Year) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after YEAR".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in YEAR()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after YEAR argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__year__:{}", col))
+                    }
+                    Some(Token::Month) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after MONTH".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in MONTH()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after MONTH argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__month__:{}", col))
+                    }
+                    Some(Token::Day) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after DAY".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in DAY()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after DAY argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__day__:{}", col))
+                    }
                     Some(Token::If) => {
                         *i += 1; // consume IF
                         if tokens.get(*i) != Some(&Token::LParen) {
@@ -2271,7 +2406,12 @@ fn parse_select_tokens(
         | Some(Token::Lag)
         | Some(Token::Position)
         | Some(Token::Instr)
-        | Some(Token::SubstringIndex) => {
+        | Some(Token::SubstringIndex)
+        | Some(Token::Date)
+        | Some(Token::Time)
+        | Some(Token::Year)
+        | Some(Token::Month)
+        | Some(Token::Day) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {
