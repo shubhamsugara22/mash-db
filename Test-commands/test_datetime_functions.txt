@@ -1,0 +1,131 @@
+# Test Commands for Date/Time Functions
+
+## Setup
+CREATE TABLE events (id, name, event_date, event_time)
+INSERT INTO events VALUES (1, Conference Opening, 2024-01-15 09:00:00, session1)
+INSERT INTO events VALUES (2, Lunch Break, 2024-01-15 12:00:00, break)
+INSERT INTO events VALUES (3, Closing Ceremony, 2024-01-15 17:30:00, session2)
+
+CREATE TABLE users (id, username, email, birthdate)
+INSERT INTO users VALUES (1, alice, alice@example.com, 1990-05-20)
+INSERT INTO users VALUES (2, bob, bob@example.com, 1995-03-22)
+INSERT INTO users VALUES (3, carol, carol@example.com, 2000-12-10)
+
+## Test NOW() Function
+SELECT NOW() FROM users
+# Expected: Current UNIX timestamp (e.g., 1704067200)
+
+## Test DATE() Function - Extract date from datetime string
+SELECT name, DATE(event_date) FROM events
+# Expected:
+# Conference Opening, 2024-01-15
+# Lunch Break, 2024-01-15
+# Closing Ceremony, 2024-01-15
+
+## Test TIME() Function - Extract time from datetime string
+SELECT name, TIME(event_date) FROM events
+# Expected:
+# Conference Opening, 09:00:00
+# Lunch Break, 12:00:00
+# Closing Ceremony, 17:30:00
+
+## Test YEAR() Function - Extract year from date
+SELECT username, YEAR(birthdate) FROM users
+# Expected:
+# alice, 1990
+# bob, 1995
+# carol, 2000
+
+## Test MONTH() Function - Extract month from date
+SELECT username, MONTH(birthdate) FROM users
+# Expected:
+# alice, 05
+# bob, 03
+# carol, 12
+
+## Test DAY() Function - Extract day from date
+SELECT username, DAY(birthdate) FROM users
+# Expected:
+# alice, 20
+# bob, 22
+# carol, 10
+
+## Test Multiple Date Functions Combined
+SELECT username, YEAR(birthdate) AS year, MONTH(birthdate) AS month, DAY(birthdate) AS day 
+FROM users
+# Expected:
+# alice, 1990, 05, 20
+# bob, 1995, 03, 22
+# carol, 2000, 12, 10
+
+## Test with WHERE clause using YEAR()
+SELECT username FROM users WHERE YEAR(birthdate) >= 1995
+# Expected:
+# bob
+# carol
+
+## Test with WHERE clause using MONTH()
+SELECT username FROM users WHERE MONTH(birthdate) < 6
+# Expected:
+# bob (month 03)
+# alice (month 05)
+
+## Test with GROUP BY using MONTH()
+SELECT MONTH(birthdate) AS month, COUNT(*) FROM users GROUP BY MONTH(birthdate)
+# Expected:
+# 03, 1
+# 05, 1
+# 12, 1
+
+## Test with ORDER BY using YEAR()
+SELECT username, YEAR(birthdate) FROM users ORDER BY YEAR(birthdate) DESC
+# Expected:
+# carol, 2000
+# bob, 1995
+# alice, 1990
+
+## Test DATE() with ORDER BY
+SELECT name, DATE(event_date) FROM events ORDER BY DATE(event_date) DESC
+# Expected (all same date, ordered by name or insertion order):
+# Conference Opening, 2024-01-15
+# Lunch Break, 2024-01-15
+# Closing Ceremony, 2024-01-15
+
+## Test combining date extraction with string functions
+SELECT CONCAT(username, ' born in ', YEAR(birthdate)) FROM users
+# Expected:
+# alice born in 1990
+# bob born in 1995
+# carol born in 2000
+
+## Test with DISTINCT on YEAR
+SELECT DISTINCT YEAR(birthdate) FROM users
+# Expected:
+# 1990
+# 1995
+# 2000
+
+## Test TIME() with events
+SELECT name, TIME(event_date) FROM events WHERE TIME(event_date) > 12:00:00
+# Expected:
+# Closing Ceremony, 17:30:00
+
+## Test DATE() with LIKE pattern
+SELECT name, DATE(event_date) FROM events WHERE DATE(event_date) LIKE '2024-%'
+# Expected:
+# Conference Opening, 2024-01-15
+# Lunch Break, 2024-01-15
+# Closing Ceremony, 2024-01-15
+
+## Advanced: Find users by age (approximate year-based)
+SELECT username FROM users WHERE YEAR(NOW()) - YEAR(birthdate) >= 25
+# Expected users born in 1999 or earlier
+
+## Advanced: Group events by date
+SELECT DATE(event_date), COUNT(*) AS num_events FROM events GROUP BY DATE(event_date)
+# Expected:
+# 2024-01-15, 3
+
+## Cleanup
+DROP TABLE events
+DROP TABLE users
