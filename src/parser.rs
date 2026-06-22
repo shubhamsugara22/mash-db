@@ -4184,3 +4184,89 @@ pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
     let select_sql = tokens_to_sql(&tokens[i..]);
     Ok((table_name, select_sql))
 }
+
+
+/// CTE (Common Table Expression) representation
+#[derive(Debug, Clone)]
+pub struct CommonTableExpression {
+    pub name: String,
+    pub query: String,
+}
+
+/// Parse a WITH clause: WITH cte_name AS (SELECT ...) SELECT ...
+pub fn parse_cte(input: &str) -> Result<(Option<CommonTableExpression>, String), String> {
+    let upper = input.to_uppercase();
+    
+    if !upper.starts_with("WITH ") {
+        // No CTE, return None for CTE and original query
+        return Ok((None, input.to_string()));
+    }
+    
+    let tokens = tokenize(input);
+    let mut i = 0;
+    
+    // Expect: WITH cte_name AS (SELECT ...) SELECT ...
+    if tokens.get(i) != Some(&Token::With) {
+        return Err("Expected WITH".to_string());
+    }
+    i += 1;
+    
+    // Get CTE name
+    let cte_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
+        i += 1;
+        n
+    } else {
+        return Err("Expected CTE name after WITH".to_string());
+    };
+    
+    // Expect AS
+    if tokens.get(i) != Some(&Token::As) {
+        return Err("Expected AS after CTE name".to_string());
+    }
+    i += 1;
+    
+    // Expect (
+    if tokens.get(i) != Some(&Token::LParen) {
+        return Err("Expected ( after AS".to_string());
+    }
+    i += 1;
+    
+    // Find matching closing parenthesis for the CTE query
+    let mut paren_depth = 1;
+    let cte_start = i;
+    while i < tokens.len() && paren_depth > 0 {
+        match tokens.get(i) {
+            Some(Token::LParen) => paren_depth += 1,
+            Some(Token::RParen) => paren_depth -= 1,
+            _ => {}
+        }
+        if paren_depth > 0 {
+            i += 1;
+        }
+    }
+    
+    if paren_depth != 0 {
+        return Err("Unclosed parenthesis in CTE definition".to_string());
+    }
+    
+    // Extract CTE query SQL
+    let cte_query_tokens = &tokens[cte_start..i];
+    let cte_query = tokens_to_sql(cte_query_tokens);
+    i += 1; // Skip closing paren
+    
+    // Rest is the main SELECT query
+    let main_query_tokens = &tokens[i..];
+    let main_query = tokens_to_sql(main_query_tokens);
+    
+    if main_query.trim().is_empty() {
+        return Err("Expected SELECT after CTE definition".to_string());
+    }
+    
+    let cte = CommonTableExpression {
+        name: cte_name,
+        query: cte_query,
+    };
+    
+    Ok((Some(cte), main_query))
+}
