@@ -3358,4 +3358,120 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_file("test_ymd.json");
     }
+
+    // ===== CTE (WITH Clause) TESTS =====
+
+    #[test]
+    fn test_parse_cte_simple() {
+        let sql = "WITH temp AS (SELECT id, username FROM users) SELECT * FROM temp";
+        let result = parse_cte(sql);
+        assert!(result.is_ok());
+        let (cte, main_query) = result.unwrap();
+        assert!(cte.is_some());
+        let cte = cte.unwrap();
+        assert_eq!(cte.name, "temp");
+        assert!(cte.query.to_uppercase().contains("SELECT"));
+        assert!(main_query.to_uppercase().starts_with("SELECT"));
+    }
+
+    #[test]
+    fn test_parse_cte_without_with() {
+        let sql = "SELECT * FROM users";
+        let result = parse_cte(sql);
+        assert!(result.is_ok());
+        let (cte, main_query) = result.unwrap();
+        assert!(cte.is_none());
+        assert_eq!(main_query, sql);
+    }
+
+    #[test]
+    fn test_parse_cte_complex_query() {
+        let sql = "WITH high_value_orders AS (SELECT * FROM orders WHERE amount > 1000) SELECT * FROM high_value_orders";
+        let result = parse_cte(sql);
+        assert!(result.is_ok());
+        let (cte, _) = result.unwrap();
+        assert!(cte.is_some());
+        let cte = cte.unwrap();
+        assert_eq!(cte.name, "high_value_orders");
+    }
+
+    #[test]
+    fn test_parse_cte_name_extraction() {
+        let sql = "WITH my_cte AS (SELECT id FROM users) SELECT * FROM my_cte";
+        let result = parse_cte(sql);
+        assert!(result.is_ok());
+        let (cte, _) = result.unwrap();
+        let cte = cte.unwrap();
+        assert_eq!(cte.name, "my_cte");
+    }
+
+    #[test]
+    fn test_parse_cte_nested_parens() {
+        let sql = "WITH filtered_data AS (SELECT id, (SELECT COUNT(*) FROM users) AS cnt FROM orders) SELECT * FROM filtered_data";
+        let result = parse_cte(sql);
+        assert!(result.is_ok());
+        let (cte, main_query) = result.unwrap();
+        assert!(cte.is_some());
+        assert!(main_query.to_uppercase().contains("SELECT"));
+    }
+
+    #[test]
+    fn test_cte_structure() {
+        let sql = "WITH summary AS (SELECT id, COUNT(*) as cnt FROM orders GROUP BY id) SELECT * FROM summary";
+        let result = parse_cte(sql);
+        assert!(result.is_ok());
+        let (cte, main_query) = result.unwrap();
+        let cte = cte.unwrap();
+        
+        // Verify CTE has name and query
+        assert!(!cte.name.is_empty());
+        assert!(!cte.query.is_empty());
+        
+        // Verify main query exists
+        assert!(!main_query.is_empty());
+    }
+
+    #[test]
+    fn test_cte_with_aggregates() {
+        let sql = "WITH monthly_sales AS (SELECT MONTH(date) as m, SUM(amount) FROM sales GROUP BY MONTH(date)) SELECT * FROM monthly_sales";
+        let result = parse_cte(sql);
+        assert!(result.is_ok());
+        let (cte, _) = result.unwrap();
+        assert!(cte.is_some());
+        let cte_query = cte.unwrap().query;
+        assert!(cte_query.to_uppercase().contains("SELECT"));
+    }
+
+    #[test]
+    fn test_cte_whitespace_handling() {
+        let sql = "  WITH  my_data  AS  (  SELECT * FROM users  )  SELECT * FROM my_data  ";
+        let result = parse_cte(sql);
+        assert!(result.is_ok());
+        let (cte, _) = result.unwrap();
+        assert!(cte.is_some());
+        assert_eq!(cte.unwrap().name, "my_data");
+    }
+
+    #[test]
+    fn test_tokenize_with_keyword() {
+        let tokens = tokenize("WITH cte_name AS SELECT");
+        assert!(tokens.contains(&Token::With));
+    }
+
+    #[test]
+    fn test_cte_roundtrip() {
+        let original_sql = "WITH filtered AS (SELECT id, username FROM users WHERE id > 5) SELECT * FROM filtered";
+        let result = parse_cte(original_sql);
+        assert!(result.is_ok());
+        let (cte, main_query) = result.unwrap();
+        
+        let cte = cte.unwrap();
+        assert!(!cte.name.is_empty());
+        assert!(!cte.query.is_empty());
+        assert!(!main_query.is_empty());
+        
+        // Verify we can extract the key parts
+        assert_eq!(cte.name, "filtered");
+        assert!(main_query.contains("filtered"));
+    }
 }

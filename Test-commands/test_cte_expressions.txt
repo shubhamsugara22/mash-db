@@ -1,0 +1,181 @@
+# Test Commands for CTE (WITH Clause) Support
+
+## Note
+CTE parsing is complete and tested. The following examples show the intended usage
+once CTE execution is integrated into the query engine.
+
+## Setup Tables
+CREATE TABLE products (id, name, category, price, stock)
+INSERT INTO products VALUES (1, Widget, Tools, 19.99, 100)
+INSERT INTO products VALUES (2, Gadget, Electronics, 49.99, 50)
+INSERT INTO products VALUES (3, Device, Electronics, 99.99, 25)
+INSERT INTO products VALUES (4, Hammer, Tools, 14.99, 200)
+
+CREATE TABLE sales (id, product_id, quantity, sale_date, amount)
+INSERT INTO sales VALUES (1, 1, 10, 2024-01-15, 199.90)
+INSERT INTO sales VALUES (2, 2, 5, 2024-01-20, 249.95)
+INSERT INTO sales VALUES (3, 3, 2, 2024-02-10, 199.98)
+INSERT INTO sales VALUES (4, 1, 20, 2024-02-15, 399.80)
+INSERT INTO sales VALUES (5, 2, 3, 2024-03-05, 149.97)
+
+## CTE Test Cases (Parser Validation)
+
+## Test 1: Simple CTE with WHERE
+WITH expensive_products AS (
+    SELECT id, name, price FROM products WHERE price > 30
+)
+SELECT * FROM expensive_products
+# Expected parsing: CTE name = "expensive_products", Main query selects from CTE
+
+## Test 2: CTE with Aggregation
+WITH category_totals AS (
+    SELECT category, COUNT(*) as num_products, SUM(price) as total_value
+    FROM products
+    GROUP BY category
+)
+SELECT * FROM category_totals
+# Expected: Aggregates and GROUP BY work in CTE
+
+## Test 3: CTE with ORDER BY
+WITH sorted_products AS (
+    SELECT id, name, price FROM products ORDER BY price DESC
+)
+SELECT * FROM sorted_products
+# Expected: ORDER BY clause in CTE
+
+## Test 4: CTE with Date Functions
+WITH 2024_sales AS (
+    SELECT id, product_id, YEAR(sale_date) as year, MONTH(sale_date) as month, amount
+    FROM sales
+    WHERE YEAR(sale_date) = 2024
+)
+SELECT * FROM 2024_sales
+# Expected: Date functions work in CTE
+
+## Test 5: CTE with Filtering
+WITH high_stock_items AS (
+    SELECT name, stock FROM products WHERE stock > 50
+)
+SELECT * FROM high_stock_items
+# Expected: CTE filters results
+
+## Test 6: CTE with Multiple Conditions
+WITH mid_range_products AS (
+    SELECT id, name, price FROM products
+    WHERE price > 15 AND price < 75 AND stock > 30
+)
+SELECT * FROM mid_range_products
+# Expected: Complex WHERE with AND conditions
+
+## Test 7: CTE with DISTINCT
+WITH unique_categories AS (
+    SELECT DISTINCT category FROM products
+)
+SELECT * FROM unique_categories
+# Expected: DISTINCT in CTE
+
+## Test 8: CTE with LIMIT
+WITH top_priced_items AS (
+    SELECT id, name, price FROM products ORDER BY price DESC LIMIT 3
+)
+SELECT * FROM top_priced_items
+# Expected: LIMIT in CTE
+
+## Test 9: CTE with Multiple Aggregates
+WITH sales_summary AS (
+    SELECT 
+        product_id,
+        COUNT(*) as transaction_count,
+        SUM(amount) as total_sales,
+        AVG(amount) as avg_transaction
+    FROM sales
+    GROUP BY product_id
+)
+SELECT * FROM sales_summary
+# Expected: Multiple aggregate functions in CTE
+
+## Test 10: CTE with String Functions
+WITH formatted_names AS (
+    SELECT id, UPPER(name) as uppercase_name, LOWER(category) as lowercase_cat
+    FROM products
+)
+SELECT * FROM formatted_names
+# Expected: String functions in CTE
+
+## Advanced CTE Examples (Future Multi-CTE Support)
+
+## Test 11: Cascading CTEs (Future Feature)
+WITH expensive_products AS (
+    SELECT id, name, price FROM products WHERE price > 50
+),
+high_stock_expensive AS (
+    SELECT * FROM expensive_products WHERE id IN (SELECT id FROM products WHERE stock > 30)
+)
+SELECT * FROM high_stock_expensive
+# Expected (Future): Reference first CTE in second CTE
+
+## Test 12: Multi-Step Transformation (Future)
+WITH step1_filtered AS (
+    SELECT * FROM products WHERE stock > 0
+),
+step2_categorized AS (
+    SELECT category, COUNT(*) FROM step1_filtered GROUP BY category
+)
+SELECT * FROM step2_categorized
+# Expected (Future): Multi-step data pipeline
+
+## Performance Test Cases
+
+## Test 13: CTE with Large Result Set
+WITH all_sales_expanded AS (
+    SELECT product_id, quantity, amount, 
+           quantity * 100 as expanded_qty,
+           amount * 1.1 as with_tax
+    FROM sales
+)
+SELECT * FROM all_sales_expanded
+# Expected: Handles computed columns in CTE
+
+## Test 14: CTE with Complex Filtering
+WITH filtered_data AS (
+    SELECT id, name, price, stock
+    FROM products
+    WHERE (category = 'Electronics' AND price > 40) 
+       OR (category = 'Tools' AND stock > 100)
+)
+SELECT * FROM filtered_data
+# Expected: Complex boolean logic in CTE
+
+## Validation Test Cases
+
+## Test 15: CTE with Year Aggregation
+WITH sales_by_year AS (
+    SELECT YEAR(sale_date) as year, COUNT(*) as num_sales, SUM(amount) as total
+    FROM sales
+    GROUP BY YEAR(sale_date)
+)
+SELECT * FROM sales_by_year
+# Expected: Temporal grouping in CTE
+
+## Test 16: CTE with Month Extraction
+WITH monthly_breakdown AS (
+    SELECT 
+        MONTH(sale_date) as month,
+        COUNT(*) as transactions,
+        AVG(amount) as avg_transaction_value
+    FROM sales
+    GROUP BY MONTH(sale_date)
+)
+SELECT * FROM monthly_breakdown
+# Expected: Monthly aggregation in CTE
+
+## Cleanup
+DROP TABLE sales
+DROP TABLE products
+
+## Expected Test Results
+- All CTE parsing tests should succeed
+- CTE names should be correctly extracted
+- Main queries should be correctly identified
+- Complex queries with functions/aggregates in CTEs should parse correctly
+- Whitespace and formatting variations should be handled

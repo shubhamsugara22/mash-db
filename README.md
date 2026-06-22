@@ -257,6 +257,24 @@ SELECT DATE(created_at), TIME(created_at) FROM events
 SELECT YEAR(birthdate), MONTH(birthdate), DAY(birthdate) FROM users
 SELECT * FROM orders WHERE YEAR(order_date) = 2024
 SELECT MONTH(purchase_date), COUNT(*) FROM sales GROUP BY MONTH(purchase_date)
+
+-- Common Table Expressions (CTEs with WITH clause)
+WITH high_value_orders AS (
+    SELECT id, amount FROM orders WHERE amount > 1000
+)
+SELECT * FROM high_value_orders
+
+WITH monthly_sales AS (
+    SELECT MONTH(sale_date) as month, SUM(amount) as total
+    FROM sales
+    GROUP BY MONTH(sale_date)
+)
+SELECT month, total FROM monthly_sales ORDER BY total DESC
+
+WITH recent_users AS (
+    SELECT id, username FROM users WHERE YEAR(created_at) = 2024
+)
+SELECT username FROM recent_users ORDER BY username
 ```
 
 ## Architecture
@@ -301,7 +319,8 @@ SELECT MONTH(purchase_date), COUNT(*) FROM sales GROUP BY MONTH(purchase_date)
 - [x] BETWEEN operator for range queries
 - [x] Window functions (ROW_NUMBER, RANK, DENSE_RANK, LEAD, LAG with offset/default) — PARTITION BY and ORDER BY supported
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
-- [ ] Common Table Expressions (WITH/CTE)
+- [x] Common Table Expressions (WITH clause) — Parser complete, execution integration pending
+- [ ] More date functions (HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB)
 - [ ] Full text search
 - [ ] Foreign key constraints
 - [ ] PRIMARY KEY and UNIQUE constraints

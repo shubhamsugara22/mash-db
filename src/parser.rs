@@ -89,7 +89,6 @@ pub enum Token {
     Month,
     Day,
     With,
-    As,
     RowNumber,
     Rank,
     DenseRank,
@@ -4195,14 +4194,15 @@ pub struct CommonTableExpression {
 
 /// Parse a WITH clause: WITH cte_name AS (SELECT ...) SELECT ...
 pub fn parse_cte(input: &str) -> Result<(Option<CommonTableExpression>, String), String> {
-    let upper = input.to_uppercase();
+    let trimmed = input.trim();
+    let upper = trimmed.to_uppercase();
     
     if !upper.starts_with("WITH ") {
         // No CTE, return None for CTE and original query
         return Ok((None, input.to_string()));
     }
     
-    let tokens = tokenize(input);
+    let tokens = tokenize(trimmed);
     let mut i = 0;
     
     // Expect: WITH cte_name AS (SELECT ...) SELECT ...
