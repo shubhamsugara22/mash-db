@@ -275,6 +275,35 @@ WITH recent_users AS (
     SELECT id, username FROM users WHERE YEAR(created_at) = 2024
 )
 SELECT username FROM recent_users ORDER BY username
+
+-- Index creation and management
+CREATE INDEX idx_email ON users (email)                    -- Create index on email
+CREATE INDEX idx_order_date ON orders (order_date)        -- Create index on date column
+CREATE INDEX idx_customer_id ON orders (customer_id)      -- Create index for JOINs
+DROP INDEX idx_order_date                                 -- Drop unused index
+```
+
+## DDL Commands - Index Management
+
+```sql
+-- Create indexes for performance optimization
+db > CREATE INDEX idx_email ON users (email)
+Index 'idx_email' created on users.email
+
+-- Create multiple indexes for different purposes
+db > CREATE INDEX idx_price ON products (price)
+Index 'idx_price' created on products.price
+
+db > CREATE INDEX idx_customer ON orders (customer_id)
+Index 'idx_customer' created on orders.customer_id
+
+-- Drop an index
+db > DROP INDEX idx_email
+Index 'idx_email' dropped
+
+-- Try to drop non-existent index (error)
+db > DROP INDEX nonexistent
+Error: Index 'nonexistent' not found
 ```
 
 ## Architecture
@@ -320,6 +349,7 @@ SELECT username FROM recent_users ORDER BY username
 - [x] Window functions (ROW_NUMBER, RANK, DENSE_RANK, LEAD, LAG with offset/default) — PARTITION BY and ORDER BY supported
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
 - [x] Common Table Expressions (WITH clause) — Parser complete, execution integration pending
+- [x] CREATE INDEX / DROP INDEX statements — Parser complete for explicit index creation
 - [ ] More date functions (HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB)
 - [ ] Full text search
 - [ ] Foreign key constraints
