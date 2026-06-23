@@ -89,6 +89,7 @@ pub enum Token {
     Month,
     Day,
     With,
+    Index,
     RowNumber,
     Rank,
     DenseRank,
@@ -374,6 +375,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "MONTH" => Token::Month,
                     "DAY" => Token::Day,
                     "WITH" => Token::With,
+                    "INDEX" => Token::Index,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IS" => Token::Is,
@@ -569,6 +571,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Month => "MONTH".to_string(),
         Token::Day => "DAY".to_string(),
         Token::With => "WITH".to_string(),
+        Token::Index => "INDEX".to_string(),
         Token::RowNumber => "ROW_NUMBER".to_string(),
         Token::Rank => "RANK".to_string(),
         Token::DenseRank => "DENSE_RANK".to_string(),
@@ -4269,4 +4272,119 @@ pub fn parse_cte(input: &str) -> Result<(Option<CommonTableExpression>, String),
     };
     
     Ok((Some(cte), main_query))
+}
+
+
+/// Index specification for CREATE INDEX
+#[derive(Debug, Clone)]
+pub struct IndexDefinition {
+    pub index_name: String,
+    pub table_name: String,
+    pub column_name: String,
+}
+
+/// Parse CREATE INDEX statement
+/// Syntax: CREATE INDEX index_name ON table_name (column_name)
+pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
+    let tokens = tokenize(input);
+    let mut i = 0;
+    
+    // Expect: CREATE INDEX index_name ON table_name (column_name)
+    if tokens.get(i) != Some(&Token::Create) {
+        return Err("Expected CREATE".to_string());
+    }
+    i += 1;
+    
+    if tokens.get(i) != Some(&Token::Index) {
+        return Err("Expected INDEX after CREATE".to_string());
+    }
+    i += 1;
+    
+    // Get index name
+    let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
+        i += 1;
+        n
+    } else {
+        return Err("Expected index name after CREATE INDEX".to_string());
+    };
+    
+    // Expect ON
+    if tokens.get(i) != Some(&Token::On) {
+        return Err("Expected ON after index name".to_string());
+    }
+    i += 1;
+    
+    // Get table name
+    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
+        i += 1;
+        n
+    } else {
+        return Err("Expected table name after ON".to_string());
+    };
+    
+    // Expect (
+    if tokens.get(i) != Some(&Token::LParen) {
+        return Err("Expected ( after table name".to_string());
+    }
+    i += 1;
+    
+    // Get column name
+    let column_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
+        i += 1;
+        n
+    } else {
+        return Err("Expected column name inside parentheses".to_string());
+    };
+    
+    // Expect )
+    if tokens.get(i) != Some(&Token::RParen) {
+        return Err("Expected ) after column name".to_string());
+    }
+    i += 1;
+    
+    // Should be end of statement
+    if i < tokens.len() {
+        return Err("Unexpected tokens after CREATE INDEX statement".to_string());
+    }
+    
+    Ok(IndexDefinition {
+        index_name,
+        table_name,
+        column_name,
+    })
+}
+
+/// Parse DROP INDEX statement
+/// Syntax: DROP INDEX index_name
+pub fn parse_drop_index(input: &str) -> Result<String, String> {
+    let tokens = tokenize(input);
+    let mut i = 0;
+    
+    if tokens.get(i) != Some(&Token::Drop) {
+        return Err("Expected DROP".to_string());
+    }
+    i += 1;
+    
+    if tokens.get(i) != Some(&Token::Index) {
+        return Err("Expected INDEX after DROP".to_string());
+    }
+    i += 1;
+    
+    let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
+        i += 1;
+        n
+    } else {
+        return Err("Expected index name after DROP INDEX".to_string());
+    };
+    
+    // Should be end of statement
+    if i < tokens.len() {
+        return Err("Unexpected tokens after DROP INDEX statement".to_string());
+    }
+    
+    Ok(index_name)
 }
