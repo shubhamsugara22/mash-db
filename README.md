@@ -71,6 +71,11 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
     - `YEAR(col)` - Extract year from date/timestamp
     - `MONTH(col)` - Extract month (1-12) from date/timestamp
     - `DAY(col)` - Extract day (1-31) from date/timestamp
+    - `HOUR(col)` - Extract hour (0-23) from time/timestamp
+    - `MINUTE(col)` - Extract minute (0-59) from time/timestamp
+    - `SECOND(col)` - Extract second (0-59) from time/timestamp
+    - `DATE_ADD(col, days)` - Add days to date
+    - `DATE_SUB(col, days)` - Subtract days from date
   - **GROUP BY**: Group results by any columns (e.g., `GROUP BY category, supplier`)
   - **HAVING**: Filter grouped results with conditions
   - **ORDER BY (qualified)**: Sort results ASC/DESC with table qualifiers
@@ -255,8 +260,12 @@ SELECT CAST(price AS INTEGER), CAST(id AS TEXT) FROM products
 SELECT NOW() FROM users  -- Current UNIX timestamp
 SELECT DATE(created_at), TIME(created_at) FROM events
 SELECT YEAR(birthdate), MONTH(birthdate), DAY(birthdate) FROM users
+SELECT HOUR(created_at), MINUTE(created_at), SECOND(created_at) FROM events
 SELECT * FROM orders WHERE YEAR(order_date) = 2024
 SELECT MONTH(purchase_date), COUNT(*) FROM sales GROUP BY MONTH(purchase_date)
+SELECT HOUR(event_time), COUNT(*) FROM events GROUP BY HOUR(event_time)
+SELECT DATE_ADD(order_date, 30) as delivery_date FROM orders
+SELECT DATE_SUB(TODAY, 90) as three_months_ago
 
 -- Common Table Expressions (CTEs with WITH clause)
 WITH high_value_orders AS (
@@ -350,7 +359,8 @@ Error: Index 'nonexistent' not found
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
 - [x] Common Table Expressions (WITH clause) — Parser complete, execution integration pending
 - [x] CREATE INDEX / DROP INDEX statements — Parser complete for explicit index creation
-- [ ] More date functions (HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB)
+- [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB)
+- [ ] More date functions (DATEDIFF, DATE_TRUNC, WEEK, QUARTER)
 - [ ] Full text search
 - [ ] Foreign key constraints
 - [ ] PRIMARY KEY and UNIQUE constraints

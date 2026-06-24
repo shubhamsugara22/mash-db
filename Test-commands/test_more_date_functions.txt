@@ -1,0 +1,168 @@
+# Test Commands for More Date Functions (HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB)
+
+# ===== SETUP =====
+CREATE TABLE events (id, created_at, event_type, duration)
+
+# ===== INSERT TEST DATA =====
+INSERT INTO events VALUES (1, '2024-06-15 08:15:30', 'login', '5')
+INSERT INTO events VALUES (2, '2024-06-15 14:45:20', 'purchase', '120')
+INSERT INTO events VALUES (3, '2024-06-15 23:59:59', 'logout', '2')
+INSERT INTO events VALUES (4, '2024-06-16 00:00:00', 'system', '1')
+INSERT INTO events VALUES (5, '2024-06-16 12:30:45', 'backup', '300')
+
+# ===== HOUR FUNCTION TESTS =====
+
+# Basic HOUR extraction from datetime string
+SELECT HOUR(created_at) FROM events
+
+# HOUR from time string literal
+SELECT HOUR('14:30:45')
+
+# HOUR with WHERE clause
+SELECT id, event_type, HOUR(created_at) as hour FROM events WHERE HOUR(created_at) >= 12
+
+# HOUR with GROUP BY
+SELECT HOUR(created_at), COUNT(*) FROM events GROUP BY HOUR(created_at)
+
+# ===== MINUTE FUNCTION TESTS =====
+
+# Basic MINUTE extraction
+SELECT MINUTE(created_at) FROM events
+
+# MINUTE from time string literal
+SELECT MINUTE('14:30:45')
+
+# MINUTE with WHERE clause
+SELECT id, event_type, MINUTE(created_at) as minute FROM events WHERE MINUTE(created_at) < 30
+
+# MINUTE with GROUP BY
+SELECT MINUTE(created_at), COUNT(*) FROM events GROUP BY MINUTE(created_at)
+
+# ===== SECOND FUNCTION TESTS =====
+
+# Basic SECOND extraction
+SELECT SECOND(created_at) FROM events
+
+# SECOND from time string literal
+SELECT SECOND('14:30:45')
+
+# SECOND with WHERE clause
+SELECT id, event_type, SECOND(created_at) as second FROM events WHERE SECOND(created_at) > 0
+
+# SECOND with GROUP BY (showing seconds distribution)
+SELECT SECOND(created_at), COUNT(*) FROM events GROUP BY SECOND(created_at)
+
+# ===== DATE_ADD FUNCTION TESTS =====
+
+# Basic DATE_ADD (add 7 days)
+SELECT DATE_ADD('2024-06-15', 7)
+
+# DATE_ADD with negative offset (subtract via negative)
+SELECT DATE_ADD('2024-06-15', -3)
+
+# DATE_ADD on column
+SELECT id, created_at, DATE_ADD(created_at, 30) as future_date FROM events
+
+# DATE_ADD with GROUP BY
+SELECT DATE_ADD(created_at, 7) as future_date, COUNT(*) FROM events GROUP BY DATE_ADD(created_at, 7)
+
+# ===== DATE_SUB FUNCTION TESTS =====
+
+# Basic DATE_SUB (subtract 7 days)
+SELECT DATE_SUB('2024-06-15', 7)
+
+# DATE_SUB with large offset
+SELECT DATE_SUB('2024-06-15', 90)
+
+# DATE_SUB on column
+SELECT id, created_at, DATE_SUB(created_at, 5) as past_date FROM events
+
+# DATE_SUB with WHERE (events from past 3 days)
+SELECT * FROM events WHERE created_at >= DATE_SUB('2024-06-16', 3)
+
+# ===== COMPLEX QUERIES =====
+
+# All time components together
+SELECT 
+  id, 
+  created_at, 
+  HOUR(created_at) as hour, 
+  MINUTE(created_at) as minute, 
+  SECOND(created_at) as second 
+FROM events
+
+# Time components in ORDER BY
+SELECT id, event_type, created_at 
+FROM events 
+ORDER BY HOUR(created_at) DESC, MINUTE(created_at) ASC
+
+# Morning vs Afternoon events
+SELECT 
+  CASE 
+    WHEN HOUR(created_at) < 12 THEN 'Morning'
+    ELSE 'Afternoon'
+  END as period,
+  COUNT(*) as count
+FROM events
+GROUP BY period
+
+# Calculate delivery dates (add 30 days to event date)
+SELECT 
+  id, 
+  event_type, 
+  created_at as order_date,
+  DATE_ADD(created_at, 30) as delivery_date
+FROM events
+
+# Recent events (last 7 days)
+SELECT * FROM events 
+WHERE created_at >= DATE_SUB('2024-06-16', 7)
+
+# Events within time range (8 AM to 6 PM)
+SELECT id, event_type, created_at 
+FROM events 
+WHERE HOUR(created_at) >= 8 AND HOUR(created_at) < 18
+
+# Peak activity minutes (between minute 30-45)
+SELECT id, event_type, MINUTE(created_at) as minute 
+FROM events 
+WHERE MINUTE(created_at) >= 30 AND MINUTE(created_at) < 45
+
+# ===== COMBINED WITH OTHER DATE FUNCTIONS =====
+
+# Show date, hour, minute, and relative date
+SELECT 
+  DATE(created_at) as event_date,
+  HOUR(created_at) as hour,
+  MINUTE(created_at) as minute,
+  DATE_ADD(created_at, 14) as two_week_reminder
+FROM events
+
+# Show year, month, day plus time components
+SELECT 
+  YEAR(created_at) as year,
+  MONTH(created_at) as month,
+  DAY(created_at) as day,
+  HOUR(created_at) as hour
+FROM events
+ORDER BY hour
+
+# ===== EDGE CASES =====
+
+# Midnight to 1 AM
+SELECT * FROM events WHERE HOUR(created_at) = 0
+
+# Last hour of day
+SELECT * FROM events WHERE HOUR(created_at) = 23
+
+# Specific minute
+SELECT * FROM events WHERE MINUTE(created_at) = 0
+
+# Specific second
+SELECT * FROM events WHERE SECOND(created_at) = 0
+
+# Test with DATE literal
+SELECT DATE_ADD('2024-01-31', 1)   # Test month boundary
+
+# ===== CLEANUP =====
+DROP TABLE events
