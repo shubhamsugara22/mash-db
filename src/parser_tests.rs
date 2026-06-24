@@ -3622,4 +3622,288 @@ mod tests {
         assert_ne!(idx1.table_name, idx2.table_name);
         assert_ne!(idx1.column_name, idx2.column_name);
     }
+
+    // ===== NEW DATE FUNCTIONS: HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB =====
+
+    #[test]
+    fn test_parse_hour_function() {
+        let tokens = tokenize("SELECT HOUR(created_at) FROM events");
+        assert!(tokens.iter().any(|t| matches!(t, Token::Hour)));
+    }
+
+    #[test]
+    fn test_parse_minute_function() {
+        let tokens = tokenize("SELECT MINUTE(created_at) FROM events");
+        assert!(tokens.iter().any(|t| matches!(t, Token::Minute)));
+    }
+
+    #[test]
+    fn test_parse_second_function() {
+        let tokens = tokenize("SELECT SECOND(created_at) FROM events");
+        assert!(tokens.iter().any(|t| matches!(t, Token::Second)));
+    }
+
+    #[test]
+    fn test_parse_date_add_function() {
+        let tokens = tokenize("SELECT DATE_ADD(order_date, 7) FROM orders");
+        assert!(tokens.iter().any(|t| matches!(t, Token::DateAdd)));
+    }
+
+    #[test]
+    fn test_parse_date_sub_function() {
+        let tokens = tokenize("SELECT DATE_SUB(order_date, 3) FROM orders");
+        assert!(tokens.iter().any(|t| matches!(t, Token::DateSub)));
+    }
+
+    #[test]
+    fn test_parse_select_with_hour_column() {
+        let result = parse_select("SELECT HOUR(timestamp_col) FROM events");
+        assert!(result.is_ok());
+        let select = result.unwrap();
+        match &select.columns {
+            Some(cols) => {
+                assert_eq!(cols.len(), 1);
+                match &cols[0] {
+                    SelectColumn::Column(col) => assert!(col.contains("__hour__")),
+                    _ => panic!("Expected Column"),
+                }
+            }
+            None => panic!("Expected Some(columns)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_minute_column() {
+        let result = parse_select("SELECT MINUTE(timestamp_col) FROM events");
+        assert!(result.is_ok());
+        let select = result.unwrap();
+        match &select.columns {
+            Some(cols) => {
+                assert_eq!(cols.len(), 1);
+                match &cols[0] {
+                    SelectColumn::Column(col) => assert!(col.contains("__minute__")),
+                    _ => panic!("Expected Column"),
+                }
+            }
+            None => panic!("Expected Some(columns)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_second_column() {
+        let result = parse_select("SELECT SECOND(timestamp_col) FROM events");
+        assert!(result.is_ok());
+        let select = result.unwrap();
+        match &select.columns {
+            Some(cols) => {
+                assert_eq!(cols.len(), 1);
+                match &cols[0] {
+                    SelectColumn::Column(col) => assert!(col.contains("__second__")),
+                    _ => panic!("Expected Column"),
+                }
+            }
+            None => panic!("Expected Some(columns)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_date_add_column() {
+        let result = parse_select("SELECT DATE_ADD(order_date, 7) FROM orders");
+        assert!(result.is_ok());
+        let select = result.unwrap();
+        match &select.columns {
+            Some(cols) => {
+                assert_eq!(cols.len(), 1);
+                match &cols[0] {
+                    SelectColumn::Column(col) => assert!(col.contains("__date_add__")),
+                    _ => panic!("Expected Column"),
+                }
+            }
+            None => panic!("Expected Some(columns)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_date_sub_column() {
+        let result = parse_select("SELECT DATE_SUB(order_date, 3) FROM orders");
+        assert!(result.is_ok());
+        let select = result.unwrap();
+        match &select.columns {
+            Some(cols) => {
+                assert_eq!(cols.len(), 1);
+                match &cols[0] {
+                    SelectColumn::Column(col) => assert!(col.contains("__date_sub__")),
+                    _ => panic!("Expected Column"),
+                }
+            }
+            None => panic!("Expected Some(columns)"),
+        }
+    }
+
+    // Runtime evaluation tests
+    #[test]
+    fn test_hour_extraction_from_time_string() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("created_at".to_string(), "14:30:45".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__hour__:created_at");
+        assert_eq!(result, Some("14".to_string()));
+    }
+
+    #[test]
+    fn test_minute_extraction_from_time_string() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("created_at".to_string(), "14:30:45".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__minute__:created_at");
+        assert_eq!(result, Some("30".to_string()));
+    }
+
+    #[test]
+    fn test_second_extraction_from_time_string() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("created_at".to_string(), "14:30:45".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__second__:created_at");
+        assert_eq!(result, Some("45".to_string()));
+    }
+
+    #[test]
+    fn test_hour_extraction_from_datetime_string() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("created_at".to_string(), "2024-06-15 16:45:30".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__hour__:created_at");
+        assert_eq!(result, Some("16".to_string()));
+    }
+
+    #[test]
+    fn test_date_add_with_date_string() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("order_date".to_string(), "2024-06-15".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__date_add__:order_date\x1F7");
+        assert_eq!(result, Some("2024-06-22".to_string()));
+    }
+
+    #[test]
+    fn test_date_sub_with_date_string() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("order_date".to_string(), "2024-06-15".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__date_sub__:order_date\x1F3");
+        assert_eq!(result, Some("2024-06-12".to_string()));
+    }
+
+    #[test]
+    fn test_hour_minute_second_from_unix_timestamp() {
+        use std::collections::HashMap;
+        // Unix timestamp for 1970-01-01 12:34:56 UTC (45296 seconds)
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("timestamp".to_string(), "45296".to_string()); // 12:34:56 on epoch day
+                m
+            },
+        };
+        
+        let hour = row.eval_col("__hour__:timestamp");
+        let minute = row.eval_col("__minute__:timestamp");
+        let second = row.eval_col("__second__:timestamp");
+        
+        assert_eq!(hour, Some("12".to_string()));
+        assert_eq!(minute, Some("34".to_string()));
+        assert_eq!(second, Some("56".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_hour_minute_second_on_different_times() {
+        use std::collections::HashMap;
+        let row1 = Row {
+            id: 1,
+            username: "test1".to_string(),
+            email: "test1@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("time".to_string(), "08:15:30".to_string());
+                m
+            },
+        };
+
+        let row2 = Row {
+            id: 2,
+            username: "test2".to_string(),
+            email: "test2@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("time".to_string(), "23:59:59".to_string());
+                m
+            },
+        };
+
+        assert_eq!(row1.eval_col("__hour__:time"), Some("08".to_string()));
+        assert_eq!(row1.eval_col("__minute__:time"), Some("15".to_string()));
+        assert_eq!(row1.eval_col("__second__:time"), Some("30".to_string()));
+
+        assert_eq!(row2.eval_col("__hour__:time"), Some("23".to_string()));
+        assert_eq!(row2.eval_col("__minute__:time"), Some("59".to_string()));
+        assert_eq!(row2.eval_col("__second__:time"), Some("59".to_string()));
+    }
 }
