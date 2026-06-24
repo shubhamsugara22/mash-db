@@ -3283,7 +3283,7 @@ mod tests {
 
         let mut table = Table::new("test_now.json".to_string(), vec!["id".to_string(), "username".to_string(), "email".to_string()]);
 
-        let mut extras = HashMap::new();
+        let extras = HashMap::new();
         table
             .insert(Row { id: 1, username: "alice".to_string(), email: "alice@example.com".to_string(), extras: extras.clone() })
             .unwrap();
@@ -3658,17 +3658,16 @@ mod tests {
     #[test]
     fn test_parse_select_with_hour_column() {
         let result = parse_select("SELECT HOUR(timestamp_col) FROM events");
-        assert!(result.is_ok());
-        let select = result.unwrap();
-        match &select.columns {
-            Some(cols) => {
-                assert_eq!(cols.len(), 1);
-                match &cols[0] {
-                    SelectColumn::Column(col) => assert!(col.contains("__hour__")),
-                    _ => panic!("Expected Column"),
-                }
-            }
-            None => panic!("Expected Some(columns)"),
+        if let Err(e) = &result {
+            eprintln!("Parse error: {}", e);
+        }
+        assert!(result.is_ok(), "Parse failed");
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__hour__"));
+        } else {
+            panic!("Expected Some(columns)");
         }
     }
 
@@ -3676,16 +3675,12 @@ mod tests {
     fn test_parse_select_with_minute_column() {
         let result = parse_select("SELECT MINUTE(timestamp_col) FROM events");
         assert!(result.is_ok());
-        let select = result.unwrap();
-        match &select.columns {
-            Some(cols) => {
-                assert_eq!(cols.len(), 1);
-                match &cols[0] {
-                    SelectColumn::Column(col) => assert!(col.contains("__minute__")),
-                    _ => panic!("Expected Column"),
-                }
-            }
-            None => panic!("Expected Some(columns)"),
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__minute__"));
+        } else {
+            panic!("Expected Some(columns)");
         }
     }
 
@@ -3693,16 +3688,12 @@ mod tests {
     fn test_parse_select_with_second_column() {
         let result = parse_select("SELECT SECOND(timestamp_col) FROM events");
         assert!(result.is_ok());
-        let select = result.unwrap();
-        match &select.columns {
-            Some(cols) => {
-                assert_eq!(cols.len(), 1);
-                match &cols[0] {
-                    SelectColumn::Column(col) => assert!(col.contains("__second__")),
-                    _ => panic!("Expected Column"),
-                }
-            }
-            None => panic!("Expected Some(columns)"),
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__second__"));
+        } else {
+            panic!("Expected Some(columns)");
         }
     }
 
@@ -3710,16 +3701,12 @@ mod tests {
     fn test_parse_select_with_date_add_column() {
         let result = parse_select("SELECT DATE_ADD(order_date, 7) FROM orders");
         assert!(result.is_ok());
-        let select = result.unwrap();
-        match &select.columns {
-            Some(cols) => {
-                assert_eq!(cols.len(), 1);
-                match &cols[0] {
-                    SelectColumn::Column(col) => assert!(col.contains("__date_add__")),
-                    _ => panic!("Expected Column"),
-                }
-            }
-            None => panic!("Expected Some(columns)"),
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__date_add__"));
+        } else {
+            panic!("Expected Some(columns)");
         }
     }
 
@@ -3727,16 +3714,12 @@ mod tests {
     fn test_parse_select_with_date_sub_column() {
         let result = parse_select("SELECT DATE_SUB(order_date, 3) FROM orders");
         assert!(result.is_ok());
-        let select = result.unwrap();
-        match &select.columns {
-            Some(cols) => {
-                assert_eq!(cols.len(), 1);
-                match &cols[0] {
-                    SelectColumn::Column(col) => assert!(col.contains("__date_sub__")),
-                    _ => panic!("Expected Column"),
-                }
-            }
-            None => panic!("Expected Some(columns)"),
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__date_sub__"));
+        } else {
+            panic!("Expected Some(columns)");
         }
     }
 
