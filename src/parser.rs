@@ -2600,7 +2600,12 @@ fn parse_select_tokens(
         | Some(Token::Time)
         | Some(Token::Year)
         | Some(Token::Month)
-        | Some(Token::Day) => {
+        | Some(Token::Day)
+        | Some(Token::Hour)
+        | Some(Token::Minute)
+        | Some(Token::Second)
+        | Some(Token::DateAdd)
+        | Some(Token::DateSub) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {

@@ -3657,12 +3657,18 @@ mod tests {
 
     #[test]
     fn test_parse_select_with_hour_column() {
-        let result = parse_select("SELECT HOUR(timestamp_col) FROM events");
+        // Test without FROM first to isolate the issue
+        let result = parse_select("SELECT HOUR(ts)");
         if let Err(e) = &result {
-            eprintln!("Parse error: {}", e);
+            eprintln!("Parse error (no FROM): {}", e);
         }
-        assert!(result.is_ok(), "Parse failed");
-        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        // Now try with FROM
+        let result2 = parse_select("SELECT HOUR(ts) FROM events");
+        if let Err(e) = &result2 {
+            eprintln!("Parse error (with FROM): {}", e);
+        }
+        assert!(result2.is_ok(), "Parse failed");
+        let (_, cols, _, _, _, _, _, _, _, _) = result2.unwrap();
         if let Some(columns) = cols {
             assert_eq!(columns.len(), 1);
             assert!(columns[0].contains("__hour__"));
