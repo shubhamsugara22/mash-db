@@ -587,6 +587,135 @@ impl Row {
             } else {
                 Some("1".to_string())
             }
+        } else if let Some(col) = col_expr.strip_prefix("__hour__:") {
+            // Extract hour from time or timestamp
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                let secs_in_day = timestamp % 86400;
+                let hours = secs_in_day / 3600;
+                Some(hours.to_string())
+            } else if raw.contains(':') {
+                // Already has time component, extract HH
+                if let Some(time_part) = raw.split(' ').nth(1) {
+                    if let Some(hour_str) = time_part.split(':').next() {
+                        Some(hour_str.to_string())
+                    } else {
+                        Some("0".to_string())
+                    }
+                } else {
+                    if let Some(hour_str) = raw.split(':').next() {
+                        Some(hour_str.to_string())
+                    } else {
+                        Some("0".to_string())
+                    }
+                }
+            } else {
+                Some("0".to_string())
+            }
+        } else if let Some(col) = col_expr.strip_prefix("__minute__:") {
+            // Extract minute from time or timestamp
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                let secs_in_day = timestamp % 86400;
+                let mins = (secs_in_day % 3600) / 60;
+                Some(mins.to_string())
+            } else if raw.contains(':') {
+                // Already has time component, extract MM
+                let time_part = if let Some(t) = raw.split(' ').nth(1) {
+                    t
+                } else {
+                    &raw
+                };
+                let parts: Vec<&str> = time_part.split(':').collect();
+                if parts.len() >= 2 {
+                    Some(parts[1].to_string())
+                } else {
+                    Some("0".to_string())
+                }
+            } else {
+                Some("0".to_string())
+            }
+        } else if let Some(col) = col_expr.strip_prefix("__second__:") {
+            // Extract second from time or timestamp
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                let secs_in_day = timestamp % 86400;
+                let secs = secs_in_day % 60;
+                Some(secs.to_string())
+            } else if raw.contains(':') {
+                // Already has time component, extract SS
+                let time_part = if let Some(t) = raw.split(' ').nth(1) {
+                    t
+                } else {
+                    &raw
+                };
+                let parts: Vec<&str> = time_part.split(':').collect();
+                if parts.len() >= 3 {
+                    Some(parts[2].to_string())
+                } else {
+                    Some("0".to_string())
+                }
+            } else {
+                Some("0".to_string())
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__date_add__:") {
+            // Add days to a date
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            let date_arg = parts.first().copied().unwrap_or("");
+            let interval_str = parts.get(1).copied().unwrap_or("0");
+            
+            let raw = self.get_value(date_arg).unwrap_or_else(|| date_arg.to_string());
+            let interval = interval_str.parse::<i64>().unwrap_or(0);
+            
+            if let Ok(timestamp) = raw.parse::<i64>() {
+                // It's a UNIX timestamp, add days as seconds
+                let new_timestamp = timestamp + (interval * 86400);
+                Some(new_timestamp.to_string())
+            } else if raw.contains('-') && raw.len() >= 10 {
+                // It's a date string, try to parse and add
+                let date_str = raw.chars().take(10).collect::<String>();
+                let parts: Vec<&str> = date_str.split('-').collect();
+                if parts.len() == 3 {
+                    let year = parts[0].parse::<i32>().unwrap_or(1970);
+                    let month = parts[1].parse::<u32>().unwrap_or(1);
+                    let day = parts[2].parse::<u32>().unwrap_or(1);
+                    let new_day = (day as i64 + interval).max(1);
+                    Some(format!("{:04}-{:02}-{:02}", year, month, new_day))
+                } else {
+                    Some(raw)
+                }
+            } else {
+                Some(raw)
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__date_sub__:") {
+            // Subtract days from a date
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            let date_arg = parts.first().copied().unwrap_or("");
+            let interval_str = parts.get(1).copied().unwrap_or("0");
+            
+            let raw = self.get_value(date_arg).unwrap_or_else(|| date_arg.to_string());
+            let interval = interval_str.parse::<i64>().unwrap_or(0);
+            
+            if let Ok(timestamp) = raw.parse::<i64>() {
+                // It's a UNIX timestamp, subtract days as seconds
+                let new_timestamp = timestamp - (interval * 86400);
+                Some(new_timestamp.to_string())
+            } else if raw.contains('-') && raw.len() >= 10 {
+                // It's a date string, try to parse and subtract
+                let date_str = raw.chars().take(10).collect::<String>();
+                let parts: Vec<&str> = date_str.split('-').collect();
+                if parts.len() == 3 {
+                    let year = parts[0].parse::<i32>().unwrap_or(1970);
+                    let month = parts[1].parse::<u32>().unwrap_or(1);
+                    let day = parts[2].parse::<u32>().unwrap_or(1);
+                    let new_day = (day as i64 - interval).max(1);
+                    Some(format!("{:04}-{:02}-{:02}", year, month, new_day))
+                } else {
+                    Some(raw)
+                }
+            } else {
+                Some(raw)
+            }
         } else if let Some(rest) = col_expr.strip_prefix("__round__:") {
             let mut parts = rest.splitn(2, '\x1F');
             let col = parts.next().unwrap_or("");

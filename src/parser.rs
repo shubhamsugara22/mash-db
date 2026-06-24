@@ -679,6 +679,11 @@ pub fn parse_select_columns(
         | Some(Token::Year)
         | Some(Token::Month)
         | Some(Token::Day)
+        | Some(Token::Hour)
+        | Some(Token::Minute)
+        | Some(Token::Second)
+        | Some(Token::DateAdd)
+        | Some(Token::DateSub)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -1787,6 +1792,169 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("__day__:{}", col))
+                    }
+                    Some(Token::Hour) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after HOUR".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in HOUR()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after HOUR argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__hour__:{}", col))
+                    }
+                    Some(Token::Minute) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after MINUTE".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in MINUTE()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after MINUTE argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__minute__:{}", col))
+                    }
+                    Some(Token::Second) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after SECOND".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in SECOND()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after SECOND argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__second__:{}", col))
+                    }
+                    Some(Token::DateAdd) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after DATE_ADD".to_string());
+                        }
+                        *i += 1;
+                        // First argument: date column/string
+                        let date_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected date column or string in DATE_ADD()".to_string());
+                        };
+                        
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after date argument in DATE_ADD".to_string());
+                        }
+                        *i += 1;
+                        
+                        // Second argument: interval (numeric or column)
+                        let interval_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else if let Some(Token::Number(n)) = tokens.get(*i) {
+                            let n = n.to_string();
+                            *i += 1;
+                            n
+                        } else {
+                            return Err("Expected interval in DATE_ADD()".to_string());
+                        };
+                        
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after DATE_ADD arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__date_add__:{}\x1F{}", date_arg, interval_arg))
+                    }
+                    Some(Token::DateSub) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after DATE_SUB".to_string());
+                        }
+                        *i += 1;
+                        // First argument: date column/string
+                        let date_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected date column or string in DATE_SUB()".to_string());
+                        };
+                        
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after date argument in DATE_SUB".to_string());
+                        }
+                        *i += 1;
+                        
+                        // Second argument: interval (numeric or column)
+                        let interval_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else if let Some(Token::Number(n)) = tokens.get(*i) {
+                            let n = n.to_string();
+                            *i += 1;
+                            n
+                        } else {
+                            return Err("Expected interval in DATE_SUB()".to_string());
+                        };
+                        
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after DATE_SUB arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__date_sub__:{}\x1F{}", date_arg, interval_arg))
                     }
                     Some(Token::If) => {
                         *i += 1; // consume IF
