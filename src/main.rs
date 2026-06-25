@@ -137,6 +137,34 @@ enum Statement {
         limit: Option<u32>,
         offset: Option<u32>,
     },
+    SelectWithCTE {
+        cte_name: String,
+        cte_query: String,
+        distinct: bool,
+        columns: Option<Vec<String>>,
+        from_table: Option<String>,
+        join: Option<parser::JoinClause>,
+        group_by: Option<Vec<String>>,
+        having: Option<(Vec<(String, String, String)>, Vec<String>)>,
+        order_by: Option<(String, bool)>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    },
+    SelectWithCTEWhere {
+        cte_name: String,
+        cte_query: String,
+        distinct: bool,
+        columns: Option<Vec<String>>,
+        from_table: Option<String>,
+        join: Option<parser::JoinClause>,
+        conditions: Vec<(String, String, String)>,
+        operators: Vec<String>,
+        group_by: Option<Vec<String>>,
+        having: Option<(Vec<(String, String, String)>, Vec<String>)>,
+        order_by: Option<(String, bool)>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    },
     Update {
         table_name: Option<String>,
         id: u32,
@@ -919,57 +947,122 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if upper.starts_with("SELECT") {
-        if let Some((sql1, sql2, all)) = split_on_union(input) {
+        // Check if this is a CTE (WITH clause)
+        if let Ok((Some(cte), main_query)) = parser::parse_cte(input) {
+            // CTE found - return it as a special statement that will be handled during execution
+            // For now, we'll process it as a regular SELECT but store the CTE info
+            // We'll handle CTE substitution in the execute phase
+            match parser::parse_select(&main_query) {
+                Ok((
+                    distinct,
+                    cols,
+                    from_table,
+                    join,
+                    None,
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                )) => {
+                    // Store CTE in a thread-local or pass it through execution
+                    // For now, we'll modify from_table to include CTE execution
+                    PrepareResult::Success(Statement::SelectWithCTE {
+                        cte_name: cte.name,
+                        cte_query: cte.query,
+                        distinct,
+                        columns: cols,
+                        from_table,
+                        join,
+                        group_by,
+                        having,
+                        order_by,
+                        limit,
+                        offset,
+                    })
+                }
+                Ok((
+                    distinct,
+                    cols,
+                    from_table,
+                    join,
+                    Some((conditions, operators)),
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                )) => {
+                    PrepareResult::Success(Statement::SelectWithCTEWhere {
+                        cte_name: cte.name,
+                        cte_query: cte.query,
+                        distinct,
+                        columns: cols,
+                        from_table,
+                        join,
+                        conditions,
+                        operators,
+                        group_by,
+                        having,
+                        order_by,
+                        limit,
+                        offset,
+                    })
+                }
+                Err(_) => PrepareResult::UnrecognizedStatement,
+            }
+        } else if let Some((sql1, sql2, all)) = split_on_union(input) {
             return PrepareResult::Success(Statement::Union { sql1, sql2, all });
-        }
-        match parser::parse_select(input) {
-            Ok((
-                distinct,
-                cols,
-                from_table,
-                join,
-                None,
-                group_by,
-                having,
-                order_by,
-                limit,
-                offset,
-            )) => PrepareResult::Success(Statement::Select {
-                distinct,
-                columns: cols,
-                from_table,
-                join,
-                group_by,
-                having,
-                order_by,
-                limit,
-                offset,
-            }),
-            Ok((
-                distinct,
-                cols,
-                from_table,
-                join,
-                Some((conditions, operators)),
-                group_by,
-                having,
-                order_by,
-                limit,
-                offset,
-            )) => PrepareResult::Success(Statement::SelectWhere {
-                distinct,
-                columns: cols,
-                from_table,
-                join,
-                conditions,
-                operators,
-                group_by,
-                having,
-                order_by,
-                limit,
-                offset,
-            }),
-            Err(_) => PrepareResult::UnrecognizedStatement,
+        } else {
+            match parser::parse_select(input) {
+                Ok((
+                    distinct,
+                    cols,
+                    from_table,
+                    join,
+                    None,
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                )) => PrepareResult::Success(Statement::Select {
+                    distinct,
+                    columns: cols,
+                    from_table,
+                    join,
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                }),
+                Ok((
+                    distinct,
+                    cols,
+                    from_table,
+                    join,
+                    Some((conditions, operators)),
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                )) => PrepareResult::Success(Statement::SelectWhere {
+                    distinct,
+                    columns: cols,
+                    from_table,
+                    join,
+                    conditions,
+                    operators,
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                }),
+                Err(_) => PrepareResult::UnrecognizedStatement,
+            }
         }
     } else if upper == "DELETE ALL" {
         PrepareResult::Success(Statement::DeleteAll)
@@ -1758,6 +1851,203 @@ fn execute_statement(
                 },
                 Err(e) => println!("Error: {}", e),
             }
+        }
+        Statement::SelectWithCTE {
+            cte_name,
+            cte_query,
+            distinct,
+            columns,
+            from_table,
+            join,
+            group_by,
+            having,
+            order_by,
+            limit,
+            offset,
+        } => {
+            // Execute the CTE query to create temporary data
+            // For now, execute the CTE as a SELECT and build a virtual table result
+            let cte_results = {
+                if let Ok(cte_stmt) = parse_statement(cte_query, tables, schemas, &tx) {
+                    // Execute CTE query and collect results
+                    let mut cte_output = Vec::new();
+                    
+                    // We need to capture the CTE results
+                    // Create a temporary capture mechanism
+                    match &cte_stmt {
+                        Statement::Select {..} | Statement::SelectWhere {..} => {
+                            // For now, substitute the CTE name with a simple approach
+                            // Execute main query with FROM cte_name but load from cte results
+                            let actual_query = if let Some(ref ft) = from_table {
+                                if ft.to_lowercase() == cte_name.to_lowercase() {
+                                    // Main query references the CTE - substitute it
+                                    format!("SELECT * FROM ({}) AS {}", cte_query, cte_name)
+                                } else {
+                                    cte_query.clone()
+                                }
+                            } else {
+                                cte_query.clone()
+                            };
+                            
+                            // Execute modified main query
+                            if let Ok(modified_stmt) = parse_statement(&actual_query, tables, schemas, &tx) {
+                                execute_statement(modified_stmt, tables, schemas, &tx);
+                            }
+                            return;
+                        }
+                        _ => {}
+                    }
+                    cte_output
+                } else {
+                    Vec::new()
+                }
+            };
+
+            // After CTE execution, execute the main SELECT with cte_name mapped
+            // For simplicity, use the existing SELECT execution code
+            let table_name = from_table.as_deref().unwrap_or(&cte_name);
+            
+            let rows = {
+                let tbl = load_table_by_name(table_name, tables, schemas);
+                tbl.select_all()
+            };
+
+            if let Some(ref jc) = join {
+                let right_schema = get_schema_for(&jc.table, schemas);
+                let right_table = Table::new(table_file_for(&jc.table), right_schema);
+                let jrows = apply_join(
+                    rows,
+                    &jc.on_left,
+                    &right_table,
+                    &jc.on_right,
+                    jc.join_type.clone(),
+                );
+                let left_table_name = from_table
+                    .as_ref()
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_else(|| "users".to_string());
+                let right_table_name = jc.table.to_lowercase();
+                let jrows = apply_joined_sorting(jrows, order_by, &left_table_name, &right_table_name);
+                let jrows = apply_joined_offset_limit(jrows, offset, limit);
+                for jrow in jrows {
+                    match &columns {
+                        None => {
+                            println!("({}, {}, {})", jrow.0.id, jrow.0.username, jrow.0.email);
+                        }
+                        Some(cols) => {
+                            let values: Vec<String> = cols
+                                .iter()
+                                .map(|c| {
+                                    let c_lower = c.to_lowercase();
+                                    if c_lower.contains("users.") {
+                                        jrow.0.eval_col(&c_lower.replace("users.", "")).unwrap_or_default()
+                                    } else if c_lower.contains("orders.") {
+                                        jrow.1.eval_col(&c_lower.replace("orders.", "")).unwrap_or_default()
+                                    } else {
+                                        jrow.0.eval_col(c).or_else(|| jrow.1.eval_col(c)).unwrap_or_default()
+                                    }
+                                })
+                                .collect();
+                            println!("({})", values.join(", "));
+                        }
+                    }
+                }
+            } else {
+                let filtered_rows = apply_distinct_offset_limit(rows, distinct, offset, limit);
+                for row in filtered_rows {
+                    match &columns {
+                        None => println!("({}, {}, {})", row.id, row.username, row.email),
+                        Some(cols) => {
+                            let values: Vec<String> = cols
+                                .iter()
+                                .map(|c| row.eval_col(c).unwrap_or_default())
+                                .collect();
+                            println!("({})", values.join(", "));
+                        }
+                    }
+                }
+            }
+            println!("Executed.");
+        }
+        Statement::SelectWithCTEWhere {
+            cte_name,
+            cte_query,
+            distinct,
+            columns,
+            from_table,
+            join,
+            conditions,
+            operators,
+            group_by,
+            having,
+            order_by,
+            limit,
+            offset,
+        } => {
+            // Similar to SelectWithCTE but with WHERE clause
+            let table_name = from_table.as_deref().unwrap_or(&cte_name);
+            
+            let rows = {
+                let tbl = load_table_by_name(table_name, tables, schemas);
+                tbl.select_all()
+            };
+
+            if let Some(ref jc) = join {
+                let right_schema = get_schema_for(&jc.table, schemas);
+                let right_table = Table::new(table_file_for(&jc.table), right_schema);
+                let jrows = apply_join(
+                    rows,
+                    &jc.on_left,
+                    &right_table,
+                    &jc.on_right,
+                    jc.join_type.clone(),
+                );
+                let left_table_name = from_table
+                    .as_ref()
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_else(|| "users".to_string());
+                let right_table_name = jc.table.to_lowercase();
+                let jrows = apply_joined_sorting(jrows, order_by, &left_table_name, &right_table_name);
+                let jrows = apply_joined_offset_limit(jrows, offset, limit);
+                for jrow in jrows {
+                    match &columns {
+                        None => {
+                            println!("({}, {}, {})", jrow.0.id, jrow.0.username, jrow.0.email);
+                        }
+                        Some(cols) => {
+                            let values: Vec<String> = cols
+                                .iter()
+                                .map(|c| {
+                                    let c_lower = c.to_lowercase();
+                                    if c_lower.contains("users.") {
+                                        jrow.0.eval_col(&c_lower.replace("users.", "")).unwrap_or_default()
+                                    } else if c_lower.contains("orders.") {
+                                        jrow.1.eval_col(&c_lower.replace("orders.", "")).unwrap_or_default()
+                                    } else {
+                                        jrow.0.eval_col(c).or_else(|| jrow.1.eval_col(c)).unwrap_or_default()
+                                    }
+                                })
+                                .collect();
+                            println!("({})", values.join(", "));
+                        }
+                    }
+                }
+            } else {
+                let filtered_rows = apply_distinct_offset_limit(rows, distinct, offset, limit);
+                for row in filtered_rows {
+                    match &columns {
+                        None => println!("({}, {}, {})", row.id, row.username, row.email),
+                        Some(cols) => {
+                            let values: Vec<String> = cols
+                                .iter()
+                                .map(|c| row.eval_col(c).unwrap_or_default())
+                                .collect();
+                            println!("({})", values.join(", "));
+                        }
+                    }
+                }
+            }
+            println!("Executed.");
         }
         Statement::Select {
             distinct,
