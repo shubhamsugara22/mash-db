@@ -3895,4 +3895,72 @@ mod tests {
         assert_eq!(row2.eval_col("__minute__:time"), Some("59".to_string()));
         assert_eq!(row2.eval_col("__second__:time"), Some("59".to_string()));
     }
+
+    // ===== CTE EXECUTION RECOGNITION TESTS =====
+
+    #[test]
+    fn test_cte_parsing_simple_with_clause() {
+        let result = crate::parser::parse_cte("WITH high_value_orders AS (SELECT id FROM orders) SELECT * FROM high_value_orders");
+        assert!(result.is_ok());
+        let (cte, main_query) = result.unwrap();
+        assert!(cte.is_some());
+        let cte_data = cte.unwrap();
+        assert_eq!(cte_data.name, "high_value_orders");
+        assert!(cte_data.query.contains("SELECT"));
+    }
+
+    #[test]
+    fn test_cte_parsing_no_cte() {
+        let result = crate::parser::parse_cte("SELECT * FROM users");
+        assert!(result.is_ok());
+        let (cte, main_query) = result.unwrap();
+        assert!(cte.is_none());
+        assert_eq!(main_query, "SELECT * FROM users");
+    }
+
+    #[test]
+    fn test_cte_parsing_extracts_cte_name() {
+        let result = crate::parser::parse_cte("WITH temp_data AS (SELECT id, name FROM products) SELECT * FROM temp_data");
+        assert!(result.is_ok());
+        let (cte, _) = result.unwrap();
+        let cte_data = cte.unwrap();
+        assert_eq!(cte_data.name, "temp_data");
+    }
+
+    #[test]
+    fn test_cte_parsing_extracts_cte_query() {
+        let result = crate::parser::parse_cte("WITH recent_orders AS (SELECT id FROM orders WHERE created > '2024-01-01') SELECT * FROM recent_orders");
+        assert!(result.is_ok());
+        let (cte, _) = result.unwrap();
+        let cte_data = cte.unwrap();
+        assert!(cte_data.query.contains("SELECT"));
+        assert!(cte_data.query.contains("orders"));
+    }
+
+    #[test]
+    fn test_cte_parsing_extracts_main_query() {
+        let result = crate::parser::parse_cte("WITH cte AS (SELECT 1) SELECT * FROM cte WHERE id > 5");
+        assert!(result.is_ok());
+        let (_, main_query) = result.unwrap();
+        assert!(main_query.contains("WHERE"));
+        assert!(main_query.contains("id"));
+    }
+
+    #[test]
+    fn test_cte_parsing_with_complex_where() {
+        let result = crate::parser::parse_cte("WITH cte1 AS (SELECT id, name FROM users) SELECT id FROM cte1 WHERE name = 'alice'");
+        assert!(result.is_ok());
+        let (cte, main_query) = result.unwrap();
+        assert!(cte.is_some());
+        assert!(main_query.contains("WHERE"));
+    }
+
+    #[test]
+    fn test_cte_parsing_nested_parentheses() {
+        let result = crate::parser::parse_cte("WITH cte AS (SELECT COUNT(*) FROM users WHERE (age > 18 AND status = 'active')) SELECT * FROM cte");
+        assert!(result.is_ok());
+        let (cte, _) = result.unwrap();
+        let cte_data = cte.unwrap();
+        assert!(cte_data.query.contains("COUNT"));
+    }
 }
