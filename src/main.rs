@@ -1909,9 +1909,9 @@ fn execute_statement(
             };
 
             // Execute the modified query
-            match parse_statement(&main_query_modified, tables, schemas, &tx) {
-                Ok(stmt) => execute_statement(stmt, tables, schemas, &tx),
-                Err(e) => println!("Error: {}", e),
+            match prepare_statement(&main_query_modified) {
+                PrepareResult::Success(stmt) => execute_statement(stmt, tables, schemas, &mut tx),
+                _ => println!("Error: Failed to prepare modified CTE query"),
             }
         }
         Statement::SelectWithCTEWhere {
@@ -1930,7 +1930,7 @@ fn execute_statement(
             offset,
         } => {
             // Similar to SelectWithCTE but includes WHERE clause conditions
-            let where_clause = build_where_clause(conditions, operators);
+            let where_clause = build_where_clause(&conditions, &operators);
             let main_query_modified = if let Some(ref ft) = from_table {
                 if ft.to_lowercase() == cte_name.to_lowercase() {
                     format!(
@@ -1972,9 +1972,9 @@ fn execute_statement(
             };
 
             // Execute the modified query
-            match parse_statement(&main_query_modified, tables, schemas, &tx) {
-                Ok(stmt) => execute_statement(stmt, tables, schemas, &tx),
-                Err(e) => println!("Error: {}", e),
+            match prepare_statement(&main_query_modified) {
+                PrepareResult::Success(stmt) => execute_statement(stmt, tables, schemas, &mut tx),
+                _ => println!("Error: Failed to prepare modified CTE query"),
             }
         }
         Statement::Select {
