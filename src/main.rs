@@ -1865,109 +1865,54 @@ fn execute_statement(
             limit,
             offset,
         } => {
-            // Execute the CTE query to create temporary data
-            // For now, execute the CTE as a SELECT and build a virtual table result
-            let cte_results = {
-                if let Ok(cte_stmt) = parse_statement(cte_query, tables, schemas, &tx) {
-                    // Execute CTE query and collect results
-                    let mut cte_output = Vec::new();
-                    
-                    // We need to capture the CTE results
-                    // Create a temporary capture mechanism
-                    match &cte_stmt {
-                        Statement::Select {..} | Statement::SelectWhere {..} => {
-                            // For now, substitute the CTE name with a simple approach
-                            // Execute main query with FROM cte_name but load from cte results
-                            let actual_query = if let Some(ref ft) = from_table {
-                                if ft.to_lowercase() == cte_name.to_lowercase() {
-                                    // Main query references the CTE - substitute it
-                                    format!("SELECT * FROM ({}) AS {}", cte_query, cte_name)
-                                } else {
-                                    cte_query.clone()
-                                }
-                            } else {
-                                cte_query.clone()
-                            };
-                            
-                            // Execute modified main query
-                            if let Ok(modified_stmt) = parse_statement(&actual_query, tables, schemas, &tx) {
-                                execute_statement(modified_stmt, tables, schemas, &tx);
-                            }
-                            return;
-                        }
-                        _ => {}
-                    }
-                    cte_output
-                } else {
-                    Vec::new()
-                }
-            };
-
-            // After CTE execution, execute the main SELECT with cte_name mapped
-            // For simplicity, use the existing SELECT execution code
-            let table_name = from_table.as_deref().unwrap_or(&cte_name);
+            // Execute CTE query to generate temporary result set
+            // Then execute main query using the CTE name as a virtual table
             
-            let rows = {
-                let tbl = load_table_by_name(table_name, tables, schemas);
-                tbl.select_all()
-            };
-
-            if let Some(ref jc) = join {
-                let right_schema = get_schema_for(&jc.table, schemas);
-                let right_table = Table::new(table_file_for(&jc.table), right_schema);
-                let jrows = apply_join(
-                    rows,
-                    &jc.on_left,
-                    &right_table,
-                    &jc.on_right,
-                    jc.join_type.clone(),
-                );
-                let left_table_name = from_table
-                    .as_ref()
-                    .map(|s| s.to_lowercase())
-                    .unwrap_or_else(|| "users".to_string());
-                let right_table_name = jc.table.to_lowercase();
-                let jrows = apply_joined_sorting(jrows, order_by, &left_table_name, &right_table_name);
-                let jrows = apply_joined_offset_limit(jrows, offset, limit);
-                for jrow in jrows {
-                    match &columns {
-                        None => {
-                            println!("({}, {}, {})", jrow.0.id, jrow.0.username, jrow.0.email);
-                        }
-                        Some(cols) => {
-                            let values: Vec<String> = cols
-                                .iter()
-                                .map(|c| {
-                                    let c_lower = c.to_lowercase();
-                                    if c_lower.contains("users.") {
-                                        jrow.0.eval_col(&c_lower.replace("users.", "")).unwrap_or_default()
-                                    } else if c_lower.contains("orders.") {
-                                        jrow.1.eval_col(&c_lower.replace("orders.", "")).unwrap_or_default()
-                                    } else {
-                                        jrow.0.eval_col(c).or_else(|| jrow.1.eval_col(c)).unwrap_or_default()
-                                    }
-                                })
-                                .collect();
-                            println!("({})", values.join(", "));
-                        }
-                    }
+            // Substitute CTE in the main query
+            let main_query_modified = if let Some(ref ft) = from_table {
+                if ft.to_lowercase() == cte_name.to_lowercase() {
+                    // Main query uses the CTE - create an inline subquery approach
+                    format!(
+                        "SELECT {} FROM ({}) WHERE {} {}{}{}{}",
+                        columns.as_ref()
+                            .map(|c| c.join(", "))
+                            .unwrap_or_else(|| "*".to_string()),
+                        cte_query,
+                        "1=1",
+                        group_by.as_ref()
+                            .map(|gb| format!(" GROUP BY {}", gb.join(", ")))
+                            .unwrap_or_default(),
+                        having.as_ref()
+                            .map(|(cond, _ops)| {
+                                let cond_str = cond.iter()
+                                    .map(|(col, op, val)| format!("{} {} {}", col, op, val))
+                                    .collect::<Vec<_>>()
+                                    .join(" AND ");
+                                format!(" HAVING {}", cond_str)
+                            })
+                            .unwrap_or_default(),
+                        order_by.as_ref()
+                            .map(|(col, is_asc)| format!(" ORDER BY {} {}", col, if *is_asc { "ASC" } else { "DESC" }))
+                            .unwrap_or_default(),
+                        limit.map(|l| format!(" LIMIT {}", l))
+                            .or_else(|| offset.map(|o| format!(" OFFSET {}", o)))
+                            .unwrap_or_default()
+                    )
+                } else {
+                    format!("SELECT {} FROM {}", 
+                        columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| "*".to_string()),
+                        ft)
                 }
             } else {
-                let filtered_rows = apply_distinct_offset_limit(rows, distinct, offset, limit);
-                for row in filtered_rows {
-                    match &columns {
-                        None => println!("({}, {}, {})", row.id, row.username, row.email),
-                        Some(cols) => {
-                            let values: Vec<String> = cols
-                                .iter()
-                                .map(|c| row.eval_col(c).unwrap_or_default())
-                                .collect();
-                            println!("({})", values.join(", "));
-                        }
-                    }
-                }
+                format!("SELECT {}", 
+                    columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| "*".to_string()))
+            };
+
+            // Execute the modified query
+            match parse_statement(&main_query_modified, tables, schemas, &tx) {
+                Ok(stmt) => execute_statement(stmt, tables, schemas, &tx),
+                Err(e) => println!("Error: {}", e),
             }
-            println!("Executed.");
         }
         Statement::SelectWithCTEWhere {
             cte_name,
@@ -1984,70 +1929,53 @@ fn execute_statement(
             limit,
             offset,
         } => {
-            // Similar to SelectWithCTE but with WHERE clause
-            let table_name = from_table.as_deref().unwrap_or(&cte_name);
-            
-            let rows = {
-                let tbl = load_table_by_name(table_name, tables, schemas);
-                tbl.select_all()
-            };
-
-            if let Some(ref jc) = join {
-                let right_schema = get_schema_for(&jc.table, schemas);
-                let right_table = Table::new(table_file_for(&jc.table), right_schema);
-                let jrows = apply_join(
-                    rows,
-                    &jc.on_left,
-                    &right_table,
-                    &jc.on_right,
-                    jc.join_type.clone(),
-                );
-                let left_table_name = from_table
-                    .as_ref()
-                    .map(|s| s.to_lowercase())
-                    .unwrap_or_else(|| "users".to_string());
-                let right_table_name = jc.table.to_lowercase();
-                let jrows = apply_joined_sorting(jrows, order_by, &left_table_name, &right_table_name);
-                let jrows = apply_joined_offset_limit(jrows, offset, limit);
-                for jrow in jrows {
-                    match &columns {
-                        None => {
-                            println!("({}, {}, {})", jrow.0.id, jrow.0.username, jrow.0.email);
-                        }
-                        Some(cols) => {
-                            let values: Vec<String> = cols
-                                .iter()
-                                .map(|c| {
-                                    let c_lower = c.to_lowercase();
-                                    if c_lower.contains("users.") {
-                                        jrow.0.eval_col(&c_lower.replace("users.", "")).unwrap_or_default()
-                                    } else if c_lower.contains("orders.") {
-                                        jrow.1.eval_col(&c_lower.replace("orders.", "")).unwrap_or_default()
-                                    } else {
-                                        jrow.0.eval_col(c).or_else(|| jrow.1.eval_col(c)).unwrap_or_default()
-                                    }
-                                })
-                                .collect();
-                            println!("({})", values.join(", "));
-                        }
-                    }
+            // Similar to SelectWithCTE but includes WHERE clause conditions
+            let where_clause = build_where_clause(conditions, operators);
+            let main_query_modified = if let Some(ref ft) = from_table {
+                if ft.to_lowercase() == cte_name.to_lowercase() {
+                    format!(
+                        "SELECT {} FROM ({}) WHERE {}{}{}{}{}",
+                        columns.as_ref()
+                            .map(|c| c.join(", "))
+                            .unwrap_or_else(|| "*".to_string()),
+                        cte_query,
+                        where_clause,
+                        group_by.as_ref()
+                            .map(|gb| format!(" GROUP BY {}", gb.join(", ")))
+                            .unwrap_or_default(),
+                        having.as_ref()
+                            .map(|(cond, _ops)| {
+                                let cond_str = cond.iter()
+                                    .map(|(col, op, val)| format!("{} {} {}", col, op, val))
+                                    .collect::<Vec<_>>()
+                                    .join(" AND ");
+                                format!(" HAVING {}", cond_str)
+                            })
+                            .unwrap_or_default(),
+                        order_by.as_ref()
+                            .map(|(col, is_asc)| format!(" ORDER BY {} {}", col, if *is_asc { "ASC" } else { "DESC" }))
+                            .unwrap_or_default(),
+                        limit.map(|l| format!(" LIMIT {}", l))
+                            .or_else(|| offset.map(|o| format!(" OFFSET {}", o)))
+                            .unwrap_or_default()
+                    )
+                } else {
+                    format!("SELECT {} FROM {} WHERE {}", 
+                        columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| "*".to_string()),
+                        ft,
+                        where_clause)
                 }
             } else {
-                let filtered_rows = apply_distinct_offset_limit(rows, distinct, offset, limit);
-                for row in filtered_rows {
-                    match &columns {
-                        None => println!("({}, {}, {})", row.id, row.username, row.email),
-                        Some(cols) => {
-                            let values: Vec<String> = cols
-                                .iter()
-                                .map(|c| row.eval_col(c).unwrap_or_default())
-                                .collect();
-                            println!("({})", values.join(", "));
-                        }
-                    }
-                }
+                format!("SELECT {} WHERE {}", 
+                    columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| "*".to_string()),
+                    where_clause)
+            };
+
+            // Execute the modified query
+            match parse_statement(&main_query_modified, tables, schemas, &tx) {
+                Ok(stmt) => execute_statement(stmt, tables, schemas, &tx),
+                Err(e) => println!("Error: {}", e),
             }
-            println!("Executed.");
         }
         Statement::Select {
             distinct,
@@ -3121,6 +3049,28 @@ fn execute_statement(
             println!("Executed.");
         }
     }
+}
+
+// Helper function to build WHERE clause from conditions and operators
+fn build_where_clause(conditions: &[(String, String, String)], operators: &[String]) -> String {
+    if conditions.is_empty() {
+        return "1=1".to_string();
+    }
+    
+    let mut clause = String::new();
+    for (i, (col, op, val)) in conditions.iter().enumerate() {
+        if i > 0 && i - 1 < operators.len() {
+            clause.push(' ');
+            clause.push_str(&operators[i - 1]);
+            clause.push(' ');
+        }
+        clause.push_str(col);
+        clause.push(' ');
+        clause.push_str(op);
+        clause.push(' ');
+        clause.push_str(val);
+    }
+    clause
 }
 
 // Sort rows based on ORDER BY clause
