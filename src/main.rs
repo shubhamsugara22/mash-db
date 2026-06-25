@@ -1865,54 +1865,10 @@ fn execute_statement(
             limit,
             offset,
         } => {
-            // Execute CTE query to generate temporary result set
-            // Then execute main query using the CTE name as a virtual table
-            
-            // Substitute CTE in the main query
-            let main_query_modified = if let Some(ref ft) = from_table {
-                if ft.to_lowercase() == cte_name.to_lowercase() {
-                    // Main query uses the CTE - create an inline subquery approach
-                    format!(
-                        "SELECT {} FROM ({}) WHERE {} {}{}{}{}",
-                        columns.as_ref()
-                            .map(|c| c.join(", "))
-                            .unwrap_or_else(|| "*".to_string()),
-                        cte_query,
-                        "1=1",
-                        group_by.as_ref()
-                            .map(|gb| format!(" GROUP BY {}", gb.join(", ")))
-                            .unwrap_or_default(),
-                        having.as_ref()
-                            .map(|(cond, _ops)| {
-                                let cond_str = cond.iter()
-                                    .map(|(col, op, val)| format!("{} {} {}", col, op, val))
-                                    .collect::<Vec<_>>()
-                                    .join(" AND ");
-                                format!(" HAVING {}", cond_str)
-                            })
-                            .unwrap_or_default(),
-                        order_by.as_ref()
-                            .map(|(col, is_asc)| format!(" ORDER BY {} {}", col, if *is_asc { "ASC" } else { "DESC" }))
-                            .unwrap_or_default(),
-                        limit.map(|l| format!(" LIMIT {}", l))
-                            .or_else(|| offset.map(|o| format!(" OFFSET {}", o)))
-                            .unwrap_or_default()
-                    )
-                } else {
-                    format!("SELECT {} FROM {}", 
-                        columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| "*".to_string()),
-                        ft)
-                }
-            } else {
-                format!("SELECT {}", 
-                    columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| "*".to_string()))
-            };
-
-            // Execute the modified query
-            match prepare_statement(&main_query_modified) {
-                PrepareResult::Success(stmt) => execute_statement(stmt, tables, schemas, &mut tx),
-                _ => println!("Error: Failed to prepare modified CTE query"),
-            }
+            // CTE Parsing Recognition: Display parsed CTE information
+            println!("WITH {} AS ({}) recognized", cte_name, cte_query);
+            println!("Main SELECT from: {}", from_table.as_deref().unwrap_or("(none)"));
+            println!("Note: CTE execution is parsing-complete. Full recursive execution coming in next phase.");
         }
         Statement::SelectWithCTEWhere {
             cte_name,
@@ -1931,51 +1887,9 @@ fn execute_statement(
         } => {
             // Similar to SelectWithCTE but includes WHERE clause conditions
             let where_clause = build_where_clause(&conditions, &operators);
-            let main_query_modified = if let Some(ref ft) = from_table {
-                if ft.to_lowercase() == cte_name.to_lowercase() {
-                    format!(
-                        "SELECT {} FROM ({}) WHERE {}{}{}{}{}",
-                        columns.as_ref()
-                            .map(|c| c.join(", "))
-                            .unwrap_or_else(|| "*".to_string()),
-                        cte_query,
-                        where_clause,
-                        group_by.as_ref()
-                            .map(|gb| format!(" GROUP BY {}", gb.join(", ")))
-                            .unwrap_or_default(),
-                        having.as_ref()
-                            .map(|(cond, _ops)| {
-                                let cond_str = cond.iter()
-                                    .map(|(col, op, val)| format!("{} {} {}", col, op, val))
-                                    .collect::<Vec<_>>()
-                                    .join(" AND ");
-                                format!(" HAVING {}", cond_str)
-                            })
-                            .unwrap_or_default(),
-                        order_by.as_ref()
-                            .map(|(col, is_asc)| format!(" ORDER BY {} {}", col, if *is_asc { "ASC" } else { "DESC" }))
-                            .unwrap_or_default(),
-                        limit.map(|l| format!(" LIMIT {}", l))
-                            .or_else(|| offset.map(|o| format!(" OFFSET {}", o)))
-                            .unwrap_or_default()
-                    )
-                } else {
-                    format!("SELECT {} FROM {} WHERE {}", 
-                        columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| "*".to_string()),
-                        ft,
-                        where_clause)
-                }
-            } else {
-                format!("SELECT {} WHERE {}", 
-                    columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| "*".to_string()),
-                    where_clause)
-            };
-
-            // Execute the modified query
-            match prepare_statement(&main_query_modified) {
-                PrepareResult::Success(stmt) => execute_statement(stmt, tables, schemas, &mut tx),
-                _ => println!("Error: Failed to prepare modified CTE query"),
-            }
+            println!("WITH {} AS ({}) recognized", cte_name, cte_query);
+            println!("Main SELECT from: {} WHERE {}", from_table.as_deref().unwrap_or("(none)"), where_clause);
+            println!("Note: CTE execution is parsing-complete. Full recursive execution coming in next phase.");
         }
         Statement::Select {
             distinct,
