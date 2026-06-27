@@ -1391,6 +1391,7 @@ fn execute_statement(
     statement: Statement,
     tables: &mut HashMap<String, Table>,
     schemas: &mut HashMap<String, Vec<String>>,
+    views: &mut HashMap<String, String>,
     tx: &mut TransactionState,
 ) {
     // Map a logical table name to a backing file path.
@@ -1937,6 +1938,43 @@ fn execute_statement(
             offset,
             ..
         } => {
+            // Check if from_table references a view
+            if let Some(ref ft) = from_table {
+                let ft_lower = ft.to_lowercase();
+                if let Some(view_query) = views.get(&ft_lower) {
+                    // Substitute view: execute SELECT from view's query
+                    let view_select = format!(
+                        "SELECT {} FROM ({}) WHERE 1=1{}{}{}{}",
+                        columns.as_ref()
+                            .map(|c| c.join(", "))
+                            .unwrap_or_else(|| "*".to_string()),
+                        view_query,
+                        group_by.as_ref()
+                            .map(|gb| format!(" GROUP BY {}", gb.join(", ")))
+                            .unwrap_or_default(),
+                        having.as_ref()
+                            .map(|(cond, _)| {
+                                let cond_str = cond.iter()
+                                    .map(|(col, op, val)| format!("{} {} {}", col, op, val))
+                                    .collect::<Vec<_>>()
+                                    .join(" AND ");
+                                format!(" HAVING {}", cond_str)
+                            })
+                            .unwrap_or_default(),
+                        order_by.as_ref()
+                            .map(|(col, is_asc)| format!(" ORDER BY {} {}", col, if *is_asc { "ASC" } else { "DESC" }))
+                            .unwrap_or_default(),
+                        limit.map(|l| format!(" LIMIT {}", l)).unwrap_or_default()
+                    );
+                    
+                    // Execute the substituted query
+                    if let PrepareResult::Success(stmt) = prepare_statement(&view_select) {
+                        execute_statement(stmt, tables, schemas, views, tx);
+                    }
+                    return;
+                }
+            }
+            
             // Resolve left (from) table - use registry instead of reloading from file
             let table_name = from_table.as_deref().unwrap_or("users");
 
@@ -2213,6 +2251,47 @@ fn execute_statement(
             offset,
             ..
         } => {
+            // Check if from_table references a view
+            if let Some(ref ft) = from_table {
+                let ft_lower = ft.to_lowercase();
+                if let Some(view_query) = views.get(&ft_lower) {
+                    // Build WHERE clause from conditions
+                    let where_clause = build_where_clause(&conditions, &operators);
+                    
+                    // Substitute view: execute SELECT WHERE from view's query
+                    let view_select = format!(
+                        "SELECT {} FROM ({}) WHERE {}{}{}{}{}",
+                        columns.as_ref()
+                            .map(|c| c.join(", "))
+                            .unwrap_or_else(|| "*".to_string()),
+                        view_query,
+                        where_clause,
+                        group_by.as_ref()
+                            .map(|gb| format!(" GROUP BY {}", gb.join(", ")))
+                            .unwrap_or_default(),
+                        having.as_ref()
+                            .map(|(cond, _)| {
+                                let cond_str = cond.iter()
+                                    .map(|(col, op, val)| format!("{} {} {}", col, op, val))
+                                    .collect::<Vec<_>>()
+                                    .join(" AND ");
+                                format!(" HAVING {}", cond_str)
+                            })
+                            .unwrap_or_default(),
+                        order_by.as_ref()
+                            .map(|(col, is_asc)| format!(" ORDER BY {} {}", col, if *is_asc { "ASC" } else { "DESC" }))
+                            .unwrap_or_default(),
+                        limit.map(|l| format!(" LIMIT {}", l)).unwrap_or_default()
+                    );
+                    
+                    // Execute the substituted query
+                    if let PrepareResult::Success(stmt) = prepare_statement(&view_select) {
+                        execute_statement(stmt, tables, schemas, views, tx);
+                    }
+                    return;
+                }
+            }
+            
             // Resolve left (from) table - use registry instead of reloading from file
             let table_name = from_table.as_deref().unwrap_or("users");
 
@@ -2766,6 +2845,31 @@ fn execute_statement(
 
             println!("Table '{}' dropped", table_name);
         }
+        Statement::CreateView { view_name, select_query } => {
+            let view_name_lower = view_name.to_lowercase();
+            
+            // Validate SELECT query by trying to parse it
+            match parser::parse_select(&select_query) {
+                Ok(_) => {
+                    // Store the view definition
+                    views.insert(view_name_lower.clone(), select_query.clone());
+                    println!("View '{}' created", view_name);
+                }
+                Err(e) => {
+                    println!("Error: Invalid SELECT query for view: {}", e);
+                }
+            }
+        }
+        Statement::DropView { view_name } => {
+            let view_name_lower = view_name.to_lowercase();
+            
+            if views.contains_key(&view_name_lower) {
+                views.remove(&view_name_lower);
+                println!("View '{}' dropped", view_name);
+            } else {
+                println!("Error: View '{}' does not exist", view_name);
+            }
+        }
         Statement::ShowTables => {
             let mut table_names: Vec<String> = tables.keys().cloned().collect();
             table_names.sort();
@@ -3279,6 +3383,9 @@ fn main() {
         Table::new("data.json".to_string(), default_schema.clone()),
     );
 
+    // Initialize view registry: store view name -> SELECT query
+    let mut views: HashMap<String, String> = HashMap::new();
+
     // Load or initialize schema registry
     let mut schemas = load_schemas();
     if schemas.is_empty() {
@@ -3360,7 +3467,7 @@ fn main() {
 
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
-                execute_statement(statement, &mut tables, &mut schemas, &mut tx_state);
+                execute_statement(statement, &mut tables, &mut schemas, &mut views, &mut tx_state);
             }
             PrepareResult::UnrecognizedStatement => {
                 println!("Unrecognized keyword at start of '{}'", input);
