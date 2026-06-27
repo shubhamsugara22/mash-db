@@ -211,6 +211,13 @@ enum Statement {
     TruncateTable {
         table_name: String,
     },
+    CreateView {
+        view_name: String,
+        select_query: String,
+    },
+    DropView {
+        view_name: String,
+    },
     ShowTables,
 }
 
@@ -1119,6 +1126,33 @@ fn prepare_statement(input: &str) -> PrepareResult {
         match parser::parse_truncate_table(input) {
             Ok(table_name) => PrepareResult::Success(Statement::TruncateTable { table_name }),
             Err(_) => PrepareResult::UnrecognizedStatement,
+        }
+    } else if upper.starts_with("CREATE VIEW") {
+        // CREATE VIEW view_name AS SELECT ...
+        if let Some(as_idx) = input.to_uppercase().find(" AS ") {
+            let view_part = &input[..as_idx].trim();
+            let select_part = &input[as_idx + 4..].trim();
+            
+            // Extract view name: CREATE VIEW view_name
+            let parts: Vec<&str> = view_part.split_whitespace().collect();
+            if parts.len() >= 3 {
+                let view_name = parts[2].to_string();
+                let select_query = select_part.to_string();
+                PrepareResult::Success(Statement::CreateView { view_name, select_query })
+            } else {
+                PrepareResult::UnrecognizedStatement
+            }
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
+    } else if upper.starts_with("DROP VIEW") {
+        // DROP VIEW view_name
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() >= 3 {
+            let view_name = parts[2].to_string();
+            PrepareResult::Success(Statement::DropView { view_name })
+        } else {
+            PrepareResult::UnrecognizedStatement
         }
     } else if upper.starts_with("SHOW TABLES") {
         PrepareResult::Success(Statement::ShowTables)
