@@ -3645,6 +3645,7 @@ mod tests {
             schema_snapshot: std::collections::HashMap::new(),
         };
 
+        let mut views = std::collections::HashMap::new();
         let _result = super::execute_statement(
             Statement::Select {
                 distinct: false,
@@ -3664,6 +3665,7 @@ mod tests {
             },
             &mut tables,
             &mut schemas,
+            &mut views,
             &mut tx_state,
         );
     }
