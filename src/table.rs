@@ -716,6 +716,154 @@ impl Row {
             } else {
                 Some(raw)
             }
+        } else if let Some(col) = col_expr.strip_prefix("__week__:") {
+            // Extract week number (ISO week) from date
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                // UNIX timestamp - calculate week
+                let days_since_epoch = timestamp / 86400;
+                // Epoch was Thursday, so adjust: ISO week starts on Monday
+                let week = ((days_since_epoch + 3) / 7) % 52 + 1;
+                Some(week.to_string())
+            } else if raw.contains('-') && raw.len() >= 10 {
+                // Date string YYYY-MM-DD
+                let date_str = raw.chars().take(10).collect::<String>();
+                let parts: Vec<&str> = date_str.split('-').collect();
+                if parts.len() == 3 {
+                    let _year = parts[0].parse::<u32>().unwrap_or(1970);
+                    let month = parts[1].parse::<u32>().unwrap_or(1);
+                    let day = parts[2].parse::<u32>().unwrap_or(1);
+                    // Simple approximation: week = (day_of_year / 7) + 1
+                    let days_before_month = match month {
+                        1 => 0, 2 => 31, 3 => 59, 4 => 90, 5 => 120, 6 => 151,
+                        7 => 181, 8 => 212, 9 => 243, 10 => 273, 11 => 304, 12 => 334,
+                        _ => 0
+                    };
+                    let day_of_year = days_before_month + day;
+                    let week = (day_of_year / 7) + 1;
+                    Some(week.to_string())
+                } else {
+                    Some("1".to_string())
+                }
+            } else {
+                Some("1".to_string())
+            }
+        } else if let Some(col) = col_expr.strip_prefix("__quarter__:") {
+            // Extract quarter (1-4) from date
+            let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
+            
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                // UNIX timestamp - extract month then calculate quarter
+                let days_since_epoch = timestamp / 86400;
+                let approx_month = ((days_since_epoch % 365) / 30) + 1;
+                let quarter = ((approx_month - 1) / 3) + 1;
+                Some(quarter.to_string())
+            } else if raw.contains('-') && raw.len() >= 10 {
+                // Date string YYYY-MM-DD
+                let date_str = raw.chars().take(10).collect::<String>();
+                let parts: Vec<&str> = date_str.split('-').collect();
+                if parts.len() >= 2 {
+                    let month = parts[1].parse::<u32>().unwrap_or(1);
+                    let quarter = ((month - 1) / 3) + 1;
+                    Some(quarter.to_string())
+                } else {
+                    Some("1".to_string())
+                }
+            } else {
+                Some("1".to_string())
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__datediff__:") {
+            // Calculate difference in days between two dates
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            let date1_arg = parts.first().copied().unwrap_or("");
+            let date2_arg = parts.get(1).copied().unwrap_or("");
+            
+            let raw1 = self.get_value(date1_arg).unwrap_or_else(|| date1_arg.to_string());
+            let raw2 = self.get_value(date2_arg).unwrap_or_else(|| date2_arg.to_string());
+            
+            // Try to parse as UNIX timestamps first
+            if let (Ok(ts1), Ok(ts2)) = (raw1.parse::<i64>(), raw2.parse::<i64>()) {
+                let diff_seconds = ts1 - ts2;
+                let diff_days = diff_seconds / 86400;
+                Some(diff_days.to_string())
+            } else {
+                // Try to parse as date strings YYYY-MM-DD
+                let parse_date = |date_str: &str| -> Option<i64> {
+                    if date_str.len() >= 10 && date_str.contains('-') {
+                        let parts: Vec<&str> = date_str.split('-').collect();
+                        if parts.len() >= 3 {
+                            let year = parts[0].parse::<i64>().ok()?;
+                            let month = parts[1].parse::<i64>().ok()?;
+                            let day = parts[2].parse::<i64>().ok()?;
+                            // Rough approximation: days since epoch-ish
+                            Some(year * 365 + month * 30 + day)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                };
+                
+                if let (Some(d1), Some(d2)) = (parse_date(&raw1), parse_date(&raw2)) {
+                    Some((d1 - d2).to_string())
+                } else {
+                    Some("0".to_string())
+                }
+            }
+        } else if let Some(rest) = col_expr.strip_prefix("__date_trunc__:") {
+            // Truncate date to specified unit (year, month, day)
+            let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
+            let unit = parts.first().copied().unwrap_or("day").to_lowercase();
+            let date_arg = parts.get(1).copied().unwrap_or("");
+            
+            let raw = self.get_value(date_arg).unwrap_or_else(|| date_arg.to_string());
+            
+            if let Ok(timestamp) = raw.parse::<u64>() {
+                // UNIX timestamp - truncate and convert back
+                let days_since_epoch = timestamp / 86400;
+                let seconds_in_day = timestamp % 86400;
+                
+                match unit.as_str() {
+                    "year" => {
+                        // Truncate to start of year (approx)
+                        let years_since_epoch = days_since_epoch / 365;
+                        let truncated = years_since_epoch * 365 * 86400;
+                        Some(truncated.to_string())
+                    }
+                    "month" => {
+                        // Truncate to start of month (approx)
+                        let months_since_epoch = days_since_epoch / 30;
+                        let truncated = months_since_epoch * 30 * 86400;
+                        Some(truncated.to_string())
+                    }
+                    "day" | _ => {
+                        // Truncate to start of day (midnight)
+                        let truncated = days_since_epoch * 86400;
+                        Some(truncated.to_string())
+                    }
+                }
+            } else if raw.contains('-') && raw.len() >= 10 {
+                // Date string YYYY-MM-DD
+                let date_str = raw.chars().take(10).collect::<String>();
+                let parts: Vec<&str> = date_str.split('-').collect();
+                if parts.len() == 3 {
+                    let year = parts[0];
+                    let month = parts[1];
+                    let _day = parts[2];
+                    
+                    match unit.as_str() {
+                        "year" => Some(format!("{}-01-01", year)),
+                        "month" => Some(format!("{}-{}-01", year, month)),
+                        "day" | _ => Some(date_str),
+                    }
+                } else {
+                    Some(raw)
+                }
+            } else {
+                Some(raw)
+            }
         } else if let Some(rest) = col_expr.strip_prefix("__round__:") {
             let mut parts = rest.splitn(2, '\x1F');
             let col = parts.next().unwrap_or("");

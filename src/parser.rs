@@ -93,6 +93,10 @@ pub enum Token {
     Second,
     DateAdd,
     DateSub,
+    DateDiff,
+    DateTrunc,
+    Week,
+    Quarter,
     With,
     Index,
     RowNumber,
@@ -384,6 +388,10 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "SECOND" => Token::Second,
                     "DATE_ADD" => Token::DateAdd,
                     "DATE_SUB" => Token::DateSub,
+                    "DATEDIFF" => Token::DateDiff,
+                    "DATE_TRUNC" => Token::DateTrunc,
+                    "WEEK" => Token::Week,
+                    "QUARTER" => Token::Quarter,
                     "WITH" => Token::With,
                     "INDEX" => Token::Index,
                     "AND" => Token::And,
@@ -585,6 +593,10 @@ fn token_to_sql(token: &Token) -> String {
         Token::Second => "SECOND".to_string(),
         Token::DateAdd => "DATE_ADD".to_string(),
         Token::DateSub => "DATE_SUB".to_string(),
+        Token::DateDiff => "DATEDIFF".to_string(),
+        Token::DateTrunc => "DATE_TRUNC".to_string(),
+        Token::Week => "WEEK".to_string(),
+        Token::Quarter => "QUARTER".to_string(),
         Token::With => "WITH".to_string(),
         Token::Index => "INDEX".to_string(),
         Token::RowNumber => "ROW_NUMBER".to_string(),
@@ -684,6 +696,10 @@ pub fn parse_select_columns(
         | Some(Token::Second)
         | Some(Token::DateAdd)
         | Some(Token::DateSub)
+        | Some(Token::Week)
+        | Some(Token::Quarter)
+        | Some(Token::DateDiff)
+        | Some(Token::DateTrunc)
         | Some(Token::Identifier(_)) => {
             let mut cols = Vec::new();
 
@@ -1956,6 +1972,138 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Column(format!("__date_sub__:{}\x1F{}", date_arg, interval_arg))
                     }
+                    Some(Token::Week) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after WEEK".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in WEEK()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after WEEK argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__week__:{}", col))
+                    }
+                    Some(Token::Quarter) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after QUARTER".to_string());
+                        }
+                        *i += 1;
+                        let col = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected column or string in QUARTER()".to_string());
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after QUARTER argument".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__quarter__:{}", col))
+                    }
+                    Some(Token::DateDiff) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after DATEDIFF".to_string());
+                        }
+                        *i += 1;
+                        // First argument: date1
+                        let date1_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected date column or string in DATEDIFF()".to_string());
+                        };
+                        
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after first date in DATEDIFF".to_string());
+                        }
+                        *i += 1;
+                        
+                        // Second argument: date2
+                        let date2_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected date column or string in DATEDIFF()".to_string());
+                        };
+                        
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after DATEDIFF arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__datediff__:{}\x1F{}", date1_arg, date2_arg))
+                    }
+                    Some(Token::DateTrunc) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after DATE_TRUNC".to_string());
+                        }
+                        *i += 1;
+                        // First argument: unit (string like 'year', 'month', 'day')
+                        let unit_arg = if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else if let Some(Token::Identifier(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected unit string in DATE_TRUNC()".to_string());
+                        };
+                        
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after unit in DATE_TRUNC".to_string());
+                        }
+                        *i += 1;
+                        
+                        // Second argument: date column
+                        let date_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
+                            let c = c.clone();
+                            *i += 1;
+                            c
+                        } else if let Some(Token::String(s)) = tokens.get(*i) {
+                            let s = s.clone();
+                            *i += 1;
+                            s
+                        } else {
+                            return Err("Expected date column or string in DATE_TRUNC()".to_string());
+                        };
+                        
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after DATE_TRUNC arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__date_trunc__:{}\x1F{}", unit_arg, date_arg))
+                    }
                     Some(Token::If) => {
                         *i += 1; // consume IF
                         if tokens.get(*i) != Some(&Token::LParen) {
@@ -2605,7 +2753,11 @@ fn parse_select_tokens(
         | Some(Token::Minute)
         | Some(Token::Second)
         | Some(Token::DateAdd)
-        | Some(Token::DateSub) => {
+        | Some(Token::DateSub)
+        | Some(Token::Week)
+        | Some(Token::Quarter)
+        | Some(Token::DateDiff)
+        | Some(Token::DateTrunc) => {
             // Use the helper function to parse columns (which might include aggregates)
             match parse_select_columns(tokens, &mut i) {
                 Ok(Some(select_cols)) => {

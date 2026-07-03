@@ -76,6 +76,10 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
     - `SECOND(col)` - Extract second (0-59) from time/timestamp
     - `DATE_ADD(col, days)` - Add days to date
     - `DATE_SUB(col, days)` - Subtract days from date
+    - `WEEK(col)` - Extract week number (1-52) from date
+    - `QUARTER(col)` - Extract quarter (1-4) from date
+    - `DATEDIFF(date1, date2)` - Calculate difference in days between two dates
+    - `DATE_TRUNC(unit, date)` - Truncate date to specified unit ('year', 'month', 'day')
 - **Views** ✨ NEW - Create and query database views
   - `CREATE VIEW view_name AS SELECT ...` - Create a view with a SELECT query
   - `DROP VIEW view_name` - Drop an existing view
@@ -270,6 +274,12 @@ SELECT MONTH(purchase_date), COUNT(*) FROM sales GROUP BY MONTH(purchase_date)
 SELECT HOUR(event_time), COUNT(*) FROM events GROUP BY HOUR(event_time)
 SELECT DATE_ADD(order_date, 30) as delivery_date FROM orders
 SELECT DATE_SUB(TODAY, 90) as three_months_ago
+SELECT WEEK(order_date), COUNT(*) as weekly_orders FROM orders GROUP BY WEEK(order_date)
+SELECT QUARTER(sale_date), SUM(amount) as quarterly_sales FROM sales GROUP BY QUARTER(sale_date)
+SELECT DATEDIFF(end_date, start_date) as duration FROM events
+SELECT DATEDIFF('2024-12-31', order_date) as days_until_year_end FROM orders
+SELECT DATE_TRUNC('year', created_at) as year_start FROM users
+SELECT DATE_TRUNC('month', order_date), COUNT(*) FROM orders GROUP BY DATE_TRUNC('month', order_date)
 
 -- Common Table Expressions (CTEs with WITH clause)
 WITH high_value_orders AS (
@@ -383,9 +393,8 @@ Error: Index 'nonexistent' not found
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
 - [x] Common Table Expressions (WITH clause) — Parser complete, execution integration pending
 - [x] CREATE INDEX / DROP INDEX statements — Parser complete for explicit index creation
-- [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB)
+- [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB, WEEK, QUARTER, DATEDIFF, DATE_TRUNC)
 - [x] Views (CREATE VIEW, DROP VIEW) — Views with subquery substitution, support for aggregates, joins, nested views
-- [ ] More date functions (DATEDIFF, DATE_TRUNC, WEEK, QUARTER)
 - [ ] Full text search
 - [ ] Foreign key constraints
 - [ ] PRIMARY KEY and UNIQUE constraints

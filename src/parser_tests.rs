@@ -3656,6 +3656,82 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_week_function() {
+        let tokens = tokenize("SELECT WEEK(order_date) FROM orders");
+        assert!(tokens.iter().any(|t| matches!(t, Token::Week)));
+    }
+
+    #[test]
+    fn test_parse_quarter_function() {
+        let tokens = tokenize("SELECT QUARTER(order_date) FROM orders");
+        assert!(tokens.iter().any(|t| matches!(t, Token::Quarter)));
+    }
+
+    #[test]
+    fn test_parse_datediff_function() {
+        let tokens = tokenize("SELECT DATEDIFF(end_date, start_date) FROM events");
+        assert!(tokens.iter().any(|t| matches!(t, Token::DateDiff)));
+    }
+
+    #[test]
+    fn test_parse_date_trunc_function() {
+        let tokens = tokenize("SELECT DATE_TRUNC('month', order_date) FROM orders");
+        assert!(tokens.iter().any(|t| matches!(t, Token::DateTrunc)));
+    }
+
+    #[test]
+    fn test_parse_select_with_week_column() {
+        let result = parse_select("SELECT WEEK(order_date) FROM orders");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__week__"));
+        } else {
+            panic!("Expected Some(columns)");
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_quarter_column() {
+        let result = parse_select("SELECT QUARTER(sale_date) FROM sales");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__quarter__"));
+        } else {
+            panic!("Expected Some(columns)");
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_datediff_column() {
+        let result = parse_select("SELECT DATEDIFF(end_date, start_date) FROM events");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__datediff__"));
+        } else {
+            panic!("Expected Some(columns)");
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_date_trunc_column() {
+        let result = parse_select("SELECT DATE_TRUNC('year', created_at) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        if let Some(columns) = cols {
+            assert_eq!(columns.len(), 1);
+            assert!(columns[0].contains("__date_trunc__"));
+        } else {
+            panic!("Expected Some(columns)");
+        }
+    }
+
+    #[test]
     fn test_parse_select_with_hour_column() {
         // Test without FROM first to isolate the issue
         let result = parse_select("SELECT HOUR(ts)");
@@ -3836,6 +3912,145 @@ mod tests {
         
         let result = row.eval_col("__date_sub__:order_date\x1F3");
         assert_eq!(result, Some("2024-06-12".to_string()));
+    }
+
+    #[test]
+    fn test_week_from_date_string() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("order_date".to_string(), "2024-03-15".to_string()); // March 15
+                m
+            },
+        };
+        
+        let result = row.eval_col("__week__:order_date");
+        // Week calculation: March is month 3, days_before = 59, day = 15, total = 74, week = 11
+        assert!(result.is_some());
+        let week: u32 = result.unwrap().parse().unwrap_or(0);
+        assert!(week >= 10 && week <= 12); // Approximate week number
+    }
+
+    #[test]
+    fn test_quarter_from_date_string() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("q1_date".to_string(), "2024-02-15".to_string()); // Q1
+                m.insert("q2_date".to_string(), "2024-05-20".to_string()); // Q2
+                m.insert("q3_date".to_string(), "2024-08-10".to_string()); // Q3
+                m.insert("q4_date".to_string(), "2024-11-25".to_string()); // Q4
+                m
+            },
+        };
+        
+        assert_eq!(row.eval_col("__quarter__:q1_date"), Some("1".to_string()));
+        assert_eq!(row.eval_col("__quarter__:q2_date"), Some("2".to_string()));
+        assert_eq!(row.eval_col("__quarter__:q3_date"), Some("3".to_string()));
+        assert_eq!(row.eval_col("__quarter__:q4_date"), Some("4".to_string()));
+    }
+
+    #[test]
+    fn test_datediff_with_date_strings() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("start_date".to_string(), "2024-01-15".to_string());
+                m.insert("end_date".to_string(), "2024-01-25".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__datediff__:end_date\x1Fstart_date");
+        assert!(result.is_some());
+        // Rough approximation should give positive difference
+        let diff: i64 = result.unwrap().parse().unwrap_or(0);
+        assert!(diff > 0);
+    }
+
+    #[test]
+    fn test_datediff_with_unix_timestamps() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("ts1".to_string(), "86400".to_string()); // 1 day after epoch
+                m.insert("ts2".to_string(), "0".to_string());     // epoch
+                m
+            },
+        };
+        
+        let result = row.eval_col("__datediff__:ts1\x1Fts2");
+        assert_eq!(result, Some("1".to_string())); // 1 day difference
+    }
+
+    #[test]
+    fn test_date_trunc_year() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("created_at".to_string(), "2024-06-15".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__date_trunc__:year\x1Fcreated_at");
+        assert_eq!(result, Some("2024-01-01".to_string()));
+    }
+
+    #[test]
+    fn test_date_trunc_month() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("created_at".to_string(), "2024-06-15".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__date_trunc__:month\x1Fcreated_at");
+        assert_eq!(result, Some("2024-06-01".to_string()));
+    }
+
+    #[test]
+    fn test_date_trunc_day() {
+        use std::collections::HashMap;
+        let row = Row {
+            id: 1,
+            username: "test".to_string(),
+            email: "test@example.com".to_string(),
+            extras: {
+                let mut m = HashMap::new();
+                m.insert("created_at".to_string(), "2024-06-15".to_string());
+                m
+            },
+        };
+        
+        let result = row.eval_col("__date_trunc__:day\x1Fcreated_at");
+        assert_eq!(result, Some("2024-06-15".to_string()));
     }
 
     #[test]
