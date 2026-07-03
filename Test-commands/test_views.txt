@@ -1,0 +1,98 @@
+# Test Cases for Views (CREATE VIEW, DROP VIEW, SELECT from VIEW)
+
+# =========== Basic View Creation ==========
+
+# Create a simple view
+CREATE VIEW user_emails AS SELECT id, username, email FROM users;
+
+# Verify view creation
+SELECT * FROM user_emails;
+
+# =========== Create Multiple Views ==========
+
+# Create another view
+CREATE VIEW active_users AS SELECT id, username FROM users WHERE id > 0;
+
+# Verify second view
+SELECT * FROM active_users;
+
+# =========== View with JOIN (if supported) ==========
+
+# Create a view with a join (test basic substitution)
+CREATE VIEW user_orders AS SELECT users.id, users.username, orders.email FROM users INNER JOIN orders ON users.id = orders.id;
+
+# =========== SELECT from View with WHERE ==========
+
+# Query the first view with WHERE clause
+SELECT * FROM user_emails WHERE id = 1;
+
+# Query with username filter
+SELECT * FROM user_emails WHERE username = 'alice';
+
+# =========== DROP VIEW ==========
+
+# Drop a view
+DROP VIEW active_users;
+
+# Try to select from dropped view (should fail or show error)
+SELECT * FROM active_users;
+
+# =========== Drop non-existent view ==========
+
+# Try to drop a view that doesn't exist
+DROP VIEW non_existent_view;
+
+# =========== Recreate dropped view ==========
+
+# Recreate the view after dropping
+CREATE VIEW active_users AS SELECT id, username FROM users WHERE id > 0;
+
+# Verify it works
+SELECT * FROM active_users;
+
+# =========== View with Aggregate Functions ==========
+
+# Create a view with COUNT
+CREATE VIEW user_count AS SELECT COUNT(*) as total_users FROM users;
+
+# Query the aggregate view
+SELECT * FROM user_count;
+
+# =========== Create View from View (Nested) ==========
+
+# Create a view from another view
+CREATE VIEW email_subset AS SELECT email FROM user_emails WHERE id < 3;
+
+# Query the nested view
+SELECT * FROM email_subset;
+
+# =========== View with GROUP BY ==========
+
+# Create a view with GROUP BY
+CREATE VIEW users_by_group AS SELECT username, COUNT(*) as count FROM users GROUP BY username;
+
+# Query grouped view
+SELECT * FROM users_by_group;
+
+# =========== View with ORDER BY and LIMIT ==========
+
+# Create a view with ordering and limit
+CREATE VIEW top_users AS SELECT id, username FROM users ORDER BY id LIMIT 2;
+
+# Query limited view
+SELECT * FROM top_users;
+
+# =========== Drop All Views ==========
+
+# Drop multiple views
+DROP VIEW user_emails;
+DROP VIEW email_subset;
+DROP VIEW user_orders;
+DROP VIEW user_count;
+DROP VIEW users_by_group;
+DROP VIEW top_users;
+
+# =========== Final Verification ==========
+
+# Try to select from any dropped view (should error)
+SELECT * FROM user_emails;

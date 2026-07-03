@@ -76,6 +76,10 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
     - `SECOND(col)` - Extract second (0-59) from time/timestamp
     - `DATE_ADD(col, days)` - Add days to date
     - `DATE_SUB(col, days)` - Subtract days from date
+- **Views** ✨ NEW - Create and query database views
+  - `CREATE VIEW view_name AS SELECT ...` - Create a view with a SELECT query
+  - `DROP VIEW view_name` - Drop an existing view
+  - **Features**: Views support WHERE, GROUP BY, ORDER BY, LIMIT, aggregates, joins, and nesting
   - **GROUP BY**: Group results by any columns (e.g., `GROUP BY category, supplier`)
   - **HAVING**: Filter grouped results with conditions
   - **ORDER BY (qualified)**: Sort results ASC/DESC with table qualifiers
@@ -290,6 +294,26 @@ CREATE INDEX idx_email ON users (email)                    -- Create index on em
 CREATE INDEX idx_order_date ON orders (order_date)        -- Create index on date column
 CREATE INDEX idx_customer_id ON orders (customer_id)      -- Create index for JOINs
 DROP INDEX idx_order_date                                 -- Drop unused index
+
+-- Views for simplified queries
+CREATE VIEW user_emails AS SELECT id, username, email FROM users
+SELECT * FROM user_emails WHERE id > 2
+SELECT * FROM user_emails ORDER BY username
+
+-- Views with aggregation
+CREATE VIEW order_summary AS SELECT username, COUNT(*) as total FROM orders GROUP BY username
+SELECT * FROM order_summary WHERE total > 1
+
+-- Nested views
+CREATE VIEW active_orders AS SELECT * FROM orders WHERE id > 0
+CREATE VIEW active_order_summary AS SELECT COUNT(*) FROM active_orders
+SELECT * FROM active_order_summary
+
+-- Drop views
+DROP VIEW user_emails
+DROP VIEW order_summary
+DROP VIEW active_orders
+DROP VIEW active_order_summary
 ```
 
 ## DDL Commands - Index Management
@@ -360,12 +384,12 @@ Error: Index 'nonexistent' not found
 - [x] Common Table Expressions (WITH clause) — Parser complete, execution integration pending
 - [x] CREATE INDEX / DROP INDEX statements — Parser complete for explicit index creation
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB)
+- [x] Views (CREATE VIEW, DROP VIEW) — Views with subquery substitution, support for aggregates, joins, nested views
 - [ ] More date functions (DATEDIFF, DATE_TRUNC, WEEK, QUARTER)
 - [ ] Full text search
 - [ ] Foreign key constraints
 - [ ] PRIMARY KEY and UNIQUE constraints
 - [ ] CREATE INDEX on arbitrary columns
-- [ ] Views (CREATE VIEW, DROP VIEW)
 
 ## References
 
