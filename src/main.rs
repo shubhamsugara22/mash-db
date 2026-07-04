@@ -1,4 +1,4 @@
-use st    d::collections::HashMap;
+use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -1878,16 +1878,56 @@ fn execute_statement(
                 get_default_table(tables, schemas)
             };
             let schema = table.schema().clone();
+            let actual_table_name = table_name.as_deref().unwrap_or("users").to_lowercase();
+            
             match Row::from_values(&schema, values) {
-                Ok(row) => match table.insert(row) {
-                    Ok(()) => {
-                        if let Err(e) = table.save() {
-                            println!("Error saving table: {}", e);
-                        } else {
-                            println!("Executed.");
+                Ok(row) => {
+                    // Check constraints if they exist for this table
+                    if let Some((pk_opt, unique_cols)) = constraints.get(&actual_table_name) {
+                        // Check PRIMARY KEY uniqueness
+                        if let Some(pk_col) = pk_opt {
+                            if let Some(pk_idx) = schema.iter().position(|c| c == pk_col) {
+                                let new_pk_value = row.get(pk_idx).map(|v| v.to_string());
+                                
+                                // Check all existing rows for duplicate primary key
+                                for existing_row in table.select_all() {
+                                    let existing_pk_value = existing_row.get(pk_idx).map(|v| v.to_string());
+                                    if new_pk_value == existing_pk_value {
+                                        println!("Error: PRIMARY KEY constraint violation on column '{}'", pk_col);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Check UNIQUE constraints
+                        for unique_col in unique_cols {
+                            if let Some(unique_idx) = schema.iter().position(|c| c == unique_col) {
+                                let new_unique_value = row.get(unique_idx).map(|v| v.to_string());
+                                
+                                // Check all existing rows for duplicate unique value
+                                for existing_row in table.select_all() {
+                                    let existing_unique_value = existing_row.get(unique_idx).map(|v| v.to_string());
+                                    if new_unique_value == existing_unique_value && new_unique_value.is_some() {
+                                        println!("Error: UNIQUE constraint violation on column '{}'", unique_col);
+                                        return;
+                                    }
+                                }
+                            }
                         }
                     }
-                    Err(e) => println!("Error: {}", e),
+                    
+                    // If all constraint checks pass, insert the row
+                    match table.insert(row) {
+                        Ok(()) => {
+                            if let Err(e) = table.save() {
+                                println!("Error saving table: {}", e);
+                            } else {
+                                println!("Executed.");
+                            }
+                        }
+                        Err(e) => println!("Error: {}", e),
+                    }
                 },
                 Err(e) => println!("Error: {}", e),
             }
@@ -2678,6 +2718,8 @@ fn execute_statement(
         Statement::CreateTable {
             table_name,
             columns,
+            primary_key,
+            unique_columns,
         } => {
             let table_name_lower = table_name.to_lowercase();
 
@@ -2685,6 +2727,22 @@ fn execute_statement(
             if tables.contains_key(&table_name_lower) {
                 println!("Error: Table '{}' already exists", table_name);
                 return;
+            }
+
+            // Validate PRIMARY KEY column exists
+            if let Some(ref pk) = primary_key {
+                if !columns.contains(pk) {
+                    println!("Error: PRIMARY KEY column '{}' does not exist in table", pk);
+                    return;
+                }
+            }
+
+            // Validate UNIQUE columns exist
+            for uc in &unique_columns {
+                if !columns.contains(uc) {
+                    println!("Error: UNIQUE column '{}' does not exist in table", uc);
+                    return;
+                }
             }
 
             // Remove existing file if it exists (to start fresh)
@@ -2705,6 +2763,10 @@ fn execute_statement(
             tables.insert(table_name_lower.clone(), new_table);
 
             schemas.insert(table_name_lower.clone(), columns.clone());
+            
+            // Store constraints
+            constraints.insert(table_name_lower.clone(), (primary_key.clone(), unique_columns.clone()));
+            
             if !tx.active {
                 save_schemas(schemas);
             }
@@ -2714,6 +2776,13 @@ fn execute_statement(
                 table_name,
                 columns.join(", ")
             );
+            
+            if let Some(ref pk) = primary_key {
+                println!("  PRIMARY KEY: {}", pk);
+            }
+            if !unique_columns.is_empty() {
+                println!("  UNIQUE: {}", unique_columns.join(", "));
+            }
         }
         Statement::AlterTableRename {
             table_name,
@@ -2844,6 +2913,10 @@ fn execute_statement(
             }
 
             schemas.remove(&table_name_lower);
+            
+            // Remove constraints for this table
+            constraints.remove(&table_name_lower);
+            
             if !tx.active {
                 save_schemas(schemas);
             }
@@ -3654,6 +3727,7 @@ mod tests {
         };
 
         let mut views = std::collections::HashMap::new();
+        let mut constraints = std::collections::HashMap::new();
         let _result = super::execute_statement(
             Statement::Select {
                 distinct: false,
@@ -3674,6 +3748,7 @@ mod tests {
             &mut tables,
             &mut schemas,
             &mut views,
+            &mut constraints,
             &mut tx_state,
         );
     }
