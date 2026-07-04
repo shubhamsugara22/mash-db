@@ -1886,29 +1886,27 @@ fn execute_statement(
                     if let Some((pk_opt, unique_cols)) = constraints.get(&actual_table_name) {
                         // Check PRIMARY KEY uniqueness
                         if let Some(pk_col) = pk_opt {
-                            if let Some(pk_idx) = schema.iter().position(|c| c == pk_col) {
-                                let new_pk_value = row.get(pk_idx).map(|v| v.to_string());
-                                
-                                // Check all existing rows for duplicate primary key
-                                for existing_row in table.select_all() {
-                                    let existing_pk_value = existing_row.get(pk_idx).map(|v| v.to_string());
-                                    if new_pk_value == existing_pk_value {
-                                        println!("Error: PRIMARY KEY constraint violation on column '{}'", pk_col);
-                                        return;
-                                    }
+                            let new_pk_value = row.get_value(pk_col);
+                            
+                            // Check all existing rows for duplicate primary key
+                            for existing_row in table.select_all() {
+                                let existing_pk_value = existing_row.get_value(pk_col);
+                                if new_pk_value == existing_pk_value {
+                                    println!("Error: PRIMARY KEY constraint violation on column '{}'", pk_col);
+                                    return;
                                 }
                             }
                         }
                         
                         // Check UNIQUE constraints
                         for unique_col in unique_cols {
-                            if let Some(unique_idx) = schema.iter().position(|c| c == unique_col) {
-                                let new_unique_value = row.get(unique_idx).map(|v| v.to_string());
-                                
-                                // Check all existing rows for duplicate unique value
+                            let new_unique_value = row.get_value(unique_col);
+                            
+                            // Check all existing rows for duplicate unique value (skip NULL values)
+                            if new_unique_value.is_some() {
                                 for existing_row in table.select_all() {
-                                    let existing_unique_value = existing_row.get(unique_idx).map(|v| v.to_string());
-                                    if new_unique_value == existing_unique_value && new_unique_value.is_some() {
+                                    let existing_unique_value = existing_row.get_value(unique_col);
+                                    if new_unique_value == existing_unique_value {
                                         println!("Error: UNIQUE constraint violation on column '{}'", unique_col);
                                         return;
                                     }

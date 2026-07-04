@@ -4179,3 +4179,81 @@ mod tests {
         assert!(cte_data.query.contains("COUNT"));
     }
 }
+
+    // PRIMARY KEY and UNIQUE constraint parsing tests
+    #[test]
+    fn test_tokenize_primary_key() {
+        let tokens = tokenize("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
+        assert!(tokens.contains(&Token::Primary));
+        assert!(tokens.contains(&Token::Key));
+    }
+
+    #[test]
+    fn test_tokenize_unique() {
+        let tokens = tokenize("CREATE TABLE users (id INTEGER, email TEXT UNIQUE)");
+        assert!(tokens.contains(&Token::Unique));
+    }
+
+    #[test]
+    fn test_parse_create_table_with_primary_key() {
+        let result = parse_create_table("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
+        assert!(result.is_ok());
+        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
+        assert_eq!(table_name, "users");
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0], "id");
+        assert_eq!(columns[1], "name");
+        assert_eq!(primary_key, Some("id".to_string()));
+        assert_eq!(unique_columns.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_create_table_with_unique() {
+        let result = parse_create_table("CREATE TABLE users (id INTEGER, email TEXT UNIQUE, name TEXT)");
+        assert!(result.is_ok());
+        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
+        assert_eq!(table_name, "users");
+        assert_eq!(columns.len(), 3);
+        assert_eq!(columns[0], "id");
+        assert_eq!(columns[1], "email");
+        assert_eq!(columns[2], "name");
+        assert_eq!(primary_key, None);
+        assert_eq!(unique_columns.len(), 1);
+        assert_eq!(unique_columns[0], "email");
+    }
+
+    #[test]
+    fn test_parse_create_table_with_multiple_unique() {
+        let result = parse_create_table("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE, username TEXT UNIQUE)");
+        assert!(result.is_ok());
+        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
+        assert_eq!(table_name, "users");
+        assert_eq!(columns.len(), 3);
+        assert_eq!(primary_key, Some("id".to_string()));
+        assert_eq!(unique_columns.len(), 2);
+        assert_eq!(unique_columns[0], "email");
+        assert_eq!(unique_columns[1], "username");
+    }
+
+    #[test]
+    fn test_parse_create_table_with_pk_and_unique() {
+        let result = parse_create_table("CREATE TABLE products (id INTEGER PRIMARY KEY, sku TEXT UNIQUE, name TEXT)");
+        assert!(result.is_ok());
+        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
+        assert_eq!(table_name, "products");
+        assert_eq!(columns.len(), 3);
+        assert_eq!(primary_key, Some("id".to_string()));
+        assert_eq!(unique_columns.len(), 1);
+        assert_eq!(unique_columns[0], "sku");
+    }
+
+    #[test]
+    fn test_parse_create_table_no_constraints() {
+        let result = parse_create_table("CREATE TABLE users (id INTEGER, name TEXT)");
+        assert!(result.is_ok());
+        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
+        assert_eq!(table_name, "users");
+        assert_eq!(columns.len(), 2);
+        assert_eq!(primary_key, None);
+        assert_eq!(unique_columns.len(), 0);
+    }
