@@ -1095,9 +1095,11 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if upper.starts_with("CREATE TABLE") {
         match parser::parse_create_table(input) {
-            Ok((table_name, columns)) => PrepareResult::Success(Statement::CreateTable {
+            Ok((table_name, columns, primary_key, unique_columns)) => PrepareResult::Success(Statement::CreateTable {
                 table_name,
                 columns,
+                primary_key,
+                unique_columns,
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
@@ -1394,6 +1396,7 @@ fn execute_statement(
     tables: &mut HashMap<String, Table>,
     schemas: &mut HashMap<String, Vec<String>>,
     views: &mut HashMap<String, String>,
+    constraints: &mut HashMap<String, (Option<String>, Vec<String>)>,
     tx: &mut TransactionState,
 ) {
     // Map a logical table name to a backing file path.
@@ -1971,7 +1974,7 @@ fn execute_statement(
                     
                     // Execute the substituted query
                     if let PrepareResult::Success(stmt) = prepare_statement(&view_select) {
-                        execute_statement(stmt, tables, schemas, views, tx);
+                        execute_statement(stmt, tables, schemas, views, constraints, tx);
                     }
                     return;
                 }
@@ -2288,7 +2291,7 @@ fn execute_statement(
                     
                     // Execute the substituted query
                     if let PrepareResult::Success(stmt) = prepare_statement(&view_select) {
-                        execute_statement(stmt, tables, schemas, views, tx);
+                        execute_statement(stmt, tables, schemas, views, constraints, tx);
                     }
                     return;
                 }
@@ -3387,6 +3390,9 @@ fn main() {
 
     // Initialize view registry: store view name -> SELECT query
     let mut views: HashMap<String, String> = HashMap::new();
+    
+    // Initialize constraint registry: store table_name -> (primary_key, unique_columns)
+    let mut constraints: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
 
     // Load or initialize schema registry
     let mut schemas = load_schemas();
@@ -3469,7 +3475,7 @@ fn main() {
 
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
-                execute_statement(statement, &mut tables, &mut schemas, &mut views, &mut tx_state);
+                execute_statement(statement, &mut tables, &mut schemas, &mut views, &mut constraints, &mut tx_state);
             }
             PrepareResult::UnrecognizedStatement => {
                 println!("Unrecognized keyword at start of '{}'", input);

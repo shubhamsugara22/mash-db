@@ -4295,14 +4295,13 @@ fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(Option<String>, String
 }
 
 // Parse CREATE TABLE statement
-// Syntax: CREATE TABLE table_name (column1 type, column2 type, ...)
-// For now, simplified: CREATE TABLE table_name (id, username, email)
-pub fn parse_create_table(input: &str) -> Result<(String, Vec<String>), String> {
+// Syntax: CREATE TABLE table_name (column1 PRIMARY KEY, column2 UNIQUE, column3)
+pub fn parse_create_table(input: &str) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
     let tokens = tokenize(input);
     parse_create_table_tokens(&tokens)
 }
 
-fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>), String> {
+fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
     if tokens.len() < 5 {
         return Err("CREATE TABLE requires table name and columns".to_string());
     }
@@ -4331,10 +4330,34 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>), 
     i += 1;
 
     let mut columns = Vec::new();
+    let mut primary_key: Option<String> = None;
+    let mut unique_columns: Vec<String> = Vec::new();
+    
     loop {
         if let Some(Token::Identifier(col)) = tokens.get(i) {
-            columns.push(col.clone());
+            let column_name = col.clone();
+            columns.push(column_name.clone());
             i += 1;
+
+            // Check for PRIMARY KEY constraint
+            if tokens.get(i) == Some(&Token::Primary) {
+                i += 1;
+                if tokens.get(i) == Some(&Token::Key) {
+                    i += 1;
+                    if primary_key.is_some() {
+                        return Err("Cannot have multiple PRIMARY KEY columns".to_string());
+                    }
+                    primary_key = Some(column_name.clone());
+                } else {
+                    return Err("Expected KEY after PRIMARY".to_string());
+                }
+            }
+            
+            // Check for UNIQUE constraint
+            if tokens.get(i) == Some(&Token::Unique) {
+                i += 1;
+                unique_columns.push(column_name);
+            }
 
             // Check for comma or closing paren
             if tokens.get(i) == Some(&Token::Comma) {
@@ -4354,7 +4377,7 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>), 
         return Err("CREATE TABLE requires at least one column".to_string());
     }
 
-    Ok((table_name, columns))
+    Ok((table_name, columns, primary_key, unique_columns))
 }
 
 // Parse ALTER TABLE statement
