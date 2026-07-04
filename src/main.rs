@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use st    d::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -192,6 +192,8 @@ enum Statement {
     CreateTable {
         table_name: String,
         columns: Vec<String>,
+        primary_key: Option<String>,
+        unique_columns: Vec<String>,
     },
     AlterTableRename {
         table_name: String,
