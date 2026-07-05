@@ -42,6 +42,7 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
   - `DELETE FROM table WHERE column = 'value'` - Delete rows with WHERE condition
 - **DDL Commands**:
   - `CREATE TABLE table_name (col1, col2, col3, ...)` - Create a new table with custom columns
+  - `CREATE TABLE table_name (id INTEGER PRIMARY KEY, email TEXT UNIQUE, ...)` - Create table with constraints
   - `DROP TABLE table_name` - Drop an existing table (removes from registry and deletes .json file)
   - `ALTER TABLE table_name RENAME TO new_name` - Rename a table
 - **Advanced SQL Features**:
@@ -182,6 +183,38 @@ Table 'inventory' dropped
 -- Try to drop non-existent table (error)
 db > DROP TABLE nonexistent
 Error: Table 'nonexistent' does not exist
+```
+
+### PRIMARY KEY and UNIQUE Constraints
+
+```sql
+-- Create table with PRIMARY KEY constraint
+db > CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, email TEXT)
+Table 'users' created with columns: id, username, email
+  PRIMARY KEY: id
+
+-- Create table with UNIQUE constraint
+db > CREATE TABLE products (id INTEGER, sku TEXT UNIQUE, name TEXT)
+Table 'products' created with columns: id, sku, name
+  UNIQUE: sku
+
+-- Create table with both PRIMARY KEY and multiple UNIQUE columns
+db > CREATE TABLE accounts (id INTEGER PRIMARY KEY, email TEXT UNIQUE, username TEXT UNIQUE, name TEXT)
+Table 'accounts' created with columns: id, email, username, name
+  PRIMARY KEY: id
+  UNIQUE: email, username
+
+-- PRIMARY KEY constraint prevents duplicate keys
+db > INSERT INTO users VALUES (1, 'alice', 'alice@example.com')
+Executed.
+db > INSERT INTO users VALUES (1, 'bob', 'bob@example.com')
+Error: PRIMARY KEY constraint violation on column 'id'
+
+-- UNIQUE constraint prevents duplicate values
+db > INSERT INTO products VALUES (1, 'SKU-001', 'Widget')
+Executed.
+db > INSERT INTO products VALUES (2, 'SKU-001', 'Gadget')
+Error: UNIQUE constraint violation on column 'sku'
 ```
 
 ## Examples - Advanced Usage
@@ -395,9 +428,9 @@ Error: Index 'nonexistent' not found
 - [x] CREATE INDEX / DROP INDEX statements — Parser complete for explicit index creation
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB, WEEK, QUARTER, DATEDIFF, DATE_TRUNC)
 - [x] Views (CREATE VIEW, DROP VIEW) — Views with subquery substitution, support for aggregates, joins, nested views
+- [x] PRIMARY KEY and UNIQUE constraints
 - [ ] Full text search
 - [ ] Foreign key constraints
-- [ ] PRIMARY KEY and UNIQUE constraints
 - [ ] CREATE INDEX on arbitrary columns
 
 ## References

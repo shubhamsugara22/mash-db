@@ -1,20 +1,10 @@
 {
-  "products": [
+  "inventory": [
     "id",
-    "name",
-    "price",
-    "stock",
-    "category"
-  ],
-  "orders": [
-    "id",
-    "username",
-    "email"
-  ],
-  "users": [
-    "id",
-    "username",
-    "email"
+    "product_name",
+    "quantity",
+    "location",
+    "supplier"
   ],
   "sales": [
     "id",
@@ -23,10 +13,27 @@
     "date",
     "product_type"
   ],
+  "users": [
+    "id",
+    "username",
+    "email"
+  ],
+  "products": [
+    "id",
+    "name",
+    "price",
+    "stock",
+    "category"
+  ],
   "aggcheck": [
     "id",
     "grp",
     "val"
+  ],
+  "orders": [
+    "id",
+    "username",
+    "email"
   ],
   "stores": [
     "id",
@@ -34,12 +41,5 @@
     "city",
     "opening_year",
     "manager"
-  ],
-  "inventory": [
-    "id",
-    "product_name",
-    "quantity",
-    "location",
-    "supplier"
   ]
 }

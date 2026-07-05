@@ -1,0 +1,7 @@
+CREATE TABLE test_unique (id INTEGER, email TEXT UNIQUE, name TEXT)
+INSERT INTO test_unique VALUES (1, alice@test.com, Alice)
+INSERT INTO test_unique VALUES (2, bob@test.com, Bob)
+INSERT INTO test_unique VALUES (3, alice@test.com, Charlie)
+SELECT * FROM test_unique
+DROP TABLE test_unique
+.exit

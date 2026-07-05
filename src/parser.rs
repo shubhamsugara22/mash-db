@@ -4339,6 +4339,11 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>, O
             columns.push(column_name.clone());
             i += 1;
 
+            // Skip data type if present (INTEGER, TEXT, etc.)
+            if let Some(Token::Identifier(_)) = tokens.get(i) {
+                i += 1;  // skip data type
+            }
+
             // Check for PRIMARY KEY constraint
             if tokens.get(i) == Some(&Token::Primary) {
                 i += 1;

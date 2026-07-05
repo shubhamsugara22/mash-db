@@ -1,4 +1,4 @@
-﻿#[cfg(test)]
+#[cfg(test)]
 mod tests {
     use crate::compute_rank_map;
     use crate::compute_row_number_map;
@@ -1018,7 +1018,7 @@ mod tests {
             .contains("COUNT(DISTINCT *) is not supported"));
     }
 
-    // â”€â”€ Numeric-literal negative / regression tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Numeric-literal negative / regression tests ───────────────────────────
 
     #[test]
     fn test_tokenize_double_dot_splits_into_two_string_tokens() {
@@ -1031,7 +1031,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_incomplete_exponent_not_consumed() {
-        // "5e" â€” 'e' without a following digit must not be consumed as an exponent
+        // "5e" — 'e' without a following digit must not be consumed as an exponent
         let tokens = tokenize("5e");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Number(5));
@@ -1040,7 +1040,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_exponent_sign_without_digit_not_consumed() {
-        // "5e+" â€” sign after 'e' but no digit: exponent not consumed, bare '+' is dropped
+        // "5e+" — sign after 'e' but no digit: exponent not consumed, bare '+' is dropped
         let tokens = tokenize("5e+");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Number(5));
@@ -1049,7 +1049,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_bare_minus_between_identifiers_is_dropped() {
-        // "x - y" â€” minus not adjacent to a digit is silently dropped
+        // "x - y" — minus not adjacent to a digit is silently dropped
         let tokens = tokenize("x - y");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Identifier("x".to_string()));
@@ -1058,7 +1058,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_bare_plus_between_identifiers_is_dropped() {
-        // "a + b" â€” plus not adjacent to a digit is silently dropped
+        // "a + b" — plus not adjacent to a digit is silently dropped
         let tokens = tokenize("a + b");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Identifier("a".to_string()));
@@ -1067,7 +1067,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_leading_dot_without_digit_is_dot_token() {
-        // ". col" â€” dot not followed by a digit must produce a Dot token, not a numeric
+        // ". col" — dot not followed by a digit must produce a Dot token, not a numeric
         let tokens = tokenize(". col");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Dot);
@@ -1076,7 +1076,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_sign_then_dot_no_digit_sign_dropped() {
-        // "-. x" â€” minus then dot but no digit after dot: sign is dropped, dot stays Dot
+        // "-. x" — minus then dot but no digit after dot: sign is dropped, dot stays Dot
         let tokens = tokenize("-. x");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0], Token::Dot);
@@ -1095,7 +1095,7 @@ mod tests {
 
     #[test]
     fn test_parse_insert_missing_values_keyword_is_error() {
-        // "INSERT INTO users (1, alice)" â€” VALUES keyword is required; must return Err
+        // "INSERT INTO users (1, alice)" — VALUES keyword is required; must return Err
         let result = parse_insert("INSERT INTO users (1, alice)");
         assert!(result.is_err());
     }
@@ -1331,7 +1331,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // â”€â”€ CASE WHEN tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── CASE WHEN tests ───────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_case_when_basic() {
@@ -1418,7 +1418,7 @@ mod tests {
             email: "e".to_string(),
             extras,
         };
-        // encoded: status=active â†’ "yes", else "no"
+        // encoded: status=active → "yes", else "no"
         let encoded = format!("__case__:status\x1F=\x1Factive\x1Fyes\x1E__else__\x1Fno");
         assert_eq!(row.eval_col(&encoded), Some("yes".to_string()));
     }
@@ -1472,7 +1472,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("A".to_string()));
     }
 
-    // â”€â”€ COALESCE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── COALESCE ──────────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_coalesce_basic() {
@@ -1552,7 +1552,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("fallback".to_string()));
     }
 
-    // â”€â”€ NULLIF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── NULLIF ────────────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_nullif_basic() {
@@ -1757,7 +1757,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("alice@domain.com".to_string()));
     }
 
-    // â”€â”€ IF tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── IF tests ──────────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_if_basic() {
@@ -1804,7 +1804,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("fail".to_string()));
     }
 
-    // â”€â”€ ABS tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── ABS tests ─────────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_abs_basic() {
@@ -1851,7 +1851,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("7".to_string()));
     }
 
-    // â”€â”€ ROUND tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── ROUND tests ───────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_round_basic() {
@@ -1898,7 +1898,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("20".to_string()));
     }
 
-    // â”€â”€ SUBSTR tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── SUBSTR tests ──────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_substr_basic() {
@@ -1945,7 +1945,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("@e".to_string()));
     }
 
-    // â”€â”€ REPLACE tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── REPLACE tests ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_replace_basic() {
@@ -1988,7 +1988,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("hello".to_string()));
     }
 
-    // â”€â”€ LPAD tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── LPAD tests ────────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_lpad_basic() {
@@ -2035,7 +2035,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("123456".to_string()));
     }
 
-    // â”€â”€ RPAD tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── RPAD tests ────────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_rpad_basic() {
@@ -2082,7 +2082,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("toolong".to_string()));
     }
 
-    // â”€â”€ LEFT tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── LEFT tests ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_left_basic() {
@@ -2125,7 +2125,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("hi".to_string()));
     }
 
-    // â”€â”€ RIGHT tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── RIGHT tests ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_right_basic() {
@@ -2168,7 +2168,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("hi".to_string()));
     }
 
-    // â”€â”€ REVERSE tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── REVERSE tests ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_reverse_basic() {
@@ -2211,7 +2211,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("".to_string()));
     }
 
-    // â”€â”€ REPEAT tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── REPEAT tests ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_repeat_basic() {
@@ -2254,7 +2254,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("".to_string()));
     }
 
-    // â”€â”€ INITCAP tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── INITCAP tests ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_initcap_basic() {
@@ -2297,7 +2297,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("Hello World Test".to_string()));
     }
 
-    // â”€â”€ FLOOR tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── FLOOR tests ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_floor_basic() {
@@ -2340,7 +2340,7 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("-3".to_string()));
     }
 
-    // â”€â”€ CEIL tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── CEIL tests ─────────────────────────────────────────────────────────
 
     #[test]
     fn test_parse_select_ceil_basic() {
@@ -4178,7 +4178,6 @@ mod tests {
         let cte_data = cte.unwrap();
         assert!(cte_data.query.contains("COUNT"));
     }
-}
 
     // PRIMARY KEY and UNIQUE constraint parsing tests
     #[test]
@@ -4257,3 +4256,5 @@ mod tests {
         assert_eq!(primary_key, None);
         assert_eq!(unique_columns.len(), 0);
     }
+}
+
