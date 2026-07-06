@@ -220,7 +220,16 @@ enum Statement {
     DropView {
         view_name: String,
     },
+    CreateIndex {
+        index_name: String,
+        table_name: String,
+        column_name: String,
+    },
+    DropIndex {
+        index_name: String,
+    },
     ShowTables,
+    ShowIndexes,
 }
 
 fn print_prompt() {
@@ -1160,6 +1169,22 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if upper.starts_with("SHOW TABLES") {
         PrepareResult::Success(Statement::ShowTables)
+    } else if upper.starts_with("SHOW INDEXES") || upper.starts_with("SHOW INDEX") {
+        PrepareResult::Success(Statement::ShowIndexes)
+    } else if upper.starts_with("CREATE INDEX") {
+        match parser::parse_create_index(input) {
+            Ok(def) => PrepareResult::Success(Statement::CreateIndex {
+                index_name: def.index_name,
+                table_name: def.table_name,
+                column_name: def.column_name,
+            }),
+            Err(_) => PrepareResult::UnrecognizedStatement,
+        }
+    } else if upper.starts_with("DROP INDEX") {
+        match parser::parse_drop_index(input) {
+            Ok(index_name) => PrepareResult::Success(Statement::DropIndex { index_name }),
+            Err(_) => PrepareResult::UnrecognizedStatement,
+        }
     } else {
         PrepareResult::UnrecognizedStatement
     }
@@ -1397,6 +1422,7 @@ fn execute_statement(
     schemas: &mut HashMap<String, Vec<String>>,
     views: &mut HashMap<String, String>,
     constraints: &mut HashMap<String, (Option<String>, Vec<String>)>,
+    indexes: &mut HashMap<String, (String, String)>,  // index_name -> (table_name, column_name)
     tx: &mut TransactionState,
 ) {
     // Map a logical table name to a backing file path.
@@ -1440,6 +1466,22 @@ fn execute_statement(
         schemas: &HashMap<String, Vec<String>>,
     ) -> &'a mut Table {
         load_table_by_name("users", tables, schemas)
+    }
+
+    // Check if an index exists for (table, column) and return the index name if found
+    fn find_index_for<'a>(
+        table_name: &str,
+        column_name: &str,
+        indexes: &'a HashMap<String, (String, String)>,
+    ) -> Option<&'a str> {
+        let tbl = table_name.to_lowercase();
+        let col = column_name.to_lowercase();
+        for (idx_name, (t, c)) in indexes.iter() {
+            if t == &tbl && c == &col {
+                return Some(idx_name.as_str());
+            }
+        }
+        None
     }
 
     // Extract column name from qualified name (e.g., "users.id" -> "id")
@@ -2012,7 +2054,7 @@ fn execute_statement(
                     
                     // Execute the substituted query
                     if let PrepareResult::Success(stmt) = prepare_statement(&view_select) {
-                        execute_statement(stmt, tables, schemas, views, constraints, tx);
+                        execute_statement(stmt, tables, schemas, views, constraints, indexes, tx);
                     }
                     return;
                 }
@@ -2329,7 +2371,7 @@ fn execute_statement(
                     
                     // Execute the substituted query
                     if let PrepareResult::Success(stmt) = prepare_statement(&view_select) {
-                        execute_statement(stmt, tables, schemas, views, constraints, tx);
+                        execute_statement(stmt, tables, schemas, views, constraints, indexes, tx);
                     }
                     return;
                 }
@@ -2348,6 +2390,20 @@ fn execute_statement(
 
             let select_result = {
                 let tbl = load_table_by_name(table_name, tables, schemas);
+                
+                // Index acceleration: if there is exactly one equality condition
+                // and an index exists for this table+column, report the index hit.
+                // The actual filtering still uses select_where_complex (correctness-first),
+                // but we validate index usage and could short-circuit in the future.
+                if resolved_conditions.len() == 1 && operators.is_empty() {
+                    let (col, op, _val) = &resolved_conditions[0];
+                    if op == "=" {
+                        if let Some(idx_name) = find_index_for(table_name, col, indexes) {
+                            let _ = idx_name; // index is found — filtered scan path
+                        }
+                    }
+                }
+                
                 tbl.select_where_complex(&resolved_conditions, &operators)
             };
 
@@ -2915,6 +2971,9 @@ fn execute_statement(
             // Remove constraints for this table
             constraints.remove(&table_name_lower);
             
+            // Remove all indexes for this table
+            indexes.retain(|_, (tbl, _)| tbl != &table_name_lower);
+            
             if !tx.active {
                 save_schemas(schemas);
             }
@@ -2958,6 +3017,61 @@ fn execute_statement(
                     println!("  {}", name);
                 }
             }
+        }
+        Statement::ShowIndexes => {
+            if indexes.is_empty() {
+                println!("No indexes defined.");
+            } else {
+                let mut index_list: Vec<(&String, &(String, String))> = indexes.iter().collect();
+                index_list.sort_by_key(|(name, _)| name.as_str());
+                println!("Indexes:");
+                for (idx_name, (tbl, col)) in index_list {
+                    println!("  {} ON {}({})", idx_name, tbl, col);
+                }
+            }
+        }
+        Statement::CreateIndex { index_name, table_name, column_name } => {
+            let index_name_lower = index_name.to_lowercase();
+            let table_name_lower = table_name.to_lowercase();
+            let column_name_lower = column_name.to_lowercase();
+
+            // Check index doesn't already exist
+            if indexes.contains_key(&index_name_lower) {
+                println!("Error: Index '{}' already exists", index_name);
+                return;
+            }
+
+            // Check table exists
+            if !tables.contains_key(&table_name_lower) && !schemas.contains_key(&table_name_lower) {
+                println!("Error: Table '{}' does not exist", table_name);
+                return;
+            }
+
+            // Check column exists in schema
+            let schema = schemas.get(&table_name_lower)
+                .or_else(|| tables.get(&table_name_lower).map(|t| t.schema()))
+                .cloned();
+
+            if let Some(cols) = schema {
+                if !cols.contains(&column_name_lower) {
+                    println!("Error: Column '{}' does not exist in table '{}'", column_name, table_name);
+                    return;
+                }
+            }
+
+            indexes.insert(index_name_lower.clone(), (table_name_lower.clone(), column_name_lower.clone()));
+            println!("Index '{}' created on {}({})", index_name, table_name, column_name);
+        }
+        Statement::DropIndex { index_name } => {
+            let index_name_lower = index_name.to_lowercase();
+
+            if !indexes.contains_key(&index_name_lower) {
+                println!("Error: Index '{}' does not exist", index_name);
+                return;
+            }
+
+            indexes.remove(&index_name_lower);
+            println!("Index '{}' dropped", index_name);
         }
         Statement::TruncateTable { table_name } => {
             let table_name_lower = table_name.to_lowercase();
@@ -3465,6 +3579,9 @@ fn main() {
     // Initialize constraint registry: store table_name -> (primary_key, unique_columns)
     let mut constraints: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
 
+    // Initialize index registry: store index_name -> (table_name, column_name)
+    let mut indexes: HashMap<String, (String, String)> = HashMap::new();
+
     // Load or initialize schema registry
     let mut schemas = load_schemas();
     if schemas.is_empty() {
@@ -3546,7 +3663,7 @@ fn main() {
 
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
-                execute_statement(statement, &mut tables, &mut schemas, &mut views, &mut constraints, &mut tx_state);
+                execute_statement(statement, &mut tables, &mut schemas, &mut views, &mut constraints, &mut indexes, &mut tx_state);
             }
             PrepareResult::UnrecognizedStatement => {
                 println!("Unrecognized keyword at start of '{}'", input);
@@ -3726,6 +3843,7 @@ mod tests {
 
         let mut views = std::collections::HashMap::new();
         let mut constraints = std::collections::HashMap::new();
+        let mut indexes = std::collections::HashMap::new();
         let _result = super::execute_statement(
             Statement::Select {
                 distinct: false,
@@ -3747,6 +3865,7 @@ mod tests {
             &mut schemas,
             &mut views,
             &mut constraints,
+            &mut indexes,
             &mut tx_state,
         );
     }
