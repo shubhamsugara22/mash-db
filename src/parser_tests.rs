@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
+    use crate::compute_dense_rank_map;
+    use crate::compute_lag_map;
+    use crate::compute_lead_map;
     use crate::compute_rank_map;
     use crate::compute_row_number_map;
-    use crate::compute_dense_rank_map;
-    use crate::compute_lead_map;
-    use crate::compute_lag_map;
     use crate::parser::*;
     use crate::table::{Row, Table};
 
@@ -2770,7 +2770,8 @@ mod tests {
 
     #[test]
     fn test_parse_lead_with_partition() {
-        let result = parse_select("SELECT LEAD(username) OVER (PARTITION BY email ORDER BY id) FROM users");
+        let result =
+            parse_select("SELECT LEAD(username) OVER (PARTITION BY email ORDER BY id) FROM users");
         assert!(result.is_ok());
         let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
@@ -2782,30 +2783,36 @@ mod tests {
     #[test]
     fn test_lead_runtime() {
         use crate::compute_lead_map;
-        
+
         let mut table = Table::new(
             "test_lead.json".to_string(),
-            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
         );
-        
-        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+
+        let _ =
+            table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
-        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
-        
+        let _ = table
+            .insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+
         let rows = table.select_all();
-        
+
         // Test basic LEAD with offset 1
         let encoded = "__lead__:username\x1F1\x1FNULL\x1F\x1Fid".to_string();
         let mapping = compute_lead_map(&rows, &Some(vec![encoded.clone()]));
         let col_map = mapping.get(&encoded).expect("mapping present");
-        
+
         // Row 1 should get row 2's username
         assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("bob"));
         // Row 2 should get row 3's username
         assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("charlie"));
         // Row 3 has no next row, should get NULL
         assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("NULL"));
-        
+
         // Clean up
         let _ = std::fs::remove_file("test_lead.json");
     }
@@ -2813,24 +2820,30 @@ mod tests {
     #[test]
     fn test_lead_with_offset() {
         use crate::compute_lead_map;
-        
+
         let mut table = Table::new(
             "test_lead_offset.json".to_string(),
-            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
         );
-        
-        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+
+        let _ =
+            table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
-        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+        let _ = table
+            .insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(4, "dave".to_string(), "dave@test.com".to_string()).unwrap());
-        
+
         let rows = table.select_all();
-        
+
         // Test LEAD with offset 2
         let encoded = "__lead__:username\x1F2\x1FNULL\x1F\x1Fid".to_string();
         let mapping = compute_lead_map(&rows, &Some(vec![encoded.clone()]));
         let col_map = mapping.get(&encoded).expect("mapping present");
-        
+
         // Row 1 should get row 3's username (offset 2)
         assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("charlie"));
         // Row 2 should get row 4's username
@@ -2838,7 +2851,7 @@ mod tests {
         // Row 3 and 4 get NULL
         assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("NULL"));
         assert_eq!(col_map.get(&4).map(|s| s.as_str()), Some("NULL"));
-        
+
         // Clean up
         let _ = std::fs::remove_file("test_lead_offset.json");
     }
@@ -2846,27 +2859,32 @@ mod tests {
     #[test]
     fn test_lead_with_default_value() {
         use crate::compute_lead_map;
-        
+
         let mut table = Table::new(
             "test_lead_default.json".to_string(),
-            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
         );
-        
-        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+
+        let _ =
+            table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
-        
+
         let rows = table.select_all();
-        
+
         // Test LEAD with custom default value 'N/A'
         let encoded = "__lead__:username\x1F1\x1FN/A\x1F\x1Fid".to_string();
         let mapping = compute_lead_map(&rows, &Some(vec![encoded.clone()]));
         let col_map = mapping.get(&encoded).expect("mapping present");
-        
+
         // Row 1 should get row 2's username
         assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("bob"));
         // Row 2 has no next row, should get custom default 'N/A'
         assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("N/A"));
-        
+
         // Clean up
         let _ = std::fs::remove_file("test_lead_default.json");
     }
@@ -2874,7 +2892,9 @@ mod tests {
     #[test]
     fn test_parse_first_value_basic() {
         let result = parse_select("SELECT FIRST_VALUE(username) OVER (ORDER BY id) FROM users");
-        assert!(result.is_ok());
+        if result.is_err() {
+            panic!("parse error: {}", result.err().unwrap());
+        }
         let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
         let cols = cols.unwrap();
@@ -2888,11 +2908,17 @@ mod tests {
         use crate::compute_first_value_map;
         let mut table = Table::new(
             "test_first_value.json".to_string(),
-            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
         );
-        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+        let _ =
+            table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
-        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+        let _ = table
+            .insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
         let rows = table.select_all();
 
         let encoded = "__first_value__:username\x1F\x1Fid".to_string();
@@ -2905,6 +2931,15 @@ mod tests {
         assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("alice"));
 
         let _ = std::fs::remove_file("test_first_value.json");
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_tokens_first_value() {
+        use crate::tokenize;
+        let toks = tokenize("SELECT FIRST_VALUE(username) OVER (ORDER BY id) FROM users");
+        println!("TOKENS: {:?}", toks);
+        assert!(true);
     }
 
     #[test]
@@ -2943,7 +2978,8 @@ mod tests {
 
     #[test]
     fn test_parse_lag_with_partition() {
-        let result = parse_select("SELECT LAG(username) OVER (PARTITION BY email ORDER BY id) FROM users");
+        let result =
+            parse_select("SELECT LAG(username) OVER (PARTITION BY email ORDER BY id) FROM users");
         assert!(result.is_ok());
         let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
         assert!(cols.is_some());
@@ -2956,27 +2992,33 @@ mod tests {
     fn test_lag_runtime() {
         let mut table = Table::new(
             "test_lag.json".to_string(),
-            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
         );
-        
-        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+
+        let _ =
+            table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
-        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
-        
+        let _ = table
+            .insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+
         let rows = table.select_all();
-        
+
         // Test basic LAG with offset 1
         let encoded = "__lag__:username\x1F1\x1FNULL\x1F\x1Fid".to_string();
         let mapping = compute_lag_map(&rows, &Some(vec![encoded.clone()]));
         let col_map = mapping.get(&encoded).expect("mapping present");
-        
+
         // Row 1 has no previous row, should get NULL
         assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("NULL"));
         // Row 2 should get row 1's username
         assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("alice"));
         // Row 3 should get row 2's username
         assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("bob"));
-        
+
         // Clean up
         let _ = std::fs::remove_file("test_lag.json");
     }
@@ -2985,21 +3027,27 @@ mod tests {
     fn test_lag_with_offset() {
         let mut table = Table::new(
             "test_lag_offset.json".to_string(),
-            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
         );
-        
-        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+
+        let _ =
+            table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
-        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+        let _ = table
+            .insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(4, "dave".to_string(), "dave@test.com".to_string()).unwrap());
-        
+
         let rows = table.select_all();
-        
+
         // Test LAG with offset 2
         let encoded = "__lag__:username\x1F2\x1FNULL\x1F\x1Fid".to_string();
         let mapping = compute_lag_map(&rows, &Some(vec![encoded.clone()]));
         let col_map = mapping.get(&encoded).expect("mapping present");
-        
+
         // Rows 1 and 2 don't have rows 2 behind them, should get NULL
         assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("NULL"));
         assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("NULL"));
@@ -3007,7 +3055,7 @@ mod tests {
         assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("alice"));
         // Row 4 should get row 2's username
         assert_eq!(col_map.get(&4).map(|s| s.as_str()), Some("bob"));
-        
+
         // Clean up
         let _ = std::fs::remove_file("test_lag_offset.json");
     }
@@ -3016,24 +3064,29 @@ mod tests {
     fn test_lag_with_default_value() {
         let mut table = Table::new(
             "test_lag_default.json".to_string(),
-            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
         );
-        
-        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+
+        let _ =
+            table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
         let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
-        
+
         let rows = table.select_all();
-        
+
         // Test LAG with custom default value 'START'
         let encoded = "__lag__:username\x1F1\x1FSTART\x1F\x1Fid".to_string();
         let mapping = compute_lag_map(&rows, &Some(vec![encoded.clone()]));
         let col_map = mapping.get(&encoded).expect("mapping present");
-        
+
         // Row 1 has no previous row, should get custom default 'START'
         assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("START"));
         // Row 2 should get row 1's username
         assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("alice"));
-        
+
         // Clean up
         let _ = std::fs::remove_file("test_lag_default.json");
     }
@@ -3317,16 +3370,28 @@ mod tests {
     fn test_select_now_runtime() {
         use std::collections::HashMap;
 
-        let mut table = Table::new("test_now.json".to_string(), vec!["id".to_string(), "username".to_string(), "email".to_string()]);
+        let mut table = Table::new(
+            "test_now.json".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
 
         let extras = HashMap::new();
         table
-            .insert(Row { id: 1, username: "alice".to_string(), email: "alice@example.com".to_string(), extras: extras.clone() })
+            .insert(Row {
+                id: 1,
+                username: "alice".to_string(),
+                email: "alice@example.com".to_string(),
+                extras: extras.clone(),
+            })
             .unwrap();
 
         let rows = table.select_all();
         assert_eq!(rows.len(), 1);
-        
+
         // Test NOW() evaluation
         let result = rows[0].eval_col("__now__");
         assert!(result.is_some());
@@ -3342,17 +3407,29 @@ mod tests {
     fn test_select_date_runtime() {
         use std::collections::HashMap;
 
-        let mut table = Table::new("test_date.json".to_string(), vec!["id".to_string(), "username".to_string(), "created".to_string()]);
+        let mut table = Table::new(
+            "test_date.json".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "created".to_string(),
+            ],
+        );
 
         let mut extras = HashMap::new();
         extras.insert("created".to_string(), "2024-06-15 10:30:00".to_string());
         table
-            .insert(Row { id: 1, username: "bob".to_string(), email: "bob@example.com".to_string(), extras })
+            .insert(Row {
+                id: 1,
+                username: "bob".to_string(),
+                email: "bob@example.com".to_string(),
+                extras,
+            })
             .unwrap();
 
         let rows = table.select_all();
         assert_eq!(rows.len(), 1);
-        
+
         let result = rows[0].eval_col("__date__:created");
         assert!(result.is_some());
         assert_eq!(result.unwrap(), "2024-06-15");
@@ -3365,12 +3442,24 @@ mod tests {
     fn test_select_year_month_day_runtime() {
         use std::collections::HashMap;
 
-        let mut table = Table::new("test_ymd.json".to_string(), vec!["id".to_string(), "username".to_string(), "birthdate".to_string()]);
+        let mut table = Table::new(
+            "test_ymd.json".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "birthdate".to_string(),
+            ],
+        );
 
         let mut extras = HashMap::new();
         extras.insert("birthdate".to_string(), "1995-03-22".to_string());
         table
-            .insert(Row { id: 1, username: "carol".to_string(), email: "carol@example.com".to_string(), extras })
+            .insert(Row {
+                id: 1,
+                username: "carol".to_string(),
+                email: "carol@example.com".to_string(),
+                extras,
+            })
             .unwrap();
 
         let rows = table.select_all();
@@ -3458,11 +3547,11 @@ mod tests {
         assert!(result.is_ok());
         let (cte, main_query) = result.unwrap();
         let cte = cte.unwrap();
-        
+
         // Verify CTE has name and query
         assert!(!cte.name.is_empty());
         assert!(!cte.query.is_empty());
-        
+
         // Verify main query exists
         assert!(!main_query.is_empty());
     }
@@ -3496,16 +3585,17 @@ mod tests {
 
     #[test]
     fn test_cte_roundtrip() {
-        let original_sql = "WITH filtered AS (SELECT id, username FROM users WHERE id > 5) SELECT * FROM filtered";
+        let original_sql =
+            "WITH filtered AS (SELECT id, username FROM users WHERE id > 5) SELECT * FROM filtered";
         let result = parse_cte(original_sql);
         assert!(result.is_ok());
         let (cte, main_query) = result.unwrap();
-        
+
         let cte = cte.unwrap();
         assert!(!cte.name.is_empty());
         assert!(!cte.query.is_empty());
         assert!(!main_query.is_empty());
-        
+
         // Verify we can extract the key parts
         assert_eq!(cte.name, "filtered");
         assert!(main_query.contains("filtered"));
@@ -3610,12 +3700,12 @@ mod tests {
         let result = parse_create_index("CREATE INDEX idx_status ON users (status)");
         assert!(result.is_ok());
         let idx = result.unwrap();
-        
+
         // Verify all fields are populated
         assert!(!idx.index_name.is_empty());
         assert!(!idx.table_name.is_empty());
         assert!(!idx.column_name.is_empty());
-        
+
         // Verify correct values
         assert_eq!(idx.index_name, "idx_status");
         assert_eq!(idx.table_name, "users");
@@ -3628,12 +3718,12 @@ mod tests {
         let result1 = parse_create_index("CREATE INDEX idx_name ON users (username)");
         assert!(result1.is_ok());
         assert_eq!(result1.unwrap().column_name, "username");
-        
+
         // Test on numeric column
         let result2 = parse_create_index("CREATE INDEX idx_qty ON inventory (quantity)");
         assert!(result2.is_ok());
         assert_eq!(result2.unwrap().column_name, "quantity");
-        
+
         // Test on date column
         let result3 = parse_create_index("CREATE INDEX idx_date ON orders (order_date)");
         assert!(result3.is_ok());
@@ -3647,13 +3737,13 @@ mod tests {
         assert!(result1.is_ok());
         let idx1 = result1.unwrap();
         assert_eq!(idx1.table_name, "users");
-        
+
         // Index on products table
         let result2 = parse_create_index("CREATE INDEX idx_product_price ON products (price)");
         assert!(result2.is_ok());
         let idx2 = result2.unwrap();
         assert_eq!(idx2.table_name, "products");
-        
+
         // Verify they're different
         assert_ne!(idx1.table_name, idx2.table_name);
         assert_ne!(idx1.column_name, idx2.column_name);
@@ -3855,7 +3945,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__hour__:created_at");
         assert_eq!(result, Some("14".to_string()));
     }
@@ -3873,7 +3963,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__minute__:created_at");
         assert_eq!(result, Some("30".to_string()));
     }
@@ -3891,7 +3981,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__second__:created_at");
         assert_eq!(result, Some("45".to_string()));
     }
@@ -3909,7 +3999,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__hour__:created_at");
         assert_eq!(result, Some("16".to_string()));
     }
@@ -3927,7 +4017,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__date_add__:order_date\x1F7");
         assert_eq!(result, Some("2024-06-22".to_string()));
     }
@@ -3945,7 +4035,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__date_sub__:order_date\x1F3");
         assert_eq!(result, Some("2024-06-12".to_string()));
     }
@@ -3963,7 +4053,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__week__:order_date");
         // Week calculation: March is month 3, days_before = 59, day = 15, total = 74, week = 11
         assert!(result.is_some());
@@ -3987,7 +4077,7 @@ mod tests {
                 m
             },
         };
-        
+
         assert_eq!(row.eval_col("__quarter__:q1_date"), Some("1".to_string()));
         assert_eq!(row.eval_col("__quarter__:q2_date"), Some("2".to_string()));
         assert_eq!(row.eval_col("__quarter__:q3_date"), Some("3".to_string()));
@@ -4008,7 +4098,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__datediff__:end_date\x1Fstart_date");
         assert!(result.is_some());
         // Rough approximation should give positive difference
@@ -4026,11 +4116,11 @@ mod tests {
             extras: {
                 let mut m = HashMap::new();
                 m.insert("ts1".to_string(), "86400".to_string()); // 1 day after epoch
-                m.insert("ts2".to_string(), "0".to_string());     // epoch
+                m.insert("ts2".to_string(), "0".to_string()); // epoch
                 m
             },
         };
-        
+
         let result = row.eval_col("__datediff__:ts1\x1Fts2");
         assert_eq!(result, Some("1".to_string())); // 1 day difference
     }
@@ -4048,7 +4138,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__date_trunc__:year\x1Fcreated_at");
         assert_eq!(result, Some("2024-01-01".to_string()));
     }
@@ -4066,7 +4156,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__date_trunc__:month\x1Fcreated_at");
         assert_eq!(result, Some("2024-06-01".to_string()));
     }
@@ -4084,7 +4174,7 @@ mod tests {
                 m
             },
         };
-        
+
         let result = row.eval_col("__date_trunc__:day\x1Fcreated_at");
         assert_eq!(result, Some("2024-06-15".to_string()));
     }
@@ -4103,11 +4193,11 @@ mod tests {
                 m
             },
         };
-        
+
         let hour = row.eval_col("__hour__:timestamp");
         let minute = row.eval_col("__minute__:timestamp");
         let second = row.eval_col("__second__:timestamp");
-        
+
         assert_eq!(hour, Some("12".to_string()));
         assert_eq!(minute, Some("34".to_string()));
         assert_eq!(second, Some("56".to_string()));
@@ -4151,7 +4241,9 @@ mod tests {
 
     #[test]
     fn test_cte_parsing_simple_with_clause() {
-        let result = crate::parser::parse_cte("WITH high_value_orders AS (SELECT id FROM orders) SELECT * FROM high_value_orders");
+        let result = crate::parser::parse_cte(
+            "WITH high_value_orders AS (SELECT id FROM orders) SELECT * FROM high_value_orders",
+        );
         assert!(result.is_ok());
         let (cte, main_query) = result.unwrap();
         assert!(cte.is_some());
@@ -4171,7 +4263,9 @@ mod tests {
 
     #[test]
     fn test_cte_parsing_extracts_cte_name() {
-        let result = crate::parser::parse_cte("WITH temp_data AS (SELECT id, name FROM products) SELECT * FROM temp_data");
+        let result = crate::parser::parse_cte(
+            "WITH temp_data AS (SELECT id, name FROM products) SELECT * FROM temp_data",
+        );
         assert!(result.is_ok());
         let (cte, _) = result.unwrap();
         let cte_data = cte.unwrap();
@@ -4190,7 +4284,8 @@ mod tests {
 
     #[test]
     fn test_cte_parsing_extracts_main_query() {
-        let result = crate::parser::parse_cte("WITH cte AS (SELECT 1) SELECT * FROM cte WHERE id > 5");
+        let result =
+            crate::parser::parse_cte("WITH cte AS (SELECT 1) SELECT * FROM cte WHERE id > 5");
         assert!(result.is_ok());
         let (_, main_query) = result.unwrap();
         assert!(main_query.contains("WHERE"));
@@ -4199,7 +4294,9 @@ mod tests {
 
     #[test]
     fn test_cte_parsing_with_complex_where() {
-        let result = crate::parser::parse_cte("WITH cte1 AS (SELECT id, name FROM users) SELECT id FROM cte1 WHERE name = 'alice'");
+        let result = crate::parser::parse_cte(
+            "WITH cte1 AS (SELECT id, name FROM users) SELECT id FROM cte1 WHERE name = 'alice'",
+        );
         assert!(result.is_ok());
         let (cte, main_query) = result.unwrap();
         assert!(cte.is_some());
@@ -4244,7 +4341,8 @@ mod tests {
 
     #[test]
     fn test_parse_create_table_with_unique() {
-        let result = parse_create_table("CREATE TABLE users (id INTEGER, email TEXT UNIQUE, name TEXT)");
+        let result =
+            parse_create_table("CREATE TABLE users (id INTEGER, email TEXT UNIQUE, name TEXT)");
         assert!(result.is_ok());
         let (table_name, columns, primary_key, unique_columns) = result.unwrap();
         assert_eq!(table_name, "users");
@@ -4259,7 +4357,9 @@ mod tests {
 
     #[test]
     fn test_parse_create_table_with_multiple_unique() {
-        let result = parse_create_table("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE, username TEXT UNIQUE)");
+        let result = parse_create_table(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE, username TEXT UNIQUE)",
+        );
         assert!(result.is_ok());
         let (table_name, columns, primary_key, unique_columns) = result.unwrap();
         assert_eq!(table_name, "users");
@@ -4272,7 +4372,9 @@ mod tests {
 
     #[test]
     fn test_parse_create_table_with_pk_and_unique() {
-        let result = parse_create_table("CREATE TABLE products (id INTEGER PRIMARY KEY, sku TEXT UNIQUE, name TEXT)");
+        let result = parse_create_table(
+            "CREATE TABLE products (id INTEGER PRIMARY KEY, sku TEXT UNIQUE, name TEXT)",
+        );
         assert!(result.is_ok());
         let (table_name, columns, primary_key, unique_columns) = result.unwrap();
         assert_eq!(table_name, "products");
@@ -4293,4 +4395,3 @@ mod tests {
         assert_eq!(unique_columns.len(), 0);
     }
 }
-
