@@ -2937,8 +2937,9 @@ mod tests {
     #[test]
     #[ignore]
     fn debug_tokens_first_value() {
-        use crate::tokenize;
-        let toks = tokenize("SELECT FIRST_VALUE(username) OVER (ORDER BY id) FROM users");
+        use crate::parser::tokenize;
+        let toks =
+            crate::parser::tokenize("SELECT FIRST_VALUE(username) OVER (ORDER BY id) FROM users");
         println!("TOKENS: {:?}", toks);
         assert!(true);
     }
