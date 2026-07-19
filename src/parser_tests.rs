@@ -2872,6 +2872,42 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_first_value_basic() {
+        let result = parse_select("SELECT FIRST_VALUE(username) OVER (ORDER BY id) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        assert!(cols[0].starts_with("__first_value__:"));
+        // Expect column name encoded
+        assert!(cols[0].contains("username"));
+    }
+
+    #[test]
+    fn test_first_value_runtime() {
+        use crate::compute_first_value_map;
+        let mut table = Table::new(
+            "test_first_value.json".to_string(),
+            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+        );
+        let _ = table.insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap());
+        let _ = table.insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap());
+        let rows = table.select_all();
+
+        let encoded = "__first_value__:username\x1F\x1Fid".to_string();
+        let mapping = compute_first_value_map(&rows, &Some(vec![encoded.clone()]));
+        let col_map = mapping.get(&encoded).expect("mapping present");
+
+        // All rows should receive the first username (alice)
+        assert_eq!(col_map.get(&1).map(|s| s.as_str()), Some("alice"));
+        assert_eq!(col_map.get(&2).map(|s| s.as_str()), Some("alice"));
+        assert_eq!(col_map.get(&3).map(|s| s.as_str()), Some("alice"));
+
+        let _ = std::fs::remove_file("test_first_value.json");
+    }
+
+    #[test]
     fn test_parse_lag_basic() {
         let result = parse_select("SELECT LAG(username) OVER (ORDER BY id) FROM users");
         assert!(result.is_ok());

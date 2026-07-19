@@ -619,6 +619,136 @@ pub fn compute_dense_rank_map(
     result
 }
 
+// Compute FIRST_VALUE values for any encoded __first_value__ columns in the select list.
+// FIRST_VALUE(column) returns the value of `column` from the first row in the window.
+pub fn compute_first_value_map(
+    rows: &Vec<&Row>,
+    columns: &Option<Vec<String>>,
+) -> std::collections::HashMap<String, std::collections::HashMap<u32, String>> {
+    let mut result: std::collections::HashMap<String, std::collections::HashMap<u32, String>> =
+        std::collections::HashMap::new();
+
+    let cols: Vec<String> = match columns {
+        Some(c) => c.clone(),
+        None => Vec::new(),
+    };
+
+    // Find any window column expressions for FIRST_VALUE
+    let window_cols: Vec<String> = cols
+        .into_iter()
+        .filter(|c| c.starts_with("__first_value__:"))
+        .collect();
+    if window_cols.is_empty() {
+        return result;
+    }
+
+    for wc in window_cols {
+        // parse encoded: __first_value__:column\x1Fpartition_part\x1Ford_part
+        let rest = wc.strip_prefix("__first_value__:").unwrap_or("");
+        let parts: Vec<&str> = rest.split('\x1F').collect();
+        let first_column = parts.get(0).copied().unwrap_or("");
+        let partition_part = parts.get(1).copied().unwrap_or("");
+        let order_part = parts.get(2).copied().unwrap_or("");
+
+        let partition_cols: Vec<String> = if partition_part.is_empty() {
+            Vec::new()
+        } else {
+            partition_part.split(',').map(|s| s.to_string()).collect()
+        };
+        let order_specs: Vec<(String, bool)> = if order_part.is_empty() {
+            Vec::new()
+        } else {
+            order_part
+                .split(',')
+                .map(|s| {
+                    if s.ends_with(":DESC") {
+                        (s[..s.len() - 5].to_string(), false)
+                    } else {
+                        (s.to_string(), true)
+                    }
+                })
+                .collect()
+        };
+
+        // Group rows by partition key
+        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> =
+            std::collections::HashMap::new();
+        for (idx, row) in rows.iter().enumerate() {
+            let mut key_parts: Vec<String> = Vec::new();
+            for col in &partition_cols {
+                key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
+            }
+            let key = key_parts.join("|");
+            groups.entry(key).or_default().push((row.clone(), idx));
+        }
+
+        let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        for (_k, mut group_rows) in groups.into_iter() {
+            // sort group_rows according to order_specs
+            group_rows.sort_by(|a, b| {
+                let (ra, ia) = a;
+                let (rb, ib) = b;
+                for (col, asc) in &order_specs {
+                    let va = ra.get_value(col).unwrap_or_default();
+                    let vb = rb.get_value(col).unwrap_or_default();
+                    // try numeric compare
+                    if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
+                        if na < nb {
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
+                        }
+                        if na > nb {
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
+                        }
+                    } else {
+                        if va < vb {
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
+                        }
+                        if va > vb {
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
+                        }
+                    }
+                }
+                // tie-breaker: original position
+                ia.cmp(ib)
+            });
+
+            // Determine the first value for the group (if any)
+            let first_val = if group_rows.is_empty() {
+                "NULL".to_string()
+            } else {
+                group_rows[0]
+                    .0
+                    .get_value(&first_column.to_string())
+                    .unwrap_or_else(|| "NULL".to_string())
+            };
+
+            for (row, _orig_idx) in &group_rows {
+                mapping.insert(row.id, first_val.clone());
+            }
+        }
+
+        result.insert(wc, mapping);
+    }
+
+    result
+}
+
 // Compute LEAD values for any encoded __lead__ columns in the select list.
 // LEAD(column, offset, default) returns the value of column from offset rows ahead in the window.
 pub fn compute_lead_map(
@@ -649,7 +779,7 @@ pub fn compute_lead_map(
         if parts.len() < 5 {
             continue; // Invalid format
         }
-        
+
         let lead_column = parts[0].to_string();
         let offset: usize = parts[1].parse().unwrap_or(1);
         let default_value = parts[2].to_string();
@@ -739,7 +869,10 @@ pub fn compute_lead_map(
                 let lead_idx = current_idx + offset;
                 let lead_value = if lead_idx < group_rows.len() {
                     // Get the lead row's column value
-                    group_rows[lead_idx].0.get_value(&lead_column).unwrap_or_else(|| default_value.clone())
+                    group_rows[lead_idx]
+                        .0
+                        .get_value(&lead_column)
+                        .unwrap_or_else(|| default_value.clone())
                 } else {
                     // Out of bounds, use default
                     default_value.clone()
@@ -784,7 +917,7 @@ pub fn compute_lag_map(
         if parts.len() < 5 {
             continue; // Invalid format
         }
-        
+
         let lag_column = parts[0].to_string();
         let offset: usize = parts[1].parse().unwrap_or(1);
         let default_value = parts[2].to_string();
@@ -873,7 +1006,10 @@ pub fn compute_lag_map(
             for (current_idx, (row, _orig_idx)) in group_rows.iter().enumerate() {
                 let lag_value = if current_idx >= offset {
                     // Get the lag row's column value
-                    group_rows[current_idx - offset].0.get_value(&lag_column).unwrap_or_else(|| default_value.clone())
+                    group_rows[current_idx - offset]
+                        .0
+                        .get_value(&lag_column)
+                        .unwrap_or_else(|| default_value.clone())
                 } else {
                     // Out of bounds, use default
                     default_value.clone()
@@ -1010,23 +1146,21 @@ fn prepare_statement(input: &str) -> PrepareResult {
                     order_by,
                     limit,
                     offset,
-                )) => {
-                    PrepareResult::Success(Statement::SelectWithCTEWhere {
-                        cte_name: cte.name,
-                        cte_query: cte.query,
-                        distinct,
-                        columns: cols,
-                        from_table,
-                        join,
-                        conditions,
-                        operators,
-                        group_by,
-                        having,
-                        order_by,
-                        limit,
-                        offset,
-                    })
-                }
+                )) => PrepareResult::Success(Statement::SelectWithCTEWhere {
+                    cte_name: cte.name,
+                    cte_query: cte.query,
+                    distinct,
+                    columns: cols,
+                    from_table,
+                    join,
+                    conditions,
+                    operators,
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                }),
                 Err(_) => PrepareResult::UnrecognizedStatement,
             }
         } else if let Some((sql1, sql2, all)) = split_on_union(input) {
@@ -1104,12 +1238,14 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if upper.starts_with("CREATE TABLE") {
         match parser::parse_create_table(input) {
-            Ok((table_name, columns, primary_key, unique_columns)) => PrepareResult::Success(Statement::CreateTable {
-                table_name,
-                columns,
-                primary_key,
-                unique_columns,
-            }),
+            Ok((table_name, columns, primary_key, unique_columns)) => {
+                PrepareResult::Success(Statement::CreateTable {
+                    table_name,
+                    columns,
+                    primary_key,
+                    unique_columns,
+                })
+            }
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if upper.starts_with("ALTER TABLE") {
@@ -1145,13 +1281,16 @@ fn prepare_statement(input: &str) -> PrepareResult {
         if let Some(as_idx) = input.to_uppercase().find(" AS ") {
             let view_part = &input[..as_idx].trim();
             let select_part = &input[as_idx + 4..].trim();
-            
+
             // Extract view name: CREATE VIEW view_name
             let parts: Vec<&str> = view_part.split_whitespace().collect();
             if parts.len() >= 3 {
                 let view_name = parts[2].to_string();
                 let select_query = select_part.to_string();
-                PrepareResult::Success(Statement::CreateView { view_name, select_query })
+                PrepareResult::Success(Statement::CreateView {
+                    view_name,
+                    select_query,
+                })
             } else {
                 PrepareResult::UnrecognizedStatement
             }
@@ -1422,7 +1561,7 @@ fn execute_statement(
     schemas: &mut HashMap<String, Vec<String>>,
     views: &mut HashMap<String, String>,
     constraints: &mut HashMap<String, (Option<String>, Vec<String>)>,
-    indexes: &mut HashMap<String, (String, String)>,  // index_name -> (table_name, column_name)
+    indexes: &mut HashMap<String, (String, String)>, // index_name -> (table_name, column_name)
     tx: &mut TransactionState,
 ) {
     // Map a logical table name to a backing file path.
@@ -1921,7 +2060,7 @@ fn execute_statement(
             };
             let schema = table.schema().clone();
             let actual_table_name = table_name.as_deref().unwrap_or("users").to_lowercase();
-            
+
             match Row::from_values(&schema, values) {
                 Ok(row) => {
                     // Check constraints if they exist for this table
@@ -1929,34 +2068,40 @@ fn execute_statement(
                         // Check PRIMARY KEY uniqueness
                         if let Some(pk_col) = pk_opt {
                             let new_pk_value = row.get_value(pk_col);
-                            
+
                             // Check all existing rows for duplicate primary key
                             for existing_row in table.select_all() {
                                 let existing_pk_value = existing_row.get_value(pk_col);
                                 if new_pk_value == existing_pk_value {
-                                    println!("Error: PRIMARY KEY constraint violation on column '{}'", pk_col);
+                                    println!(
+                                        "Error: PRIMARY KEY constraint violation on column '{}'",
+                                        pk_col
+                                    );
                                     return;
                                 }
                             }
                         }
-                        
+
                         // Check UNIQUE constraints
                         for unique_col in unique_cols {
                             let new_unique_value = row.get_value(unique_col);
-                            
+
                             // Check all existing rows for duplicate unique value (skip NULL values)
                             if new_unique_value.is_some() {
                                 for existing_row in table.select_all() {
                                     let existing_unique_value = existing_row.get_value(unique_col);
                                     if new_unique_value == existing_unique_value {
-                                        println!("Error: UNIQUE constraint violation on column '{}'", unique_col);
+                                        println!(
+                                            "Error: UNIQUE constraint violation on column '{}'",
+                                            unique_col
+                                        );
                                         return;
                                     }
                                 }
                             }
                         }
                     }
-                    
+
                     // If all constraint checks pass, insert the row
                     match table.insert(row) {
                         Ok(()) => {
@@ -1968,7 +2113,7 @@ fn execute_statement(
                         }
                         Err(e) => println!("Error: {}", e),
                     }
-                },
+                }
                 Err(e) => println!("Error: {}", e),
             }
         }
@@ -1987,7 +2132,10 @@ fn execute_statement(
         } => {
             // CTE Parsing Recognition: Display parsed CTE information
             println!("WITH {} AS ({}) recognized", cte_name, cte_query);
-            println!("Main SELECT from: {}", from_table.as_deref().unwrap_or("(none)"));
+            println!(
+                "Main SELECT from: {}",
+                from_table.as_deref().unwrap_or("(none)")
+            );
             println!("Note: CTE execution is parsing-complete. Full recursive execution coming in next phase.");
         }
         Statement::SelectWithCTEWhere {
@@ -2008,7 +2156,11 @@ fn execute_statement(
             // Similar to SelectWithCTE but includes WHERE clause conditions
             let where_clause = build_where_clause(&conditions, &operators);
             println!("WITH {} AS ({}) recognized", cte_name, cte_query);
-            println!("Main SELECT from: {} WHERE {}", from_table.as_deref().unwrap_or("(none)"), where_clause);
+            println!(
+                "Main SELECT from: {} WHERE {}",
+                from_table.as_deref().unwrap_or("(none)"),
+                where_clause
+            );
             println!("Note: CTE execution is parsing-complete. Full recursive execution coming in next phase.");
         }
         Statement::Select {
@@ -2030,28 +2182,37 @@ fn execute_statement(
                     // Substitute view: execute SELECT from view's query
                     let view_select = format!(
                         "SELECT {} FROM ({}) WHERE 1=1{}{}{}{}",
-                        columns.as_ref()
+                        columns
+                            .as_ref()
                             .map(|c| c.join(", "))
                             .unwrap_or_else(|| "*".to_string()),
                         view_query,
-                        group_by.as_ref()
+                        group_by
+                            .as_ref()
                             .map(|gb| format!(" GROUP BY {}", gb.join(", ")))
                             .unwrap_or_default(),
-                        having.as_ref()
+                        having
+                            .as_ref()
                             .map(|(cond, _)| {
-                                let cond_str = cond.iter()
+                                let cond_str = cond
+                                    .iter()
                                     .map(|(col, op, val)| format!("{} {} {}", col, op, val))
                                     .collect::<Vec<_>>()
                                     .join(" AND ");
                                 format!(" HAVING {}", cond_str)
                             })
                             .unwrap_or_default(),
-                        order_by.as_ref()
-                            .map(|(col, is_asc)| format!(" ORDER BY {} {}", col, if *is_asc { "ASC" } else { "DESC" }))
+                        order_by
+                            .as_ref()
+                            .map(|(col, is_asc)| format!(
+                                " ORDER BY {} {}",
+                                col,
+                                if *is_asc { "ASC" } else { "DESC" }
+                            ))
                             .unwrap_or_default(),
                         limit.map(|l| format!(" LIMIT {}", l)).unwrap_or_default()
                     );
-                    
+
                     // Execute the substituted query
                     if let PrepareResult::Success(stmt) = prepare_statement(&view_select) {
                         execute_statement(stmt, tables, schemas, views, constraints, indexes, tx);
@@ -2059,7 +2220,7 @@ fn execute_statement(
                     return;
                 }
             }
-            
+
             // Resolve left (from) table - use registry instead of reloading from file
             let table_name = from_table.as_deref().unwrap_or("users");
 
@@ -2181,6 +2342,8 @@ fn execute_statement(
             window_map.extend(rank_map);
             let dense_map = compute_dense_rank_map(&rows, &columns);
             window_map.extend(dense_map);
+            let first_value_map = compute_first_value_map(&rows, &columns);
+            window_map.extend(first_value_map);
             let lead_map = compute_lead_map(&rows, &columns);
             window_map.extend(lead_map);
             let lag_map = compute_lag_map(&rows, &columns);
@@ -2342,33 +2505,42 @@ fn execute_statement(
                 if let Some(view_query) = views.get(&ft_lower) {
                     // Build WHERE clause from conditions
                     let where_clause = build_where_clause(&conditions, &operators);
-                    
+
                     // Substitute view: execute SELECT WHERE from view's query
                     let view_select = format!(
                         "SELECT {} FROM ({}) WHERE {}{}{}{}{}",
-                        columns.as_ref()
+                        columns
+                            .as_ref()
                             .map(|c| c.join(", "))
                             .unwrap_or_else(|| "*".to_string()),
                         view_query,
                         where_clause,
-                        group_by.as_ref()
+                        group_by
+                            .as_ref()
                             .map(|gb| format!(" GROUP BY {}", gb.join(", ")))
                             .unwrap_or_default(),
-                        having.as_ref()
+                        having
+                            .as_ref()
                             .map(|(cond, _)| {
-                                let cond_str = cond.iter()
+                                let cond_str = cond
+                                    .iter()
                                     .map(|(col, op, val)| format!("{} {} {}", col, op, val))
                                     .collect::<Vec<_>>()
                                     .join(" AND ");
                                 format!(" HAVING {}", cond_str)
                             })
                             .unwrap_or_default(),
-                        order_by.as_ref()
-                            .map(|(col, is_asc)| format!(" ORDER BY {} {}", col, if *is_asc { "ASC" } else { "DESC" }))
+                        order_by
+                            .as_ref()
+                            .map(|(col, is_asc)| format!(
+                                " ORDER BY {} {}",
+                                col,
+                                if *is_asc { "ASC" } else { "DESC" }
+                            ))
                             .unwrap_or_default(),
                         limit.map(|l| format!(" LIMIT {}", l)).unwrap_or_default()
                     );
-                    
+
                     // Execute the substituted query
                     if let PrepareResult::Success(stmt) = prepare_statement(&view_select) {
                         execute_statement(stmt, tables, schemas, views, constraints, indexes, tx);
@@ -2376,7 +2548,7 @@ fn execute_statement(
                     return;
                 }
             }
-            
+
             // Resolve left (from) table - use registry instead of reloading from file
             let table_name = from_table.as_deref().unwrap_or("users");
 
@@ -2390,7 +2562,7 @@ fn execute_statement(
 
             let select_result = {
                 let tbl = load_table_by_name(table_name, tables, schemas);
-                
+
                 // Index acceleration: if there is exactly one equality condition
                 // and an index exists for this table+column, report the index hit.
                 // The actual filtering still uses select_where_complex (correctness-first),
@@ -2403,7 +2575,7 @@ fn execute_statement(
                         }
                     }
                 }
-                
+
                 tbl.select_where_complex(&resolved_conditions, &operators)
             };
 
@@ -2547,6 +2719,8 @@ fn execute_statement(
                     window_map.extend(rank_map);
                     let dense_map = compute_dense_rank_map(&rows, &columns);
                     window_map.extend(dense_map);
+                    let first_value_map = compute_first_value_map(&rows, &columns);
+                    window_map.extend(first_value_map);
                     let lead_map = compute_lead_map(&rows, &columns);
                     window_map.extend(lead_map);
                     let lag_map = compute_lag_map(&rows, &columns);
@@ -2817,10 +2991,13 @@ fn execute_statement(
             tables.insert(table_name_lower.clone(), new_table);
 
             schemas.insert(table_name_lower.clone(), columns.clone());
-            
+
             // Store constraints
-            constraints.insert(table_name_lower.clone(), (primary_key.clone(), unique_columns.clone()));
-            
+            constraints.insert(
+                table_name_lower.clone(),
+                (primary_key.clone(), unique_columns.clone()),
+            );
+
             if !tx.active {
                 save_schemas(schemas);
             }
@@ -2830,7 +3007,7 @@ fn execute_statement(
                 table_name,
                 columns.join(", ")
             );
-            
+
             if let Some(ref pk) = primary_key {
                 println!("  PRIMARY KEY: {}", pk);
             }
@@ -2967,22 +3144,25 @@ fn execute_statement(
             }
 
             schemas.remove(&table_name_lower);
-            
+
             // Remove constraints for this table
             constraints.remove(&table_name_lower);
-            
+
             // Remove all indexes for this table
             indexes.retain(|_, (tbl, _)| tbl != &table_name_lower);
-            
+
             if !tx.active {
                 save_schemas(schemas);
             }
 
             println!("Table '{}' dropped", table_name);
         }
-        Statement::CreateView { view_name, select_query } => {
+        Statement::CreateView {
+            view_name,
+            select_query,
+        } => {
             let view_name_lower = view_name.to_lowercase();
-            
+
             // Validate SELECT query by trying to parse it
             match parser::parse_select(&select_query) {
                 Ok(_) => {
@@ -2997,7 +3177,7 @@ fn execute_statement(
         }
         Statement::DropView { view_name } => {
             let view_name_lower = view_name.to_lowercase();
-            
+
             if views.contains_key(&view_name_lower) {
                 views.remove(&view_name_lower);
                 println!("View '{}' dropped", view_name);
@@ -3030,7 +3210,11 @@ fn execute_statement(
                 }
             }
         }
-        Statement::CreateIndex { index_name, table_name, column_name } => {
+        Statement::CreateIndex {
+            index_name,
+            table_name,
+            column_name,
+        } => {
             let index_name_lower = index_name.to_lowercase();
             let table_name_lower = table_name.to_lowercase();
             let column_name_lower = column_name.to_lowercase();
@@ -3048,19 +3232,29 @@ fn execute_statement(
             }
 
             // Check column exists in schema
-            let schema = schemas.get(&table_name_lower)
+            let schema = schemas
+                .get(&table_name_lower)
                 .or_else(|| tables.get(&table_name_lower).map(|t| t.schema()))
                 .cloned();
 
             if let Some(cols) = schema {
                 if !cols.contains(&column_name_lower) {
-                    println!("Error: Column '{}' does not exist in table '{}'", column_name, table_name);
+                    println!(
+                        "Error: Column '{}' does not exist in table '{}'",
+                        column_name, table_name
+                    );
                     return;
                 }
             }
 
-            indexes.insert(index_name_lower.clone(), (table_name_lower.clone(), column_name_lower.clone()));
-            println!("Index '{}' created on {}({})", index_name, table_name, column_name);
+            indexes.insert(
+                index_name_lower.clone(),
+                (table_name_lower.clone(), column_name_lower.clone()),
+            );
+            println!(
+                "Index '{}' created on {}({})",
+                index_name, table_name, column_name
+            );
         }
         Statement::DropIndex { index_name } => {
             let index_name_lower = index_name.to_lowercase();
@@ -3298,7 +3492,7 @@ fn build_where_clause(conditions: &[(String, String, String)], operators: &[Stri
     if conditions.is_empty() {
         return "1=1".to_string();
     }
-    
+
     let mut clause = String::new();
     for (i, (col, op, val)) in conditions.iter().enumerate() {
         if i > 0 && i - 1 < operators.len() {
@@ -3575,7 +3769,7 @@ fn main() {
 
     // Initialize view registry: store view name -> SELECT query
     let mut views: HashMap<String, String> = HashMap::new();
-    
+
     // Initialize constraint registry: store table_name -> (primary_key, unique_columns)
     let mut constraints: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
 
@@ -3663,7 +3857,15 @@ fn main() {
 
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
-                execute_statement(statement, &mut tables, &mut schemas, &mut views, &mut constraints, &mut indexes, &mut tx_state);
+                execute_statement(
+                    statement,
+                    &mut tables,
+                    &mut schemas,
+                    &mut views,
+                    &mut constraints,
+                    &mut indexes,
+                    &mut tx_state,
+                );
             }
             PrepareResult::UnrecognizedStatement => {
                 println!("Unrecognized keyword at start of '{}'", input);

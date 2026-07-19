@@ -105,6 +105,7 @@ pub enum Token {
     RowNumber,
     Rank,
     DenseRank,
+    FirstValue,
     Lead,
     Lag,
     Over,
@@ -373,6 +374,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "ROW_NUMBER" => Token::RowNumber,
                     "RANK" => Token::Rank,
                     "DENSE_RANK" => Token::DenseRank,
+                    "FIRST_VALUE" => Token::FirstValue,
                     "LEAD" => Token::Lead,
                     "LAG" => Token::Lag,
                     "OVER" => Token::Over,
@@ -611,6 +613,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::RowNumber => "ROW_NUMBER".to_string(),
         Token::Rank => "RANK".to_string(),
         Token::DenseRank => "DENSE_RANK".to_string(),
+        Token::FirstValue => "FIRST_VALUE".to_string(),
         Token::Lead => "LEAD".to_string(),
         Token::Lag => "LAG".to_string(),
         Token::Over => "OVER".to_string(),
@@ -1347,10 +1350,16 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Column(format!("__sign__:{}", arg))
                     }
-                    Some(Token::RowNumber) | Some(Token::Rank) | Some(Token::DenseRank) | Some(Token::Lead) | Some(Token::Lag) => {
+                    Some(Token::RowNumber)
+                    | Some(Token::Rank)
+                    | Some(Token::DenseRank)
+                    | Some(Token::FirstValue)
+                    | Some(Token::Lead)
+                    | Some(Token::Lag) => {
                         let token_here = tokens.get(*i).cloned();
                         let is_rank = matches!(token_here, Some(Token::Rank));
                         let is_dense = matches!(token_here, Some(Token::DenseRank));
+                        let is_first = matches!(token_here, Some(Token::FirstValue));
                         let is_lead = matches!(token_here, Some(Token::Lead));
                         let is_lag = matches!(token_here, Some(Token::Lag));
                         *i += 1; // consume ROW_NUMBER, RANK, DENSE_RANK, LEAD, or LAG
@@ -1358,21 +1367,37 @@ pub fn parse_select_columns(
                             return Err("Expected ( after window function".to_string());
                         }
                         *i += 1;
-                        
+
                         // For LEAD/LAG, parse column, offset, and default value
                         let mut window_column = String::new();
                         let mut window_offset = String::from("1");
                         let mut window_default = String::from("NULL");
-                        
-                        if is_lead || is_lag {
+
+                        if is_first {
+                            // Parse column for FIRST_VALUE(column)
+                            if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                                window_column = col.clone();
+                                *i += 1;
+                            } else {
+                                return Err("Expected column name after FIRST_VALUE(".to_string());
+                            }
+
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after FIRST_VALUE(column)".to_string());
+                            }
+                            *i += 1;
+                        } else if is_lead || is_lag {
                             // Parse column
                             if let Some(Token::Identifier(col)) = tokens.get(*i) {
                                 window_column = col.clone();
                                 *i += 1;
                             } else {
-                                return Err(format!("Expected column name after {}(", if is_lead { "LEAD" } else { "LAG" }));
+                                return Err(format!(
+                                    "Expected column name after {}(",
+                                    if is_lead { "LEAD" } else { "LAG" }
+                                ));
                             }
-                            
+
                             // Optional: parse offset
                             if tokens.get(*i) == Some(&Token::Comma) {
                                 *i += 1;
@@ -1385,9 +1410,14 @@ pub fn parse_select_columns(
                                         window_offset = s.clone();
                                         *i += 1;
                                     }
-                                    _ => return Err(format!("Expected number for {} offset", if is_lead { "LEAD" } else { "LAG" })),
+                                    _ => {
+                                        return Err(format!(
+                                            "Expected number for {} offset",
+                                            if is_lead { "LEAD" } else { "LAG" }
+                                        ))
+                                    }
                                 }
-                                
+
                                 // Optional: parse default value
                                 if tokens.get(*i) == Some(&Token::Comma) {
                                     *i += 1;
@@ -1404,12 +1434,17 @@ pub fn parse_select_columns(
                                             window_default = String::from("NULL");
                                             *i += 1;
                                         }
-                                        _ => return Err(format!("Expected value for {} default", if is_lead { "LEAD" } else { "LAG" })),
+                                        _ => {
+                                            return Err(format!(
+                                                "Expected value for {} default",
+                                                if is_lead { "LEAD" } else { "LAG" }
+                                            ))
+                                        }
                                     }
                                 }
                             }
                         }
-                        
+
                         if tokens.get(*i) != Some(&Token::RParen) {
                             return Err("Expected ) after window function arguments".to_string());
                         }
@@ -1498,12 +1533,25 @@ pub fn parse_select_columns(
                         if is_lag {
                             SelectColumn::Column(format!(
                                 "__lag__:{}\x1F{}\x1F{}\x1F{}\x1F{}",
-                                window_column, window_offset, window_default, partition_part, order_part
+                                window_column,
+                                window_offset,
+                                window_default,
+                                partition_part,
+                                order_part
+                            ))
+                        } else if is_first {
+                            SelectColumn::Column(format!(
+                                "__first_value__:{}\x1F{}\x1F{}",
+                                window_column, partition_part, order_part
                             ))
                         } else if is_lead {
                             SelectColumn::Column(format!(
                                 "__lead__:{}\x1F{}\x1F{}\x1F{}\x1F{}",
-                                window_column, window_offset, window_default, partition_part, order_part
+                                window_column,
+                                window_offset,
+                                window_default,
+                                partition_part,
+                                order_part
                             ))
                         } else if is_dense {
                             SelectColumn::Column(format!(
@@ -1905,12 +1953,12 @@ pub fn parse_select_columns(
                         } else {
                             return Err("Expected date column or string in DATE_ADD()".to_string());
                         };
-                        
+
                         if tokens.get(*i) != Some(&Token::Comma) {
                             return Err("Expected , after date argument in DATE_ADD".to_string());
                         }
                         *i += 1;
-                        
+
                         // Second argument: interval (numeric or column)
                         let interval_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
                             let c = c.clone();
@@ -1927,12 +1975,15 @@ pub fn parse_select_columns(
                         } else {
                             return Err("Expected interval in DATE_ADD()".to_string());
                         };
-                        
+
                         if tokens.get(*i) != Some(&Token::RParen) {
                             return Err("Expected ) after DATE_ADD arguments".to_string());
                         }
                         *i += 1;
-                        SelectColumn::Column(format!("__date_add__:{}\x1F{}", date_arg, interval_arg))
+                        SelectColumn::Column(format!(
+                            "__date_add__:{}\x1F{}",
+                            date_arg, interval_arg
+                        ))
                     }
                     Some(Token::DateSub) => {
                         *i += 1;
@@ -1952,12 +2003,12 @@ pub fn parse_select_columns(
                         } else {
                             return Err("Expected date column or string in DATE_SUB()".to_string());
                         };
-                        
+
                         if tokens.get(*i) != Some(&Token::Comma) {
                             return Err("Expected , after date argument in DATE_SUB".to_string());
                         }
                         *i += 1;
-                        
+
                         // Second argument: interval (numeric or column)
                         let interval_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
                             let c = c.clone();
@@ -1974,12 +2025,15 @@ pub fn parse_select_columns(
                         } else {
                             return Err("Expected interval in DATE_SUB()".to_string());
                         };
-                        
+
                         if tokens.get(*i) != Some(&Token::RParen) {
                             return Err("Expected ) after DATE_SUB arguments".to_string());
                         }
                         *i += 1;
-                        SelectColumn::Column(format!("__date_sub__:{}\x1F{}", date_arg, interval_arg))
+                        SelectColumn::Column(format!(
+                            "__date_sub__:{}\x1F{}",
+                            date_arg, interval_arg
+                        ))
                     }
                     Some(Token::Week) => {
                         *i += 1;
@@ -2045,12 +2099,12 @@ pub fn parse_select_columns(
                         } else {
                             return Err("Expected date column or string in DATEDIFF()".to_string());
                         };
-                        
+
                         if tokens.get(*i) != Some(&Token::Comma) {
                             return Err("Expected , after first date in DATEDIFF".to_string());
                         }
                         *i += 1;
-                        
+
                         // Second argument: date2
                         let date2_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
                             let c = c.clone();
@@ -2063,7 +2117,7 @@ pub fn parse_select_columns(
                         } else {
                             return Err("Expected date column or string in DATEDIFF()".to_string());
                         };
-                        
+
                         if tokens.get(*i) != Some(&Token::RParen) {
                             return Err("Expected ) after DATEDIFF arguments".to_string());
                         }
@@ -2088,12 +2142,12 @@ pub fn parse_select_columns(
                         } else {
                             return Err("Expected unit string in DATE_TRUNC()".to_string());
                         };
-                        
+
                         if tokens.get(*i) != Some(&Token::Comma) {
                             return Err("Expected , after unit in DATE_TRUNC".to_string());
                         }
                         *i += 1;
-                        
+
                         // Second argument: date column
                         let date_arg = if let Some(Token::Identifier(c)) = tokens.get(*i) {
                             let c = c.clone();
@@ -2104,9 +2158,11 @@ pub fn parse_select_columns(
                             *i += 1;
                             s
                         } else {
-                            return Err("Expected date column or string in DATE_TRUNC()".to_string());
+                            return Err(
+                                "Expected date column or string in DATE_TRUNC()".to_string()
+                            );
                         };
-                        
+
                         if tokens.get(*i) != Some(&Token::RParen) {
                             return Err("Expected ) after DATE_TRUNC arguments".to_string());
                         }
@@ -4296,12 +4352,16 @@ fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(Option<String>, String
 
 // Parse CREATE TABLE statement
 // Syntax: CREATE TABLE table_name (column1 PRIMARY KEY, column2 UNIQUE, column3)
-pub fn parse_create_table(input: &str) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
+pub fn parse_create_table(
+    input: &str,
+) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
     let tokens = tokenize(input);
     parse_create_table_tokens(&tokens)
 }
 
-fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
+fn parse_create_table_tokens(
+    tokens: &[Token],
+) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
     if tokens.len() < 5 {
         return Err("CREATE TABLE requires table name and columns".to_string());
     }
@@ -4332,7 +4392,7 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>, O
     let mut columns = Vec::new();
     let mut primary_key: Option<String> = None;
     let mut unique_columns: Vec<String> = Vec::new();
-    
+
     loop {
         if let Some(Token::Identifier(col)) = tokens.get(i) {
             let column_name = col.clone();
@@ -4341,7 +4401,7 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>, O
 
             // Skip data type if present (INTEGER, TEXT, etc.)
             if let Some(Token::Identifier(_)) = tokens.get(i) {
-                i += 1;  // skip data type
+                i += 1; // skip data type
             }
 
             // Check for PRIMARY KEY constraint
@@ -4357,7 +4417,7 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<(String, Vec<String>, O
                     return Err("Expected KEY after PRIMARY".to_string());
                 }
             }
-            
+
             // Check for UNIQUE constraint
             if tokens.get(i) == Some(&Token::Unique) {
                 i += 1;
@@ -4564,7 +4624,6 @@ pub fn parse_insert_select(input: &str) -> Result<(String, String), String> {
     Ok((table_name, select_sql))
 }
 
-
 /// CTE (Common Table Expression) representation
 #[derive(Debug, Clone)]
 pub struct CommonTableExpression {
@@ -4576,21 +4635,21 @@ pub struct CommonTableExpression {
 pub fn parse_cte(input: &str) -> Result<(Option<CommonTableExpression>, String), String> {
     let trimmed = input.trim();
     let upper = trimmed.to_uppercase();
-    
+
     if !upper.starts_with("WITH ") {
         // No CTE, return None for CTE and original query
         return Ok((None, input.to_string()));
     }
-    
+
     let tokens = tokenize(trimmed);
     let mut i = 0;
-    
+
     // Expect: WITH cte_name AS (SELECT ...) SELECT ...
     if tokens.get(i) != Some(&Token::With) {
         return Err("Expected WITH".to_string());
     }
     i += 1;
-    
+
     // Get CTE name
     let cte_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
         let n = name.clone();
@@ -4599,19 +4658,19 @@ pub fn parse_cte(input: &str) -> Result<(Option<CommonTableExpression>, String),
     } else {
         return Err("Expected CTE name after WITH".to_string());
     };
-    
+
     // Expect AS
     if tokens.get(i) != Some(&Token::As) {
         return Err("Expected AS after CTE name".to_string());
     }
     i += 1;
-    
+
     // Expect (
     if tokens.get(i) != Some(&Token::LParen) {
         return Err("Expected ( after AS".to_string());
     }
     i += 1;
-    
+
     // Find matching closing parenthesis for the CTE query
     let mut paren_depth = 1;
     let cte_start = i;
@@ -4625,32 +4684,31 @@ pub fn parse_cte(input: &str) -> Result<(Option<CommonTableExpression>, String),
             i += 1;
         }
     }
-    
+
     if paren_depth != 0 {
         return Err("Unclosed parenthesis in CTE definition".to_string());
     }
-    
+
     // Extract CTE query SQL
     let cte_query_tokens = &tokens[cte_start..i];
     let cte_query = tokens_to_sql(cte_query_tokens);
     i += 1; // Skip closing paren
-    
+
     // Rest is the main SELECT query
     let main_query_tokens = &tokens[i..];
     let main_query = tokens_to_sql(main_query_tokens);
-    
+
     if main_query.trim().is_empty() {
         return Err("Expected SELECT after CTE definition".to_string());
     }
-    
+
     let cte = CommonTableExpression {
         name: cte_name,
         query: cte_query,
     };
-    
+
     Ok((Some(cte), main_query))
 }
-
 
 /// Index specification for CREATE INDEX
 #[derive(Debug, Clone)]
@@ -4665,18 +4723,18 @@ pub struct IndexDefinition {
 pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
     let tokens = tokenize(input);
     let mut i = 0;
-    
+
     // Expect: CREATE INDEX index_name ON table_name (column_name)
     if tokens.get(i) != Some(&Token::Create) {
         return Err("Expected CREATE".to_string());
     }
     i += 1;
-    
+
     if tokens.get(i) != Some(&Token::Index) {
         return Err("Expected INDEX after CREATE".to_string());
     }
     i += 1;
-    
+
     // Get index name
     let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
         let n = name.clone();
@@ -4685,13 +4743,13 @@ pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
     } else {
         return Err("Expected index name after CREATE INDEX".to_string());
     };
-    
+
     // Expect ON
     if tokens.get(i) != Some(&Token::On) {
         return Err("Expected ON after index name".to_string());
     }
     i += 1;
-    
+
     // Get table name
     let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
         let n = name.clone();
@@ -4700,13 +4758,13 @@ pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
     } else {
         return Err("Expected table name after ON".to_string());
     };
-    
+
     // Expect (
     if tokens.get(i) != Some(&Token::LParen) {
         return Err("Expected ( after table name".to_string());
     }
     i += 1;
-    
+
     // Get column name
     let column_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
         let n = name.clone();
@@ -4715,18 +4773,18 @@ pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
     } else {
         return Err("Expected column name inside parentheses".to_string());
     };
-    
+
     // Expect )
     if tokens.get(i) != Some(&Token::RParen) {
         return Err("Expected ) after column name".to_string());
     }
     i += 1;
-    
+
     // Should be end of statement
     if i < tokens.len() {
         return Err("Unexpected tokens after CREATE INDEX statement".to_string());
     }
-    
+
     Ok(IndexDefinition {
         index_name,
         table_name,
@@ -4739,17 +4797,17 @@ pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
 pub fn parse_drop_index(input: &str) -> Result<String, String> {
     let tokens = tokenize(input);
     let mut i = 0;
-    
+
     if tokens.get(i) != Some(&Token::Drop) {
         return Err("Expected DROP".to_string());
     }
     i += 1;
-    
+
     if tokens.get(i) != Some(&Token::Index) {
         return Err("Expected INDEX after DROP".to_string());
     }
     i += 1;
-    
+
     let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
         let n = name.clone();
         i += 1;
@@ -4757,11 +4815,11 @@ pub fn parse_drop_index(input: &str) -> Result<String, String> {
     } else {
         return Err("Expected index name after DROP INDEX".to_string());
     };
-    
+
     // Should be end of statement
     if i < tokens.len() {
         return Err("Unexpected tokens after DROP INDEX statement".to_string());
     }
-    
+
     Ok(index_name)
 }
