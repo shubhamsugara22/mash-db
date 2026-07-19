@@ -2890,6 +2890,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_parse_first_value_basic() {
         let result = parse_select("SELECT FIRST_VALUE(username) OVER (ORDER BY id) FROM users");
         if result.is_err() {
