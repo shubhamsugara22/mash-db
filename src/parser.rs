@@ -693,6 +693,7 @@ pub fn parse_select_columns(
         | Some(Token::RowNumber)
         | Some(Token::Rank)
         | Some(Token::DenseRank)
+        | Some(Token::FirstValue)
         | Some(Token::Lead)
         | Some(Token::Lag)
         | Some(Token::Position)
@@ -1381,11 +1382,8 @@ pub fn parse_select_columns(
                             } else {
                                 return Err("Expected column name after FIRST_VALUE(".to_string());
                             }
-
-                            if tokens.get(*i) != Some(&Token::RParen) {
-                                return Err("Expected ) after FIRST_VALUE(column)".to_string());
-                            }
-                            *i += 1;
+                            // Do not consume the closing RParen here; let the
+                            // unified check after argument parsing handle it.
                         } else if is_lead || is_lag {
                             // Parse column
                             if let Some(Token::Identifier(col)) = tokens.get(*i) {
@@ -2738,6 +2736,11 @@ fn parse_select_tokens(
         false
     };
 
+    // Debug: print token at column start for failing FIRST_VALUE parse
+    if tokens.get(i) == Some(&Token::FirstValue) {
+        eprintln!("DEBUG parse_select_tokens: token at column start = FIRST_VALUE");
+    }
+
     let resolve_alias = |name: &str, alias_map: &HashMap<String, String>| -> String {
         if let Some(idx) = name.find('.') {
             let (prefix, rest) = name.split_at(idx);
@@ -2802,6 +2805,7 @@ fn parse_select_tokens(
         | Some(Token::Sqrt)
         | Some(Token::Sign)
         | Some(Token::RowNumber)
+        | Some(Token::FirstValue)
         | Some(Token::Rank)
         | Some(Token::DenseRank)
         | Some(Token::Lead)
