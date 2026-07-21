@@ -106,6 +106,7 @@ pub enum Token {
     Rank,
     DenseRank,
     FirstValue,
+    LastValue,
     Lead,
     Lag,
     Over,
@@ -375,6 +376,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "RANK" => Token::Rank,
                     "DENSE_RANK" => Token::DenseRank,
                     "FIRST_VALUE" => Token::FirstValue,
+                    "LAST_VALUE" => Token::LastValue,
                     "LEAD" => Token::Lead,
                     "LAG" => Token::Lag,
                     "OVER" => Token::Over,
@@ -614,6 +616,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Rank => "RANK".to_string(),
         Token::DenseRank => "DENSE_RANK".to_string(),
         Token::FirstValue => "FIRST_VALUE".to_string(),
+        Token::LastValue => "LAST_VALUE".to_string(),
         Token::Lead => "LEAD".to_string(),
         Token::Lag => "LAG".to_string(),
         Token::Over => "OVER".to_string(),
@@ -1349,12 +1352,14 @@ pub fn parse_select_columns(
                     | Some(Token::Rank)
                     | Some(Token::DenseRank)
                     | Some(Token::FirstValue)
+                    | Some(Token::LastValue)
                     | Some(Token::Lead)
                     | Some(Token::Lag) => {
                         let token_here = tokens.get(*i).cloned();
                         let is_rank = matches!(token_here, Some(Token::Rank));
                         let is_dense = matches!(token_here, Some(Token::DenseRank));
                         let is_first = matches!(token_here, Some(Token::FirstValue));
+                        let is_last = matches!(token_here, Some(Token::LastValue));
                         let is_lead = matches!(token_here, Some(Token::Lead));
                         let is_lag = matches!(token_here, Some(Token::Lag));
                         *i += 1; // consume ROW_NUMBER, RANK, DENSE_RANK, LEAD, or LAG
@@ -1375,6 +1380,16 @@ pub fn parse_select_columns(
                                 *i += 1;
                             } else {
                                 return Err("Expected column name after FIRST_VALUE(".to_string());
+                            }
+                            // Do not consume the closing RParen here; let the
+                            // unified check after argument parsing handle it.
+                        } else if is_last {
+                            // Parse column for LAST_VALUE(column)
+                            if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                                window_column = col.clone();
+                                *i += 1;
+                            } else {
+                                return Err("Expected column name after LAST_VALUE(".to_string());
                             }
                             // Do not consume the closing RParen here; let the
                             // unified check after argument parsing handle it.
@@ -1534,6 +1549,11 @@ pub fn parse_select_columns(
                         } else if is_first {
                             SelectColumn::Column(format!(
                                 "__first_value__:{}\x1F{}\x1F{}",
+                                window_column, partition_part, order_part
+                            ))
+                        } else if is_last {
+                            SelectColumn::Column(format!(
+                                "__last_value__:{}\x1F{}\x1F{}",
                                 window_column, partition_part, order_part
                             ))
                         } else if is_lead {

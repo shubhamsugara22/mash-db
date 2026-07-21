@@ -749,6 +749,137 @@ pub fn compute_first_value_map(
     result
 }
 
+// Compute LAST_VALUE values for any encoded __last_value__ columns in the select list.
+// LAST_VALUE(column) returns the value of `column` from the last row in the window.
+pub fn compute_last_value_map(
+    rows: &Vec<&Row>,
+    columns: &Option<Vec<String>>,
+) -> std::collections::HashMap<String, std::collections::HashMap<u32, String>> {
+    let mut result: std::collections::HashMap<String, std::collections::HashMap<u32, String>> =
+        std::collections::HashMap::new();
+
+    let cols: Vec<String> = match columns {
+        Some(c) => c.clone(),
+        None => Vec::new(),
+    };
+
+    // Find any window column expressions for LAST_VALUE
+    let window_cols: Vec<String> = cols
+        .into_iter()
+        .filter(|c| c.starts_with("__last_value__:"))
+        .collect();
+    if window_cols.is_empty() {
+        return result;
+    }
+
+    for wc in window_cols {
+        // parse encoded: __last_value__:column\x1Fpartition_part\x1Ford_part
+        let rest = wc.strip_prefix("__last_value__:").unwrap_or("");
+        let parts: Vec<&str> = rest.split('\x1F').collect();
+        let last_column = parts.get(0).copied().unwrap_or("");
+        let partition_part = parts.get(1).copied().unwrap_or("");
+        let order_part = parts.get(2).copied().unwrap_or("");
+
+        let partition_cols: Vec<String> = if partition_part.is_empty() {
+            Vec::new()
+        } else {
+            partition_part.split(',').map(|s| s.to_string()).collect()
+        };
+        let order_specs: Vec<(String, bool)> = if order_part.is_empty() {
+            Vec::new()
+        } else {
+            order_part
+                .split(',')
+                .map(|s| {
+                    if s.ends_with(":DESC") {
+                        (s[..s.len() - 5].to_string(), false)
+                    } else {
+                        (s.to_string(), true)
+                    }
+                })
+                .collect()
+        };
+
+        // Group rows by partition key
+        let mut groups: std::collections::HashMap<String, Vec<(&Row, usize)>> =
+            std::collections::HashMap::new();
+        for (idx, row) in rows.iter().enumerate() {
+            let mut key_parts: Vec<String> = Vec::new();
+            for col in &partition_cols {
+                key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
+            }
+            let key = key_parts.join("|");
+            groups.entry(key).or_default().push((*row, idx));
+        }
+
+        let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        for (_k, mut group_rows) in groups.into_iter() {
+            // sort group_rows according to order_specs
+            group_rows.sort_by(|a, b| {
+                let (ra, ia) = a;
+                let (rb, ib) = b;
+                for (col, asc) in &order_specs {
+                    let va = ra.get_value(col).unwrap_or_default();
+                    let vb = rb.get_value(col).unwrap_or_default();
+                    // try numeric compare
+                    if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
+                        if na < nb {
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
+                        }
+                        if na > nb {
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
+                        }
+                    } else {
+                        if va < vb {
+                            return if *asc {
+                                std::cmp::Ordering::Less
+                            } else {
+                                std::cmp::Ordering::Greater
+                            };
+                        }
+                        if va > vb {
+                            return if *asc {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            };
+                        }
+                    }
+                }
+                // tie-breaker: original position
+                ia.cmp(ib)
+            });
+
+            // Determine the last value for the group (if any)
+            let last_val = if group_rows.is_empty() {
+                "NULL".to_string()
+            } else {
+                let last_idx = group_rows.len() - 1;
+                group_rows[last_idx]
+                    .0
+                    .get_value(&last_column.to_string())
+                    .unwrap_or_else(|| "NULL".to_string())
+            };
+
+            for (row, _orig_idx) in &group_rows {
+                mapping.insert(row.id, last_val.clone());
+            }
+        }
+
+        result.insert(wc, mapping);
+    }
+
+    result
+}
+
 // Compute LEAD values for any encoded __lead__ columns in the select list.
 // LEAD(column, offset, default) returns the value of column from offset rows ahead in the window.
 pub fn compute_lead_map(
@@ -2344,6 +2475,8 @@ fn execute_statement(
             window_map.extend(dense_map);
             let first_value_map = compute_first_value_map(&rows, &columns);
             window_map.extend(first_value_map);
+            let last_value_map = compute_last_value_map(&rows, &columns);
+            window_map.extend(last_value_map);
             let lead_map = compute_lead_map(&rows, &columns);
             window_map.extend(lead_map);
             let lag_map = compute_lag_map(&rows, &columns);
@@ -2721,6 +2854,8 @@ fn execute_statement(
                     window_map.extend(dense_map);
                     let first_value_map = compute_first_value_map(&rows, &columns);
                     window_map.extend(first_value_map);
+                    let last_value_map = compute_last_value_map(&rows, &columns);
+                    window_map.extend(last_value_map);
                     let lead_map = compute_lead_map(&rows, &columns);
                     window_map.extend(lead_map);
                     let lag_map = compute_lag_map(&rows, &columns);
