@@ -4388,31 +4388,3 @@ mod tests {
         assert_eq!(unique_columns.len(), 0);
     }
 }
-        assert_eq!(unique_columns[1], "username");
-    }
-
-    #[test]
-    fn test_parse_create_table_with_pk_and_unique() {
-        let result = parse_create_table(
-            "CREATE TABLE products (id INTEGER PRIMARY KEY, sku TEXT UNIQUE, name TEXT)",
-        );
-        assert!(result.is_ok());
-        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
-        assert_eq!(table_name, "products");
-        assert_eq!(columns.len(), 3);
-        assert_eq!(primary_key, Some("id".to_string()));
-        assert_eq!(unique_columns.len(), 1);
-        assert_eq!(unique_columns[0], "sku");
-    }
-
-    #[test]
-    fn test_parse_create_table_no_constraints() {
-        let result = parse_create_table("CREATE TABLE users (id INTEGER, name TEXT)");
-        assert!(result.is_ok());
-        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
-        assert_eq!(table_name, "users");
-        assert_eq!(columns.len(), 2);
-        assert_eq!(primary_key, None);
-        assert_eq!(unique_columns.len(), 0);
-    }
-}
