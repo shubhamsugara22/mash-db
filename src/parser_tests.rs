@@ -2782,8 +2782,6 @@ mod tests {
 
     #[test]
     fn test_lead_runtime() {
-        use crate::compute_lead_map;
-
         let mut table = Table::new(
             "test_lead.json".to_string(),
             vec![
@@ -2819,8 +2817,6 @@ mod tests {
 
     #[test]
     fn test_lead_with_offset() {
-        use crate::compute_lead_map;
-
         let mut table = Table::new(
             "test_lead_offset.json".to_string(),
             vec![
@@ -2858,8 +2854,6 @@ mod tests {
 
     #[test]
     fn test_lead_with_default_value() {
-        use crate::compute_lead_map;
-
         let mut table = Table::new(
             "test_lead_default.json".to_string(),
             vec![
@@ -2935,7 +2929,6 @@ mod tests {
 
     #[test]
     fn debug_tokens_first_value() {
-        use crate::parser::tokenize;
         let toks =
             crate::parser::tokenize("SELECT FIRST_VALUE(username) OVER (ORDER BY id) FROM users");
         println!("TOKENS: {:?}", toks);
@@ -4367,6 +4360,34 @@ mod tests {
         assert_eq!(primary_key, Some("id".to_string()));
         assert_eq!(unique_columns.len(), 2);
         assert_eq!(unique_columns[0], "email");
+        assert_eq!(unique_columns[1], "username");
+    }
+
+    #[test]
+    fn test_parse_create_table_with_pk_and_unique() {
+        let result = parse_create_table(
+            "CREATE TABLE products (id INTEGER PRIMARY KEY, sku TEXT UNIQUE, name TEXT)",
+        );
+        assert!(result.is_ok());
+        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
+        assert_eq!(table_name, "products");
+        assert_eq!(columns.len(), 3);
+        assert_eq!(primary_key, Some("id".to_string()));
+        assert_eq!(unique_columns.len(), 1);
+        assert_eq!(unique_columns[0], "sku");
+    }
+
+    #[test]
+    fn test_parse_create_table_no_constraints() {
+        let result = parse_create_table("CREATE TABLE users (id INTEGER, name TEXT)");
+        assert!(result.is_ok());
+        let (table_name, columns, primary_key, unique_columns) = result.unwrap();
+        assert_eq!(table_name, "users");
+        assert_eq!(columns.len(), 2);
+        assert_eq!(primary_key, None);
+        assert_eq!(unique_columns.len(), 0);
+    }
+}
         assert_eq!(unique_columns[1], "username");
     }
 

@@ -668,10 +668,6 @@ pub fn parse_select_columns(
         | Some(Token::Trim)
         | Some(Token::Cast)
         | Some(Token::Concat)
-        | Some(Token::Upper)
-        | Some(Token::Lower)
-        | Some(Token::Length)
-        | Some(Token::Case)
         | Some(Token::If)
         | Some(Token::Abs)
         | Some(Token::Round)
@@ -687,8 +683,6 @@ pub fn parse_select_columns(
         | Some(Token::Floor)
         | Some(Token::Ceil)
         | Some(Token::Mod)
-        | Some(Token::Power)
-        | Some(Token::Sqrt)
         | Some(Token::Sign)
         | Some(Token::RowNumber)
         | Some(Token::Rank)
@@ -2801,8 +2795,6 @@ fn parse_select_tokens(
         | Some(Token::Floor)
         | Some(Token::Ceil)
         | Some(Token::Mod)
-        | Some(Token::Power)
-        | Some(Token::Sqrt)
         | Some(Token::Sign)
         | Some(Token::RowNumber)
         | Some(Token::FirstValue)
@@ -2810,7 +2802,6 @@ fn parse_select_tokens(
         | Some(Token::DenseRank)
         | Some(Token::Lead)
         | Some(Token::Lag)
-        | Some(Token::Position)
         | Some(Token::Instr)
         | Some(Token::SubstringIndex)
         | Some(Token::Date)
@@ -4807,6 +4798,26 @@ pub fn parse_drop_index(input: &str) -> Result<String, String> {
     }
     i += 1;
 
+    if tokens.get(i) != Some(&Token::Index) {
+        return Err("Expected INDEX after DROP".to_string());
+    }
+    i += 1;
+
+    let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
+        i += 1;
+        n
+    } else {
+        return Err("Expected index name after DROP INDEX".to_string());
+    };
+
+    // Should be end of statement
+    if i < tokens.len() {
+        return Err("Unexpected tokens after DROP INDEX statement".to_string());
+    }
+
+    Ok(index_name)
+}
     if tokens.get(i) != Some(&Token::Index) {
         return Err("Expected INDEX after DROP".to_string());
     }

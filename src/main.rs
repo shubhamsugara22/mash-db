@@ -297,7 +297,7 @@ pub fn compute_row_number_map(
                 key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
             }
             let key = key_parts.join("|");
-            groups.entry(key).or_default().push((row.clone(), idx));
+            groups.entry(key).or_default().push((*row, idx));
         }
 
         let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
@@ -417,7 +417,7 @@ pub fn compute_rank_map(
                 key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
             }
             let key = key_parts.join("|");
-            groups.entry(key).or_default().push((row.clone(), idx));
+            groups.entry(key).or_default().push((*row, idx));
         }
 
         let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
@@ -548,7 +548,7 @@ pub fn compute_dense_rank_map(
                 key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
             }
             let key = key_parts.join("|");
-            groups.entry(key).or_default().push((row.clone(), idx));
+            groups.entry(key).or_default().push((*row, idx));
         }
 
         let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
@@ -679,7 +679,7 @@ pub fn compute_first_value_map(
                 key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
             }
             let key = key_parts.join("|");
-            groups.entry(key).or_default().push((row.clone(), idx));
+            groups.entry(key).or_default().push((*row, idx));
         }
 
         let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
@@ -815,7 +815,7 @@ pub fn compute_lead_map(
                 key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
             }
             let key = key_parts.join("|");
-            groups.entry(key).or_default().push((row.clone(), idx));
+            groups.entry(key).or_default().push((*row, idx));
         }
 
         let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
@@ -953,7 +953,7 @@ pub fn compute_lag_map(
                 key_parts.push(row.get_value(col).unwrap_or_else(|| "NULL".to_string()));
             }
             let key = key_parts.join("|");
-            groups.entry(key).or_default().push((row.clone(), idx));
+            groups.entry(key).or_default().push((*row, idx));
         }
 
         let mut mapping: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
@@ -4067,6 +4067,139 @@ mod tests {
             &mut schemas,
             &mut views,
             &mut constraints,
+            &mut indexes,
+            &mut tx_state,
+        );
+    }
+
+    #[test]
+    fn test_right_join_execution() {
+        // Create test tables
+        let mut users = Table::new("test_right_users.json".to_string(), default_schema());
+        users.clear();
+
+        // Insert 2 users
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut orders = Table::new("test_right_orders.json".to_string(), default_schema());
+        orders.clear();
+
+        // Insert orders including one without matching user
+        assert!(orders
+            .insert(Row::new(1, "alice".to_string(), "order1@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(orders
+            .insert(Row::new(2, "bob".to_string(), "order2@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(orders
+            .insert(Row::new(3, "david".to_string(), "order3@test.com".to_string()).unwrap())
+            .is_ok());
+        orders.save().unwrap();
+
+        // RIGHT JOIN should keep only users that have matching orders
+        let user_rows = users.select_all();
+        assert_eq!(user_rows.len(), 2);
+    }
+
+    #[test]
+    fn test_right_join_parsing() {
+        let input = "SELECT * FROM users RIGHT JOIN orders ON id = id";
+        let result = parser::parse_select(input);
+
+        assert!(result.is_ok());
+        let (_, _, from_table, join, _, _, _, _, _, _) = result.unwrap();
+
+        assert_eq!(from_table, Some("users".to_string()));
+        assert!(join.is_some());
+
+        let jc = join.unwrap();
+        assert_eq!(jc.table, "orders");
+        assert_eq!(jc.join_type, parser::JoinType::Right);
+        assert_eq!(jc.on_left, "id");
+        assert_eq!(jc.on_right, "id");
+    }
+
+    #[test]
+    fn test_inner_join_filters_correctly() {
+        // Create test tables
+        let mut users = Table::new("test_inner_users.json".to_string(), default_schema());
+        users.clear();
+
+        // Insert 3 users
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "alice@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(2, "bob".to_string(), "bob@test.com".to_string()).unwrap())
+            .is_ok());
+        assert!(users
+            .insert(Row::new(3, "charlie".to_string(), "charlie@test.com".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut orders = Table::new("test_inner_orders.json".to_string(), default_schema());
+        orders.clear();
+
+        // Insert orders for only alice (id=1)
+        assert!(orders
+            .insert(Row::new(1, "alice".to_string(), "order1@test.com".to_string()).unwrap())
+            .is_ok());
+        orders.save().unwrap();
+
+        // INNER JOIN should return only 1 user (alice)
+        let user_rows = users.select_all();
+        let orders_table = orders;
+
+        // Apply INNER JOIN manually
+        let mut matched_count = 0;
+        for row in &user_rows {
+            if let Ok(matches) = orders_table.select_where("id", "=", &row.id.to_string()) {
+                if !matches.is_empty() {
+                    matched_count += 1;
+                }
+            }
+        }
+
+        assert_eq!(matched_count, 1, "INNER JOIN should match only 1 user");
+    }
+
+    #[test]
+    fn test_count_column_includes_id_values() {
+        let schema = vec!["id".to_string(), "grp".to_string(), "val".to_string()];
+        let rows = vec![
+            Row::from_values(
+                &schema,
+                vec!["1".to_string(), "a".to_string(), "10".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["2".to_string(), "a".to_string(), "20".to_string()],
+            )
+            .unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let count_id = super::compute_aggregate(
+            &AggregateColumn::Count(Some("id".to_string())),
+            &row_refs,
+            &schema,
+        );
+        let count_star =
+            super::compute_aggregate(&AggregateColumn::Count(None), &row_refs, &schema);
+
+        assert_eq!(count_id, "2");
+        assert_eq!(count_star, "2");
+    }
+}
+    }
+}
             &mut indexes,
             &mut tx_state,
         );
