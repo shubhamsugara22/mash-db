@@ -52,6 +52,8 @@ pub enum Token {
     Upper,
     Lower,
     Length,
+    Greatest,
+    Least,
     Case,
     When,
     Then,
@@ -344,6 +346,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "UPPER" => Token::Upper,
                     "LOWER" => Token::Lower,
                     "LENGTH" => Token::Length,
+                    "GREATEST" => Token::Greatest,
+                    "LEAST" => Token::Least,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,
                     "THEN" => Token::Then,
@@ -662,6 +666,8 @@ pub fn parse_select_columns(
         | Some(Token::Upper)
         | Some(Token::Lower)
         | Some(Token::Length)
+        | Some(Token::Greatest)
+        | Some(Token::Least)
         | Some(Token::Power)
         | Some(Token::Sqrt)
         | Some(Token::Now)
@@ -928,6 +934,78 @@ pub fn parse_select_columns(
                             "__replace__:{}\x1F{}\x1F{}",
                             col, from_str, to_str
                         ))
+                    }
+                    Some(Token::Greatest) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after GREATEST".to_string());
+                        }
+                        *i += 1;
+                        // parse two or more args separated by comma
+                        let mut args: Vec<String> = Vec::new();
+                        loop {
+                            match tokens.get(*i) {
+                                Some(Token::Identifier(c)) => {
+                                    args.push(c.clone());
+                                    *i += 1;
+                                }
+                                Some(Token::String(s)) => {
+                                    args.push(s.clone());
+                                    *i += 1;
+                                }
+                                Some(Token::Number(n)) => {
+                                    args.push(n.to_string());
+                                    *i += 1;
+                                }
+                                _ => return Err("Expected argument in GREATEST()".to_string()),
+                            }
+                            if tokens.get(*i) == Some(&Token::Comma) {
+                                *i += 1;
+                                continue;
+                            }
+                            break;
+                        }
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after GREATEST(...)".to_string());
+                        }
+                        *i += 1;
+                        // encode arguments joined by \x1F
+                        SelectColumn::Column(format!("__greatest__:{}", args.join("\x1F")))
+                    }
+                    Some(Token::Least) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after LEAST".to_string());
+                        }
+                        *i += 1;
+                        let mut args: Vec<String> = Vec::new();
+                        loop {
+                            match tokens.get(*i) {
+                                Some(Token::Identifier(c)) => {
+                                    args.push(c.clone());
+                                    *i += 1;
+                                }
+                                Some(Token::String(s)) => {
+                                    args.push(s.clone());
+                                    *i += 1;
+                                }
+                                Some(Token::Number(n)) => {
+                                    args.push(n.to_string());
+                                    *i += 1;
+                                }
+                                _ => return Err("Expected argument in LEAST()".to_string()),
+                            }
+                            if tokens.get(*i) == Some(&Token::Comma) {
+                                *i += 1;
+                                continue;
+                            }
+                            break;
+                        }
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after LEAST(...)".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__least__:{}", args.join("\x1F")))
                     }
                     Some(Token::Lpad) => {
                         *i += 1;
