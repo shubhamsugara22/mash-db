@@ -1600,6 +1600,49 @@ mod tests {
         assert_eq!(row.eval_col(&encoded), Some("alice".to_string()));
     }
 
+    #[test]
+    fn test_parse_select_greatest_least_basic() {
+        let r1 = parse_select("SELECT GREATEST(a, b) FROM t");
+        assert!(r1.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = r1.unwrap();
+        assert!(cols.is_some());
+        let c = cols.unwrap();
+        assert_eq!(c.len(), 1);
+        assert!(c[0].starts_with("__greatest__:"));
+        assert!(c[0].contains("\x1F"));
+
+        let r2 = parse_select("SELECT LEAST(a, b, c) FROM t");
+        assert!(r2.is_ok());
+        let (_, cols2, _, _, _, _, _, _, _, _) = r2.unwrap();
+        assert!(cols2.is_some());
+        let c2 = cols2.unwrap();
+        assert_eq!(c2.len(), 1);
+        assert!(c2[0].starts_with("__least__:"));
+        assert!(c2[0].contains("\x1F"));
+    }
+
+    #[test]
+    fn test_eval_col_greatest_least_runtime() {
+        use crate::table::Row;
+        use std::collections::HashMap;
+        let mut extras = HashMap::new();
+        extras.insert("a".to_string(), "10".to_string());
+        extras.insert("b".to_string(), "2".to_string());
+        extras.insert("c".to_string(), "apple".to_string());
+        let row = Row {
+            id: 1,
+            username: "u".to_string(),
+            email: "e".to_string(),
+            extras,
+        };
+        let enc_g = "__greatest__:a\x1Fb";
+        assert_eq!(row.eval_col(enc_g), Some("10".to_string()));
+
+        let enc_l = "__least__:a\x1Fb\x1Fc";
+        // numeric comparison among a=10, b=2 and c="apple" -> numeric compares where possible, so least is 2
+        assert_eq!(row.eval_col(enc_l), Some("2".to_string()));
+    }
+
     // --- TRIM tests ---
 
     #[test]

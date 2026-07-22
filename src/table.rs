@@ -481,15 +481,19 @@ impl Row {
             Some(result)
         } else if let Some(col) = col_expr.strip_prefix("__sign__:") {
             let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
-            let result = raw.parse::<f64>().ok().map(|f| {
-                if f > 0.0 {
-                    "1".to_string()
-                } else if f < 0.0 {
-                    "-1".to_string()
-                } else {
-                    "0".to_string()
-                }
-            }).unwrap_or(raw);
+            let result = raw
+                .parse::<f64>()
+                .ok()
+                .map(|f| {
+                    if f > 0.0 {
+                        "1".to_string()
+                    } else if f < 0.0 {
+                        "-1".to_string()
+                    } else {
+                        "0".to_string()
+                    }
+                })
+                .unwrap_or(raw);
             Some(result)
         } else if col_expr == "__now__" {
             use std::time::{SystemTime, UNIX_EPOCH};
@@ -663,10 +667,12 @@ impl Row {
             let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
             let date_arg = parts.first().copied().unwrap_or("");
             let interval_str = parts.get(1).copied().unwrap_or("0");
-            
-            let raw = self.get_value(date_arg).unwrap_or_else(|| date_arg.to_string());
+
+            let raw = self
+                .get_value(date_arg)
+                .unwrap_or_else(|| date_arg.to_string());
             let interval = interval_str.parse::<i64>().unwrap_or(0);
-            
+
             if let Ok(timestamp) = raw.parse::<i64>() {
                 // It's a UNIX timestamp, add days as seconds
                 let new_timestamp = timestamp + (interval * 86400);
@@ -692,10 +698,12 @@ impl Row {
             let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
             let date_arg = parts.first().copied().unwrap_or("");
             let interval_str = parts.get(1).copied().unwrap_or("0");
-            
-            let raw = self.get_value(date_arg).unwrap_or_else(|| date_arg.to_string());
+
+            let raw = self
+                .get_value(date_arg)
+                .unwrap_or_else(|| date_arg.to_string());
             let interval = interval_str.parse::<i64>().unwrap_or(0);
-            
+
             if let Ok(timestamp) = raw.parse::<i64>() {
                 // It's a UNIX timestamp, subtract days as seconds
                 let new_timestamp = timestamp - (interval * 86400);
@@ -719,7 +727,7 @@ impl Row {
         } else if let Some(col) = col_expr.strip_prefix("__week__:") {
             // Extract week number (ISO week) from date
             let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
-            
+
             if let Ok(timestamp) = raw.parse::<u64>() {
                 // UNIX timestamp - calculate week
                 let days_since_epoch = timestamp / 86400;
@@ -736,9 +744,19 @@ impl Row {
                     let day = parts[2].parse::<u32>().unwrap_or(1);
                     // Simple approximation: week = (day_of_year / 7) + 1
                     let days_before_month = match month {
-                        1 => 0, 2 => 31, 3 => 59, 4 => 90, 5 => 120, 6 => 151,
-                        7 => 181, 8 => 212, 9 => 243, 10 => 273, 11 => 304, 12 => 334,
-                        _ => 0
+                        1 => 0,
+                        2 => 31,
+                        3 => 59,
+                        4 => 90,
+                        5 => 120,
+                        6 => 151,
+                        7 => 181,
+                        8 => 212,
+                        9 => 243,
+                        10 => 273,
+                        11 => 304,
+                        12 => 334,
+                        _ => 0,
                     };
                     let day_of_year = days_before_month + day;
                     let week = (day_of_year / 7) + 1;
@@ -752,7 +770,7 @@ impl Row {
         } else if let Some(col) = col_expr.strip_prefix("__quarter__:") {
             // Extract quarter (1-4) from date
             let raw = self.get_value(col).unwrap_or_else(|| col.to_string());
-            
+
             if let Ok(timestamp) = raw.parse::<u64>() {
                 // UNIX timestamp - extract month then calculate quarter
                 let days_since_epoch = timestamp / 86400;
@@ -778,10 +796,14 @@ impl Row {
             let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
             let date1_arg = parts.first().copied().unwrap_or("");
             let date2_arg = parts.get(1).copied().unwrap_or("");
-            
-            let raw1 = self.get_value(date1_arg).unwrap_or_else(|| date1_arg.to_string());
-            let raw2 = self.get_value(date2_arg).unwrap_or_else(|| date2_arg.to_string());
-            
+
+            let raw1 = self
+                .get_value(date1_arg)
+                .unwrap_or_else(|| date1_arg.to_string());
+            let raw2 = self
+                .get_value(date2_arg)
+                .unwrap_or_else(|| date2_arg.to_string());
+
             // Try to parse as UNIX timestamps first
             if let (Ok(ts1), Ok(ts2)) = (raw1.parse::<i64>(), raw2.parse::<i64>()) {
                 let diff_seconds = ts1 - ts2;
@@ -805,7 +827,7 @@ impl Row {
                         None
                     }
                 };
-                
+
                 if let (Some(d1), Some(d2)) = (parse_date(&raw1), parse_date(&raw2)) {
                     Some((d1 - d2).to_string())
                 } else {
@@ -817,14 +839,16 @@ impl Row {
             let parts: Vec<&str> = rest.splitn(2, '\x1F').collect();
             let unit = parts.first().copied().unwrap_or("day").to_lowercase();
             let date_arg = parts.get(1).copied().unwrap_or("");
-            
-            let raw = self.get_value(date_arg).unwrap_or_else(|| date_arg.to_string());
-            
+
+            let raw = self
+                .get_value(date_arg)
+                .unwrap_or_else(|| date_arg.to_string());
+
             if let Ok(timestamp) = raw.parse::<u64>() {
                 // UNIX timestamp - truncate and convert back
                 let days_since_epoch = timestamp / 86400;
                 let seconds_in_day = timestamp % 86400;
-                
+
                 match unit.as_str() {
                     "year" => {
                         // Truncate to start of year (approx)
@@ -852,7 +876,7 @@ impl Row {
                     let year = parts[0];
                     let month = parts[1];
                     let _day = parts[2];
-                    
+
                     match unit.as_str() {
                         "year" => Some(format!("{}-01-01", year)),
                         "month" => Some(format!("{}-{}-01", year, month)),
@@ -898,6 +922,58 @@ impl Row {
             let raw = self.get_value(col).unwrap_or_default();
             let result: String = raw.chars().skip(start).take(len).collect();
             Some(result)
+        } else if let Some(rest) = col_expr.strip_prefix("__greatest__:") {
+            // __greatest__:arg1\x1Farg2\x1F...
+            let parts: Vec<&str> = rest.split('\x1F').collect();
+            if parts.is_empty() {
+                return Some("".to_string());
+            }
+            let mut best: Option<String> = None;
+            for p in parts {
+                let val = match self.get_value(p) {
+                    Some(v) => v,
+                    None => p.to_string(),
+                };
+                if best.is_none() {
+                    best = Some(val);
+                } else {
+                    let cur = best.as_ref().unwrap().clone();
+                    if let (Ok(n1), Ok(n2)) = (cur.parse::<f64>(), val.parse::<f64>()) {
+                        if n2 > n1 {
+                            best = Some(val);
+                        }
+                    } else if val > cur {
+                        best = Some(val);
+                    }
+                }
+            }
+            return best.or(Some("".to_string()));
+        } else if let Some(rest) = col_expr.strip_prefix("__least__:") {
+            // __least__:arg1\x1Farg2\x1F...
+            let parts: Vec<&str> = rest.split('\x1F').collect();
+            if parts.is_empty() {
+                return Some("".to_string());
+            }
+            let mut best: Option<String> = None;
+            for p in parts {
+                let val = match self.get_value(p) {
+                    Some(v) => v,
+                    None => p.to_string(),
+                };
+                if best.is_none() {
+                    best = Some(val);
+                } else {
+                    let cur = best.as_ref().unwrap().clone();
+                    if let (Ok(n1), Ok(n2)) = (cur.parse::<f64>(), val.parse::<f64>()) {
+                        if n2 < n1 {
+                            best = Some(val);
+                        }
+                    } else if val < cur {
+                        best = Some(val);
+                    }
+                }
+            }
+            return best.or(Some("".to_string()));
         } else {
             self.get_value(col_expr)
         }
