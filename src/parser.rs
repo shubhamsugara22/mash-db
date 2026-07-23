@@ -54,6 +54,7 @@ pub enum Token {
     Length,
     Greatest,
     Least,
+    StringAgg,
     Case,
     When,
     Then,
@@ -164,11 +165,12 @@ pub enum AlterTableAction {
 // Aggregate function representation
 #[derive(Debug, Clone)]
 pub enum AggregateFunc {
-    Count(Option<String>), // COUNT(*) or COUNT(column)
-    Sum(String),           // SUM(column)
-    Avg(String),           // AVG(column)
-    Min(String),           // MIN(column)
-    Max(String),           // MAX(column)
+    Count(Option<String>),     // COUNT(*) or COUNT(column)
+    Sum(String),               // SUM(column)
+    Avg(String),               // AVG(column)
+    Min(String),               // MIN(column)
+    Max(String),               // MAX(column)
+    StringAgg(String, String), // STRING_AGG(expr, sep)
 }
 
 // Column in SELECT can be a regular column or an aggregate
@@ -348,6 +350,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "LENGTH" => Token::Length,
                     "GREATEST" => Token::Greatest,
                     "LEAST" => Token::Least,
+                    "STRING_AGG" => Token::StringAgg,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,
                     "THEN" => Token::Then,
@@ -595,6 +598,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Sign => "SIGN".to_string(),
         Token::Greatest => "GREATEST".to_string(),
         Token::Least => "LEAST".to_string(),
+        Token::StringAgg => "STRING_AGG".to_string(),
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
@@ -672,6 +676,7 @@ pub fn parse_select_columns(
         | Some(Token::Sqrt)
         | Some(Token::Now)
         | Some(Token::Case)
+        | Some(Token::StringAgg)
         | Some(Token::Coalesce)
         | Some(Token::Nullif)
         | Some(Token::Trim)
@@ -2484,6 +2489,50 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Column(format!("__substr__:{}\x1F{}\x1F{}", col, start, len))
                     }
+                    Some(Token::StringAgg) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after STRING_AGG".to_string());
+                        }
+                        *i += 1;
+                        // first arg: expression (identifier or string)
+                        let first = match tokens.get(*i) {
+                            Some(Token::Identifier(c)) => {
+                                let s = c.clone();
+                                *i += 1;
+                                s
+                            }
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected column or string in STRING_AGG".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::Comma) {
+                            return Err("Expected , after first argument in STRING_AGG".to_string());
+                        }
+                        *i += 1;
+                        // second arg: separator (string or identifier)
+                        let sep = match tokens.get(*i) {
+                            Some(Token::String(s)) => {
+                                let s = s.clone();
+                                *i += 1;
+                                s
+                            }
+                            Some(Token::Identifier(c)) => {
+                                let s = c.clone();
+                                *i += 1;
+                                s
+                            }
+                            _ => return Err("Expected separator string in STRING_AGG".to_string()),
+                        };
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after STRING_AGG arguments".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Aggregate(AggregateFunc::StringAgg(first, sep))
+                    }
                     Some(Token::Trim) => {
                         *i += 1; // consume TRIM
                         if tokens.get(*i) != Some(&Token::LParen) {
@@ -2933,6 +2982,9 @@ fn parse_select_tokens(
                                 AggregateFunc::Avg(name) => format!("avg({})", name),
                                 AggregateFunc::Min(name) => format!("min({})", name),
                                 AggregateFunc::Max(name) => format!("max({})", name),
+                                AggregateFunc::StringAgg(expr, sep) => {
+                                    format!("string_agg({},{})", expr, sep)
+                                }
                             },
                         })
                         .collect();

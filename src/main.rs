@@ -55,6 +55,7 @@ enum AggregateColumn {
     Avg(String),
     Min(String),
     Max(String),
+    StringAgg(String, String),
 }
 
 impl AggregateColumn {
@@ -80,6 +81,15 @@ impl AggregateColumn {
         } else if col.starts_with("max(") && col.ends_with(")") {
             let inner = &col[4..col.len() - 1];
             AggregateColumn::Max(inner.to_string())
+        } else if col.starts_with("string_agg(") && col.ends_with(")") {
+            let inner = &col[11..col.len() - 1];
+            // expect expr,sep
+            let parts: Vec<&str> = inner.split(',').collect();
+            if parts.len() == 2 {
+                AggregateColumn::StringAgg(parts[0].to_string(), parts[1].to_string())
+            } else {
+                AggregateColumn::Regular(col.to_string())
+            }
         } else {
             AggregateColumn::Regular(col.to_string())
         }
@@ -1594,6 +1604,25 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                     .unwrap_or_else(|| "NULL".to_string())
             } else {
                 values.iter().max().cloned().unwrap_or("NULL".to_string())
+            }
+        }
+        AggregateColumn::StringAgg(expr, sep) => {
+            // Concatenate non-null values from rows using the separator
+            if !schema.iter().any(|c| c == expr) {
+                return "NULL".to_string();
+            }
+            let mut parts: Vec<String> = Vec::new();
+            for row in rows {
+                if let Some(val) = row.get_value(expr) {
+                    if !val.is_empty() && val != "NULL" {
+                        parts.push(val);
+                    }
+                }
+            }
+            if parts.is_empty() {
+                "NULL".to_string()
+            } else {
+                parts.join(sep)
             }
         }
     }

@@ -1622,6 +1622,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_string_agg_basic() {
+        let r = parse_select("SELECT STRING_AGG(username, ',') FROM users");
+        assert!(r.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = r.unwrap();
+        assert!(cols.is_some());
+        let c = cols.unwrap();
+        assert_eq!(c.len(), 1);
+        assert!(c[0].starts_with("string_agg("));
+    }
+
+    #[test]
     fn test_eval_col_greatest_least_runtime() {
         use crate::table::Row;
         use std::collections::HashMap;
