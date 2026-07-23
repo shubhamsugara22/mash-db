@@ -1646,6 +1646,7 @@ fn evaluate_having_condition(
         AggregateColumn::Avg(c) => col_lower == format!("avg({})", c),
         AggregateColumn::Min(c) => col_lower == format!("min({})", c),
         AggregateColumn::Max(c) => col_lower == format!("max({})", c),
+        AggregateColumn::StringAgg(a, b) => col_lower == format!("string_agg({},{})", a, b),
         AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
     });
 
@@ -3782,6 +3783,7 @@ fn apply_sorting_to_aggregates(
             || column.starts_with("avg(")
             || column.starts_with("min(")
             || column.starts_with("max(")
+            || column.starts_with("string_agg(")
         {
             // ORDER BY aggregate function - match by function name
             agg_cols.iter().position(|agg| {
@@ -3793,6 +3795,7 @@ fn apply_sorting_to_aggregates(
                     AggregateColumn::Avg(col) => format!("avg({})", col),
                     AggregateColumn::Min(col) => format!("min({})", col),
                     AggregateColumn::Max(col) => format!("max({})", col),
+                    AggregateColumn::StringAgg(a, b) => format!("string_agg({},{})", a, b),
                     AggregateColumn::Regular(_) => String::new(),
                 };
                 agg_str.to_lowercase() == column.to_lowercase()
@@ -4360,5 +4363,34 @@ mod tests {
 
         assert_eq!(count_id, "2");
         assert_eq!(count_star, "2");
+    }
+
+    #[test]
+    fn test_string_agg_concatenates_values() {
+        let schema = vec!["id".to_string(), "grp".to_string(), "name".to_string()];
+        let rows = vec![
+            Row::from_values(
+                &schema,
+                vec!["1".to_string(), "a".to_string(), "alice".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["2".to_string(), "a".to_string(), "bob".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["3".to_string(), "b".to_string(), "charlie".to_string()],
+            )
+            .unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StringAgg("name".to_string(), ",".to_string());
+        // apply to first two rows (group 'a')
+        let group_rows = vec![row_refs[0], row_refs[1]];
+        let res = super::compute_aggregate(&agg, &group_rows, &schema);
+        assert_eq!(res, "alice,bob");
     }
 }

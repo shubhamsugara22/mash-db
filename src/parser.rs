@@ -2912,6 +2912,7 @@ fn parse_select_tokens(
         | Some(Token::Avg)
         | Some(Token::Min)
         | Some(Token::Max)
+        | Some(Token::StringAgg)
         | Some(Token::Upper)
         | Some(Token::Lower)
         | Some(Token::Length)
