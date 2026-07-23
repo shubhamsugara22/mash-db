@@ -52,6 +52,8 @@ pub enum Token {
     Upper,
     Lower,
     Length,
+    Greatest,
+    Least,
     Case,
     When,
     Then,
@@ -344,6 +346,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "UPPER" => Token::Upper,
                     "LOWER" => Token::Lower,
                     "LENGTH" => Token::Length,
+                    "GREATEST" => Token::Greatest,
+                    "LEAST" => Token::Least,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,
                     "THEN" => Token::Then,
@@ -589,6 +593,8 @@ fn token_to_sql(token: &Token) -> String {
         Token::Power => "POWER".to_string(),
         Token::Sqrt => "SQRT".to_string(),
         Token::Sign => "SIGN".to_string(),
+        Token::Greatest => "GREATEST".to_string(),
+        Token::Least => "LEAST".to_string(),
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
@@ -687,6 +693,8 @@ pub fn parse_select_columns(
         | Some(Token::Ceil)
         | Some(Token::Mod)
         | Some(Token::Sign)
+        | Some(Token::Greatest)
+        | Some(Token::Least)
         | Some(Token::RowNumber)
         | Some(Token::Rank)
         | Some(Token::DenseRank)
@@ -1347,6 +1355,76 @@ pub fn parse_select_columns(
                         }
                         *i += 1;
                         SelectColumn::Column(format!("__sign__:{}", arg))
+                    }
+                    Some(Token::Greatest) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after GREATEST".to_string());
+                        }
+                        *i += 1;
+                        let mut args: Vec<String> = Vec::new();
+                        loop {
+                            match tokens.get(*i) {
+                                Some(Token::Identifier(c)) => {
+                                    args.push(c.clone());
+                                    *i += 1;
+                                }
+                                Some(Token::String(s)) => {
+                                    args.push(s.clone());
+                                    *i += 1;
+                                }
+                                Some(Token::Number(n)) => {
+                                    args.push(n.to_string());
+                                    *i += 1;
+                                }
+                                _ => return Err("Expected argument in GREATEST()".to_string()),
+                            }
+                            if tokens.get(*i) == Some(&Token::Comma) {
+                                *i += 1;
+                                continue;
+                            }
+                            break;
+                        }
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after GREATEST(...)".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__greatest__:{}", args.join("\x1F")))
+                    }
+                    Some(Token::Least) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after LEAST".to_string());
+                        }
+                        *i += 1;
+                        let mut args: Vec<String> = Vec::new();
+                        loop {
+                            match tokens.get(*i) {
+                                Some(Token::Identifier(c)) => {
+                                    args.push(c.clone());
+                                    *i += 1;
+                                }
+                                Some(Token::String(s)) => {
+                                    args.push(s.clone());
+                                    *i += 1;
+                                }
+                                Some(Token::Number(n)) => {
+                                    args.push(n.to_string());
+                                    *i += 1;
+                                }
+                                _ => return Err("Expected argument in LEAST()".to_string()),
+                            }
+                            if tokens.get(*i) == Some(&Token::Comma) {
+                                *i += 1;
+                                continue;
+                            }
+                            break;
+                        }
+                        if tokens.get(*i) != Some(&Token::RParen) {
+                            return Err("Expected ) after LEAST(...)".to_string());
+                        }
+                        *i += 1;
+                        SelectColumn::Column(format!("__least__:{}", args.join("\x1F")))
                     }
                     Some(Token::RowNumber)
                     | Some(Token::Rank)
@@ -2714,6 +2792,7 @@ pub fn parse_select(
     String,
 > {
     let tokens = tokenize(input);
+
     parse_select_tokens(&tokens)
 }
 
@@ -2751,9 +2830,6 @@ fn parse_select_tokens(
     };
 
     // Debug: print token at column start for failing FIRST_VALUE parse
-    if tokens.get(i) == Some(&Token::FirstValue) {
-        eprintln!("DEBUG parse_select_tokens: token at column start = FIRST_VALUE");
-    }
 
     let resolve_alias = |name: &str, alias_map: &HashMap<String, String>| -> String {
         if let Some(idx) = name.find('.') {
@@ -2816,6 +2892,8 @@ fn parse_select_tokens(
         | Some(Token::Ceil)
         | Some(Token::Mod)
         | Some(Token::Sign)
+        | Some(Token::Greatest)
+        | Some(Token::Least)
         | Some(Token::RowNumber)
         | Some(Token::FirstValue)
         | Some(Token::Rank)
@@ -2866,6 +2944,16 @@ fn parse_select_tokens(
         }
         _ => return Err("Expected column list, *, or WHERE".to_string()),
     };
+
+    if tokens
+        .iter()
+        .any(|t| matches!(t, Token::Greatest | Token::Least))
+    {
+        eprintln!(
+            "DEBUG after parse_select_columns: columns={:?}, i={}",
+            columns, i
+        );
+    }
 
     // Parse FROM clause (with optional alias)
     let from_table = if tokens.get(i) == Some(&Token::From) {
@@ -4760,84 +4848,6 @@ pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
     };
 
     // Expect ON
-    if tokens.get(i) != Some(&Token::On) {
-        return Err("Expected ON after index name".to_string());
-    }
-    i += 1;
-
-    // Get table name
-    let table_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        let n = name.clone();
-        i += 1;
-        n
-    } else {
-        return Err("Expected table name after ON".to_string());
-    };
-
-    // Expect (
-    if tokens.get(i) != Some(&Token::LParen) {
-        return Err("Expected ( after table name".to_string());
-    }
-    i += 1;
-
-    // Get column name
-    let column_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        let n = name.clone();
-        i += 1;
-        n
-    } else {
-        return Err("Expected column name inside parentheses".to_string());
-    };
-
-    // Expect )
-    if tokens.get(i) != Some(&Token::RParen) {
-        return Err("Expected ) after column name".to_string());
-    }
-    i += 1;
-
-    // Should be end of statement
-    if i < tokens.len() {
-        return Err("Unexpected tokens after CREATE INDEX statement".to_string());
-    }
-
-    Ok(IndexDefinition {
-        index_name,
-        table_name,
-        column_name,
-    })
-}
-
-/// Parse DROP INDEX statement
-/// Syntax: DROP INDEX index_name
-pub fn parse_drop_index(input: &str) -> Result<String, String> {
-    let tokens = tokenize(input);
-    let mut i = 0;
-
-    if tokens.get(i) != Some(&Token::Drop) {
-        return Err("Expected DROP".to_string());
-    }
-    i += 1;
-
-    if tokens.get(i) != Some(&Token::Index) {
-        return Err("Expected INDEX after DROP".to_string());
-    }
-    i += 1;
-
-    let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        let n = name.clone();
-        i += 1;
-        n
-    } else {
-        return Err("Expected index name after DROP INDEX".to_string());
-    };
-
-    // Should be end of statement
-    if i < tokens.len() {
-        return Err("Unexpected tokens after DROP INDEX statement".to_string());
-    }
-
-    Ok(index_name)
-}
     if tokens.get(i) != Some(&Token::On) {
         return Err("Expected ON after index name".to_string());
     }
