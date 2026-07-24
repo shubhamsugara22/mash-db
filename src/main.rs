@@ -4393,4 +4393,57 @@ mod tests {
         let res = super::compute_aggregate(&agg, &group_rows, &schema);
         assert_eq!(res, "alice,bob");
     }
+
+    #[test]
+    fn test_string_agg_skips_null_values() {
+        let schema = vec!["id".to_string(), "grp".to_string(), "name".to_string()];
+        let rows = vec![
+            Row::from_values(
+                &schema,
+                vec!["1".to_string(), "a".to_string(), "alice".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["2".to_string(), "a".to_string(), "NULL".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["3".to_string(), "a".to_string(), "bob".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["4".to_string(), "a".to_string(), "".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["5".to_string(), "a".to_string(), "charlie".to_string()],
+            )
+            .unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StringAgg("name".to_string(), "|".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Should skip NULL and empty string values
+        assert_eq!(res, "alice|bob|charlie");
+    }
+
+    #[test]
+    fn test_string_agg_all_nulls_returns_null() {
+        let schema = vec!["id".to_string(), "name".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StringAgg("name".to_string(), ",".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // When all values are NULL/empty, should return NULL
+        assert_eq!(res, "NULL");
+    }
 }
