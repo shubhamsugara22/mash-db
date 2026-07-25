@@ -56,6 +56,7 @@ enum AggregateColumn {
     Min(String),
     Max(String),
     StringAgg(String, String),
+    Median(String),
 }
 
 impl AggregateColumn {
@@ -90,6 +91,9 @@ impl AggregateColumn {
             } else {
                 AggregateColumn::Regular(col.to_string())
             }
+        } else if col.starts_with("median(") && col.ends_with(")") {
+            let inner = &col[7..col.len() - 1];
+            AggregateColumn::Median(inner.to_string())
         } else {
             AggregateColumn::Regular(col.to_string())
         }
@@ -1625,6 +1629,37 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 parts.join(sep)
             }
         }
+        AggregateColumn::Median(expr) => {
+            // Calculate the median of numeric values
+            if !schema.iter().any(|c| c == expr) {
+                return "NULL".to_string();
+            }
+            let mut values: Vec<f64> = Vec::new();
+            for row in rows {
+                if let Some(val) = row.get_value(expr) {
+                    if !val.is_empty() && val != "NULL" {
+                        if let Ok(num) = val.parse::<f64>() {
+                            values.push(num);
+                        }
+                    }
+                }
+            }
+            if values.is_empty() {
+                return "NULL".to_string();
+            }
+            // Sort values
+            values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let len = values.len();
+            if len % 2 == 1 {
+                // Odd count: return middle value
+                format!("{}", values[len / 2])
+            } else {
+                // Even count: return average of two middle values
+                let mid1 = values[len / 2 - 1];
+                let mid2 = values[len / 2];
+                format!("{}", (mid1 + mid2) / 2.0)
+            }
+        }
     }
 }
 
@@ -1647,6 +1682,7 @@ fn evaluate_having_condition(
         AggregateColumn::Min(c) => col_lower == format!("min({})", c),
         AggregateColumn::Max(c) => col_lower == format!("max({})", c),
         AggregateColumn::StringAgg(a, b) => col_lower == format!("string_agg({},{})", a, b),
+        AggregateColumn::Median(c) => col_lower == format!("median({})", c),
         AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
     });
 
@@ -3796,6 +3832,7 @@ fn apply_sorting_to_aggregates(
                     AggregateColumn::Min(col) => format!("min({})", col),
                     AggregateColumn::Max(col) => format!("max({})", col),
                     AggregateColumn::StringAgg(a, b) => format!("string_agg({},{})", a, b),
+                    AggregateColumn::Median(col) => format!("median({})", col),
                     AggregateColumn::Regular(_) => String::new(),
                 };
                 agg_str.to_lowercase() == column.to_lowercase()

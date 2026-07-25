@@ -55,6 +55,7 @@ pub enum Token {
     Greatest,
     Least,
     StringAgg,
+    Median,
     Case,
     When,
     Then,
@@ -171,6 +172,7 @@ pub enum AggregateFunc {
     Min(String),               // MIN(column)
     Max(String),               // MAX(column)
     StringAgg(String, String), // STRING_AGG(expr, sep)
+    Median(String),            // MEDIAN(column)
 }
 
 // Column in SELECT can be a regular column or an aggregate
@@ -351,6 +353,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "GREATEST" => Token::Greatest,
                     "LEAST" => Token::Least,
                     "STRING_AGG" => Token::StringAgg,
+                    "MEDIAN" => Token::Median,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,
                     "THEN" => Token::Then,
@@ -599,6 +602,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Greatest => "GREATEST".to_string(),
         Token::Least => "LEAST".to_string(),
         Token::StringAgg => "STRING_AGG".to_string(),
+        Token::Median => "MEDIAN".to_string(),
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
@@ -2533,6 +2537,24 @@ pub fn parse_select_columns(
                         *i += 1;
                         SelectColumn::Aggregate(AggregateFunc::StringAgg(first, sep))
                     }
+                    Some(Token::Median) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after MEDIAN".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after MEDIAN(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::Median(col_name))
+                        } else {
+                            return Err("Expected column after MEDIAN(".to_string());
+                        }
+                    }
                     Some(Token::Trim) => {
                         *i += 1; // consume TRIM
                         if tokens.get(*i) != Some(&Token::LParen) {
@@ -2913,6 +2935,7 @@ fn parse_select_tokens(
         | Some(Token::Min)
         | Some(Token::Max)
         | Some(Token::StringAgg)
+        | Some(Token::Median)
         | Some(Token::Upper)
         | Some(Token::Lower)
         | Some(Token::Length)
@@ -2986,6 +3009,7 @@ fn parse_select_tokens(
                                 AggregateFunc::StringAgg(expr, sep) => {
                                     format!("string_agg({},{})", expr, sep)
                                 }
+                                AggregateFunc::Median(name) => format!("median({})", name),
                             },
                         })
                         .collect();
