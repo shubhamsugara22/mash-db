@@ -1,19 +1,10 @@
 {
-  "inventory": [
-    "id",
-    "product_name",
-    "quantity",
-    "location",
-    "supplier"
-  ],
-  "sales": [
-    "id",
-    "store_id",
-    "amount",
-    "date",
-    "product_type"
-  ],
   "users": [
+    "id",
+    "username",
+    "email"
+  ],
+  "orders": [
     "id",
     "username",
     "email"
@@ -30,10 +21,23 @@
     "grp",
     "val"
   ],
-  "orders": [
+  "test_median": [
     "id",
-    "username",
-    "email"
+    "value"
+  ],
+  "inventory": [
+    "id",
+    "product_name",
+    "quantity",
+    "location",
+    "supplier"
+  ],
+  "sales": [
+    "id",
+    "store_id",
+    "amount",
+    "date",
+    "product_type"
   ],
   "stores": [
     "id",

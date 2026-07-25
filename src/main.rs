@@ -4483,4 +4483,72 @@ mod tests {
         // When all values are NULL/empty, should return NULL
         assert_eq!(res, "NULL");
     }
+
+    #[test]
+    fn test_median_odd_count() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "10".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "30".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "20".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "50".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "40".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Median("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Sorted: [10, 20, 30, 40, 50], median is 30
+        assert_eq!(res, "30");
+    }
+
+    #[test]
+    fn test_median_even_count() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "10".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "40".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "20".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "30".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Median("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Sorted: [10, 20, 30, 40], median is (20+30)/2 = 25
+        assert_eq!(res, "25");
+    }
+
+    #[test]
+    fn test_median_skips_null_values() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "10".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "30".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "20".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Median("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Should skip NULL and empty, sorted: [10, 20, 30], median is 20
+        assert_eq!(res, "20");
+    }
+
+    #[test]
+    fn test_median_all_nulls_returns_null() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Median("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // When all values are NULL/empty, should return NULL
+        assert_eq!(res, "NULL");
+    }
 }

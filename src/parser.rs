@@ -681,6 +681,7 @@ pub fn parse_select_columns(
         | Some(Token::Now)
         | Some(Token::Case)
         | Some(Token::StringAgg)
+        | Some(Token::Median)
         | Some(Token::Coalesce)
         | Some(Token::Nullif)
         | Some(Token::Trim)
