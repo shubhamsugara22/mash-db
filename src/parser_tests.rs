@@ -1651,6 +1651,24 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_mode_basic() {
+        // First test tokenization
+        let tokens = tokenize("SELECT MODE(category) FROM products");
+        println!("Tokens: {:?}", tokens);
+
+        let r = parse_select("SELECT MODE(category) FROM products");
+        if let Err(e) = &r {
+            println!("Parse error: {}", e);
+        }
+        assert!(r.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = r.unwrap();
+        assert!(cols.is_some());
+        let c = cols.unwrap();
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0], "mode(category)");
+    }
+
+    #[test]
     fn test_eval_col_greatest_least_runtime() {
         use crate::table::Row;
         use std::collections::HashMap;

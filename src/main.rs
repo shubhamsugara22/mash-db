@@ -57,6 +57,7 @@ enum AggregateColumn {
     Max(String),
     StringAgg(String, String),
     Median(String),
+    Mode(String),
 }
 
 impl AggregateColumn {
@@ -94,6 +95,9 @@ impl AggregateColumn {
         } else if col.starts_with("median(") && col.ends_with(")") {
             let inner = &col[7..col.len() - 1];
             AggregateColumn::Median(inner.to_string())
+        } else if col.starts_with("mode(") && col.ends_with(")") {
+            let inner = &col[5..col.len() - 1];
+            AggregateColumn::Mode(inner.to_string())
         } else {
             AggregateColumn::Regular(col.to_string())
         }
@@ -1660,6 +1664,31 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 format!("{}", (mid1 + mid2) / 2.0)
             }
         }
+        AggregateColumn::Mode(col_name) => {
+            use std::collections::HashMap;
+            let mut frequency: HashMap<String, usize> = HashMap::new();
+
+            // Count frequencies of all non-NULL values
+            for row in rows {
+                if let Some(val) = row.get_value(col_name) {
+                    // Skip NULL or empty values
+                    if !val.is_empty() && val != "NULL" {
+                        *frequency.entry(val).or_insert(0) += 1;
+                    }
+                }
+            }
+
+            if frequency.is_empty() {
+                "NULL".to_string()
+            } else {
+                // Find the value with the maximum frequency
+                frequency
+                    .into_iter()
+                    .max_by_key(|&(_, count)| count)
+                    .map(|(value, _)| value)
+                    .unwrap_or_else(|| "NULL".to_string())
+            }
+        }
     }
 }
 
@@ -1683,6 +1712,7 @@ fn evaluate_having_condition(
         AggregateColumn::Max(c) => col_lower == format!("max({})", c),
         AggregateColumn::StringAgg(a, b) => col_lower == format!("string_agg({},{})", a, b),
         AggregateColumn::Median(c) => col_lower == format!("median({})", c),
+        AggregateColumn::Mode(c) => col_lower == format!("mode({})", c),
         AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
     });
 
@@ -3820,6 +3850,8 @@ fn apply_sorting_to_aggregates(
             || column.starts_with("min(")
             || column.starts_with("max(")
             || column.starts_with("string_agg(")
+            || column.starts_with("median(")
+            || column.starts_with("mode(")
         {
             // ORDER BY aggregate function - match by function name
             agg_cols.iter().position(|agg| {
@@ -3833,6 +3865,7 @@ fn apply_sorting_to_aggregates(
                     AggregateColumn::Max(col) => format!("max({})", col),
                     AggregateColumn::StringAgg(a, b) => format!("string_agg({},{})", a, b),
                     AggregateColumn::Median(col) => format!("median({})", col),
+                    AggregateColumn::Mode(col) => format!("mode({})", col),
                     AggregateColumn::Regular(_) => String::new(),
                 };
                 agg_str.to_lowercase() == column.to_lowercase()
@@ -4547,6 +4580,74 @@ mod tests {
 
         let row_refs: Vec<&Row> = rows.iter().collect();
         let agg = super::AggregateColumn::Median("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // When all values are NULL/empty, should return NULL
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn test_mode_basic() {
+        let schema = vec!["id".to_string(), "category".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "A".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "B".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "A".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "C".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "A".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Mode("category".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // A appears 3 times, B once, C once - mode is A
+        assert_eq!(res, "A");
+    }
+
+    #[test]
+    fn test_mode_with_tie() {
+        let schema = vec!["id".to_string(), "category".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "A".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "B".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "A".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "B".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Mode("category".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Both A and B appear 2 times - should return one of them
+        assert!(res == "A" || res == "B");
+    }
+
+    #[test]
+    fn test_mode_skips_null_values() {
+        let schema = vec!["id".to_string(), "category".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "A".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "B".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "A".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Mode("category".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Should skip NULL and empty, A appears 2 times, B once - mode is A
+        assert_eq!(res, "A");
+    }
+
+    #[test]
+    fn test_mode_all_nulls_returns_null() {
+        let schema = vec!["id".to_string(), "category".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Mode("category".to_string());
         let res = super::compute_aggregate(&agg, &row_refs, &schema);
         // When all values are NULL/empty, should return NULL
         assert_eq!(res, "NULL");
