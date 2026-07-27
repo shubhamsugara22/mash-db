@@ -3036,6 +3036,7 @@ fn parse_select_tokens(
                                 }
                                 AggregateFunc::Median(name) => format!("median({})", name),
                                 AggregateFunc::Mode(name) => format!("mode({})", name),
+                                AggregateFunc::Variance(name) => format!("variance({})", name),
                             },
                         })
                         .collect();
@@ -5004,6 +5005,31 @@ pub fn parse_drop_index(input: &str) -> Result<String, String> {
     let tokens = tokenize(input);
     let mut i = 0;
 
+    if tokens.get(i) != Some(&Token::Drop) {
+        return Err("Expected DROP".to_string());
+    }
+    i += 1;
+
+    if tokens.get(i) != Some(&Token::Index) {
+        return Err("Expected INDEX after DROP".to_string());
+    }
+    i += 1;
+
+    let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
+        i += 1;
+        n
+    } else {
+        return Err("Expected index name after DROP INDEX".to_string());
+    };
+
+    // Should be end of statement
+    if i < tokens.len() {
+        return Err("Unexpected tokens after DROP INDEX statement".to_string());
+    }
+
+    Ok(index_name)
+}
     if tokens.get(i) != Some(&Token::Drop) {
         return Err("Expected DROP".to_string());
     }
