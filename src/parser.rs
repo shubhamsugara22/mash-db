@@ -58,6 +58,7 @@ pub enum Token {
     Median,
     Mode,
     Variance,
+    StddevPop,
     Case,
     When,
     Then,
@@ -177,6 +178,7 @@ pub enum AggregateFunc {
     Median(String),            // MEDIAN(column)
     Mode(String),              // MODE(column)
     Variance(String),          // VARIANCE(column)
+    StddevPop(String),         // STDDEV_POP(column)
 }
 
 // Column in SELECT can be a regular column or an aggregate
@@ -360,6 +362,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "MEDIAN" => Token::Median,
                     "MODE" => Token::Mode,
                     "VARIANCE" => Token::Variance,
+                    "STDDEV_POP" => Token::StddevPop,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,
                     "THEN" => Token::Then,
@@ -611,6 +614,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Median => "MEDIAN".to_string(),
         Token::Mode => "MODE".to_string(),
         Token::Variance => "VARIANCE".to_string(),
+        Token::StddevPop => "STDDEV_POP".to_string(),
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
@@ -691,6 +695,7 @@ pub fn parse_select_columns(
         | Some(Token::StringAgg)
         | Some(Token::Median)
         | Some(Token::Mode)
+        | Some(Token::StddevPop)
         | Some(Token::Variance)
         | Some(Token::Coalesce)
         | Some(Token::Nullif)
@@ -2584,6 +2589,24 @@ pub fn parse_select_columns(
                             return Err("Expected column after MODE(".to_string());
                         }
                     }
+                    Some(Token::StddevPop) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after STDDEV_POP".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after STDDEV_POP(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::StddevPop(col_name))
+                        } else {
+                            return Err("Expected column after STDDEV_POP(".to_string());
+                        }
+                    }
                     Some(Token::Variance) => {
                         *i += 1;
                         if tokens.get(*i) != Some(&Token::LParen) {
@@ -2985,6 +3008,7 @@ fn parse_select_tokens(
         | Some(Token::Median)
         | Some(Token::Mode)
         | Some(Token::Variance)
+        | Some(Token::StddevPop)
         | Some(Token::Upper)
         | Some(Token::Lower)
         | Some(Token::Length)
@@ -3061,6 +3085,7 @@ fn parse_select_tokens(
                                 AggregateFunc::Median(name) => format!("median({})", name),
                                 AggregateFunc::Mode(name) => format!("mode({})", name),
                                 AggregateFunc::Variance(name) => format!("variance({})", name),
+                                AggregateFunc::StddevPop(name) => format!("stddev_pop({})", name),
                             },
                         })
                         .collect();
