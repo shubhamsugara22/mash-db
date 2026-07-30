@@ -59,6 +59,7 @@ pub enum Token {
     Mode,
     Variance,
     StddevPop,
+    StddevSamp,
     Case,
     When,
     Then,
@@ -179,6 +180,7 @@ pub enum AggregateFunc {
     Mode(String),              // MODE(column)
     Variance(String),          // VARIANCE(column)
     StddevPop(String),         // STDDEV_POP(column)
+    StddevSamp(String),        // STDDEV_SAMP(column)
 }
 
 // Column in SELECT can be a regular column or an aggregate
@@ -363,6 +365,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "MODE" => Token::Mode,
                     "VARIANCE" => Token::Variance,
                     "STDDEV_POP" => Token::StddevPop,
+                    "STDDEV_SAMP" => Token::StddevSamp,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,
                     "THEN" => Token::Then,
@@ -615,6 +618,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Mode => "MODE".to_string(),
         Token::Variance => "VARIANCE".to_string(),
         Token::StddevPop => "STDDEV_POP".to_string(),
+        Token::StddevSamp => "STDDEV_SAMP".to_string(),
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
