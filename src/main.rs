@@ -60,6 +60,7 @@ enum AggregateColumn {
     Mode(String),
     Variance(String),
     StddevPop(String),
+    StddevSamp(String),
 }
 
 impl AggregateColumn {
@@ -106,6 +107,9 @@ impl AggregateColumn {
         } else if col.starts_with("stddev_pop(") && col.ends_with(")") {
             let inner = &col[11..col.len() - 1];
             AggregateColumn::StddevPop(inner.to_string())
+        } else if col.starts_with("stddev_samp(") && col.ends_with(")") {
+            let inner = &col[12..col.len() - 1];
+            AggregateColumn::StddevSamp(inner.to_string())
         } else {
             AggregateColumn::Regular(col.to_string())
         }
@@ -1748,6 +1752,29 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 stddev.to_string()
             }
         }
+        AggregateColumn::StddevSamp(col_name) => {
+            let mut values: Vec<f64> = Vec::new();
+
+            for row in rows {
+                if let Some(val) = row.get_value(col_name) {
+                    if !val.is_empty() && val != "NULL" {
+                        if let Ok(num) = val.parse::<f64>() {
+                            values.push(num);
+                        }
+                    }
+                }
+            }
+
+            if values.len() < 2 {
+                "NULL".to_string()
+            } else {
+                let mean = values.iter().sum::<f64>() / values.len() as f64;
+                let sum_squared_diffs: f64 = values.iter().map(|x| (x - mean).powi(2)).sum();
+                let variance_samp = sum_squared_diffs / (values.len() as f64 - 1.0);
+                let stddev = variance_samp.sqrt();
+                stddev.to_string()
+            }
+        }
     }
 }
 
@@ -1774,6 +1801,7 @@ fn evaluate_having_condition(
         AggregateColumn::Mode(c) => col_lower == format!("mode({})", c),
         AggregateColumn::Variance(c) => col_lower == format!("variance({})", c),
         AggregateColumn::StddevPop(c) => col_lower == format!("stddev_pop({})", c),
+        AggregateColumn::StddevSamp(c) => col_lower == format!("stddev_samp({})", c),
         AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
     });
 
@@ -3915,6 +3943,7 @@ fn apply_sorting_to_aggregates(
             || column.starts_with("mode(")
             || column.starts_with("variance(")
             || column.starts_with("stddev_pop(")
+            || column.starts_with("stddev_samp(")
         {
             // ORDER BY aggregate function - match by function name
             agg_cols.iter().position(|agg| {
@@ -3931,6 +3960,7 @@ fn apply_sorting_to_aggregates(
                     AggregateColumn::Mode(col) => format!("mode({})", col),
                     AggregateColumn::Variance(col) => format!("variance({})", col),
                     AggregateColumn::StddevPop(col) => format!("stddev_pop({})", col),
+                    AggregateColumn::StddevSamp(col) => format!("stddev_samp({})", col),
                     AggregateColumn::Regular(_) => String::new(),
                 };
                 agg_str.to_lowercase() == column.to_lowercase()
@@ -4842,6 +4872,70 @@ mod tests {
 
         let row_refs: Vec<&Row> = rows.iter().collect();
         let agg = super::AggregateColumn::StddevPop("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn test_stddev_samp_basic() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "1".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "2".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "3".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "4".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "5".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Sample variance = 2.5, stddev = sqrt(2.5)
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 2.5f64.sqrt()).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_stddev_samp_single_value() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows =
+            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn test_stddev_samp_skips_null_values() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Values: 2,4,6 => sample variance = ( (2-4)^2 + (4-4)^2 + (6-4)^2 ) / (3-1) = 8/2 = 4, stddev = 2
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 2.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_stddev_samp_all_nulls_returns_null() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
         let res = super::compute_aggregate(&agg, &row_refs, &schema);
         assert_eq!(res, "NULL");
     }

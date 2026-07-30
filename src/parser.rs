@@ -700,6 +700,7 @@ pub fn parse_select_columns(
         | Some(Token::Median)
         | Some(Token::Mode)
         | Some(Token::StddevPop)
+        | Some(Token::StddevSamp)
         | Some(Token::Variance)
         | Some(Token::Coalesce)
         | Some(Token::Nullif)
@@ -2611,6 +2612,24 @@ pub fn parse_select_columns(
                             return Err("Expected column after STDDEV_POP(".to_string());
                         }
                     }
+                    Some(Token::StddevSamp) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after STDDEV_SAMP".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after STDDEV_SAMP(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::StddevSamp(col_name))
+                        } else {
+                            return Err("Expected column after STDDEV_SAMP(".to_string());
+                        }
+                    }
                     Some(Token::Variance) => {
                         *i += 1;
                         if tokens.get(*i) != Some(&Token::LParen) {
@@ -3012,7 +3031,9 @@ fn parse_select_tokens(
         | Some(Token::Median)
         | Some(Token::Mode)
         | Some(Token::Variance)
+        | Some(Token::Variance)
         | Some(Token::StddevPop)
+        | Some(Token::StddevSamp)
         | Some(Token::Upper)
         | Some(Token::Lower)
         | Some(Token::Length)
@@ -3090,6 +3111,7 @@ fn parse_select_tokens(
                                 AggregateFunc::Mode(name) => format!("mode({})", name),
                                 AggregateFunc::Variance(name) => format!("variance({})", name),
                                 AggregateFunc::StddevPop(name) => format!("stddev_pop({})", name),
+                                AggregateFunc::StddevSamp(name) => format!("stddev_samp({})", name),
                             },
                         })
                         .collect();
