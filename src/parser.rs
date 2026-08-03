@@ -59,6 +59,7 @@ pub enum Token {
     Mode,
     Variance,
     StddevPop,
+    Stddev,
     StddevSamp,
     Case,
     When,
@@ -366,6 +367,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "VARIANCE" => Token::Variance,
                     "STDDEV_POP" => Token::StddevPop,
                     "STDDEV_SAMP" => Token::StddevSamp,
+                    "STDDEV" => Token::Stddev,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,
                     "THEN" => Token::Then,
@@ -619,6 +621,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::Variance => "VARIANCE".to_string(),
         Token::StddevPop => "STDDEV_POP".to_string(),
         Token::StddevSamp => "STDDEV_SAMP".to_string(),
+        Token::Stddev => "STDDEV".to_string(),
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
@@ -701,6 +704,7 @@ pub fn parse_select_columns(
         | Some(Token::Mode)
         | Some(Token::StddevPop)
         | Some(Token::StddevSamp)
+        | Some(Token::Stddev)
         | Some(Token::Variance)
         | Some(Token::Coalesce)
         | Some(Token::Nullif)
@@ -2630,6 +2634,25 @@ pub fn parse_select_columns(
                             return Err("Expected column after STDDEV_SAMP(".to_string());
                         }
                     }
+                    Some(Token::Stddev) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after STDDEV".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after STDDEV(col)".to_string());
+                            }
+                            *i += 1;
+                            // STDDEV is an alias for sample stddev
+                            SelectColumn::Aggregate(AggregateFunc::StddevSamp(col_name))
+                        } else {
+                            return Err("Expected column after STDDEV(".to_string());
+                        }
+                    }
                     Some(Token::Variance) => {
                         *i += 1;
                         if tokens.get(*i) != Some(&Token::LParen) {
@@ -3031,6 +3054,7 @@ fn parse_select_tokens(
         | Some(Token::Median)
         | Some(Token::Mode)
         | Some(Token::Variance)
+        | Some(Token::Stddev)
         | Some(Token::Variance)
         | Some(Token::StddevPop)
         | Some(Token::StddevSamp)

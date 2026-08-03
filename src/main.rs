@@ -110,6 +110,10 @@ impl AggregateColumn {
         } else if col.starts_with("stddev_samp(") && col.ends_with(")") {
             let inner = &col[12..col.len() - 1];
             AggregateColumn::StddevSamp(inner.to_string())
+        } else if col.starts_with("stddev(") && col.ends_with(")") {
+            // STDDEV alias maps to sample stddev
+            let inner = &col[7..col.len() - 1];
+            AggregateColumn::StddevSamp(inner.to_string())
         } else {
             AggregateColumn::Regular(col.to_string())
         }
@@ -1801,7 +1805,9 @@ fn evaluate_having_condition(
         AggregateColumn::Mode(c) => col_lower == format!("mode({})", c),
         AggregateColumn::Variance(c) => col_lower == format!("variance({})", c),
         AggregateColumn::StddevPop(c) => col_lower == format!("stddev_pop({})", c),
-        AggregateColumn::StddevSamp(c) => col_lower == format!("stddev_samp({})", c),
+        AggregateColumn::StddevSamp(c) => {
+            col_lower == format!("stddev_samp({})", c) || col_lower == format!("stddev({})", c)
+        }
         AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
     });
 

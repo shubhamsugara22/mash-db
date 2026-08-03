@@ -250,6 +250,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_stddev_alias_basic() {
+        let result = parse_select("SELECT STDDEV(score) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        // STDDEV is an alias for sample stddev and should format as stddev_samp(...) in SQL output
+        assert_eq!(cols[0].to_lowercase(), "stddev_samp(score)");
+    }
+
+    #[test]
     fn test_tokenize_unsigned_leading_dot_literal() {
         let tokens = tokenize("reading >= .5");
         assert_eq!(tokens[0], Token::Identifier("reading".to_string()));
