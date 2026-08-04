@@ -61,6 +61,7 @@ pub enum Token {
     StddevPop,
     Stddev,
     StddevSamp,
+    VarSamp,
     Case,
     When,
     Then,
@@ -182,6 +183,7 @@ pub enum AggregateFunc {
     Variance(String),          // VARIANCE(column)
     StddevPop(String),         // STDDEV_POP(column)
     StddevSamp(String),        // STDDEV_SAMP(column)
+    VarSamp(String),           // VAR_SAMP(column)
 }
 
 // Column in SELECT can be a regular column or an aggregate
@@ -368,6 +370,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "STDDEV_POP" => Token::StddevPop,
                     "STDDEV_SAMP" => Token::StddevSamp,
                     "STDDEV" => Token::Stddev,
+                    "VAR_SAMP" => Token::VarSamp,
                     "CASE" => Token::Case,
                     "WHEN" => Token::When,
                     "THEN" => Token::Then,
@@ -622,6 +625,7 @@ fn token_to_sql(token: &Token) -> String {
         Token::StddevPop => "STDDEV_POP".to_string(),
         Token::StddevSamp => "STDDEV_SAMP".to_string(),
         Token::Stddev => "STDDEV".to_string(),
+        Token::VarSamp => "VAR_SAMP".to_string(),
         Token::Position => "POSITION".to_string(),
         Token::Instr => "INSTR".to_string(),
         Token::SubstringIndex => "SUBSTRING_INDEX".to_string(),
@@ -2634,6 +2638,24 @@ pub fn parse_select_columns(
                             return Err("Expected column after STDDEV_SAMP(".to_string());
                         }
                     }
+                    Some(Token::VarSamp) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after VAR_SAMP".to_string());
+                        }
+                        *i += 1;
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err("Expected ) after VAR_SAMP(col)".to_string());
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::VarSamp(col_name))
+                        } else {
+                            return Err("Expected column after VAR_SAMP(".to_string());
+                        }
+                    }
                     Some(Token::Stddev) => {
                         *i += 1;
                         if tokens.get(*i) != Some(&Token::LParen) {
@@ -3136,6 +3158,7 @@ fn parse_select_tokens(
                                 AggregateFunc::Variance(name) => format!("variance({})", name),
                                 AggregateFunc::StddevPop(name) => format!("stddev_pop({})", name),
                                 AggregateFunc::StddevSamp(name) => format!("stddev_samp({})", name),
+                                AggregateFunc::VarSamp(name) => format!("var_samp({})", name),
                             },
                         })
                         .collect();

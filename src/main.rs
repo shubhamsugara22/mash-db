@@ -61,6 +61,7 @@ enum AggregateColumn {
     Variance(String),
     StddevPop(String),
     StddevSamp(String),
+    VarSamp(String),
 }
 
 impl AggregateColumn {
@@ -114,6 +115,9 @@ impl AggregateColumn {
             // STDDEV alias maps to sample stddev
             let inner = &col[7..col.len() - 1];
             AggregateColumn::StddevSamp(inner.to_string())
+        } else if col.starts_with("var_samp(") && col.ends_with(")") {
+            let inner = &col[9..col.len() - 1];
+            AggregateColumn::VarSamp(inner.to_string())
         } else {
             AggregateColumn::Regular(col.to_string())
         }
@@ -1779,6 +1783,29 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 stddev.to_string()
             }
         }
+        AggregateColumn::VarSamp(col_name) => {
+            let mut values: Vec<f64> = Vec::new();
+
+            // Collect all non-NULL numeric values
+            for row in rows {
+                if let Some(val) = row.get_value(col_name) {
+                    if !val.is_empty() && val != "NULL" {
+                        if let Ok(num) = val.parse::<f64>() {
+                            values.push(num);
+                        }
+                    }
+                }
+            }
+
+            if values.len() < 2 {
+                "NULL".to_string()
+            } else {
+                let mean = values.iter().sum::<f64>() / values.len() as f64;
+                let sum_squared_diffs: f64 = values.iter().map(|x| (x - mean).powi(2)).sum();
+                let variance_samp = sum_squared_diffs / (values.len() as f64 - 1.0);
+                variance_samp.to_string()
+            }
+        }
     }
 }
 
@@ -1808,6 +1835,7 @@ fn evaluate_having_condition(
         AggregateColumn::StddevSamp(c) => {
             col_lower == format!("stddev_samp({})", c) || col_lower == format!("stddev({})", c)
         }
+        AggregateColumn::VarSamp(c) => col_lower == format!("var_samp({})", c),
         AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
     });
 
@@ -3967,6 +3995,7 @@ fn apply_sorting_to_aggregates(
                     AggregateColumn::Variance(col) => format!("variance({})", col),
                     AggregateColumn::StddevPop(col) => format!("stddev_pop({})", col),
                     AggregateColumn::StddevSamp(col) => format!("stddev_samp({})", col),
+                    AggregateColumn::VarSamp(col) => format!("var_samp({})", col),
                     AggregateColumn::Regular(_) => String::new(),
                 };
                 agg_str.to_lowercase() == column.to_lowercase()
