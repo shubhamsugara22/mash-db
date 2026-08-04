@@ -4848,6 +4848,70 @@ mod tests {
     }
 
     #[test]
+    fn test_var_samp_basic() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "1".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "2".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "3".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "4".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "5".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::VarSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Sample variance = 2.5
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 2.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_var_samp_single_value_returns_null() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows =
+            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::VarSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn test_var_samp_skips_null_values() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::VarSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Values: 2,4,6 => sample variance = 4
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 4.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_var_samp_all_nulls_returns_null() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::VarSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
     fn test_stddev_pop_basic() {
         let schema = vec!["id".to_string(), "value".to_string()];
         let rows = vec![
