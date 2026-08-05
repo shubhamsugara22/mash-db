@@ -1816,6 +1816,52 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 variance_samp.to_string()
             }
         }
+        AggregateColumn::Corr(a_name, b_name) => {
+            // Require both columns to exist in schema
+            if !schema.iter().any(|c| c == a_name) || !schema.iter().any(|c| c == b_name) {
+                return "NULL".to_string();
+            }
+            let mut pairs: Vec<(f64, f64)> = Vec::new();
+            for row in rows {
+                if let (Some(a_val), Some(b_val)) = (row.get_value(a_name), row.get_value(b_name)) {
+                    if !a_val.is_empty() && a_val != "NULL" && !b_val.is_empty() && b_val != "NULL"
+                    {
+                        if let (Ok(x), Ok(y)) = (a_val.parse::<f64>(), b_val.parse::<f64>()) {
+                            pairs.push((x, y));
+                        }
+                    }
+                }
+            }
+
+            if pairs.len() < 2 {
+                return "NULL".to_string();
+            }
+
+            let n = pairs.len() as f64;
+            let mean_x = pairs.iter().map(|(x, _)| x).sum::<f64>() / n;
+            let mean_y = pairs.iter().map(|(_, y)| y).sum::<f64>() / n;
+
+            // Sample covariance and sample variances (denominator n-1)
+            let mut cov_sum = 0.0;
+            let mut var_x_sum = 0.0;
+            let mut var_y_sum = 0.0;
+            for (x, y) in &pairs {
+                cov_sum += (x - mean_x) * (y - mean_y);
+                var_x_sum += (x - mean_x).powi(2);
+                var_y_sum += (y - mean_y).powi(2);
+            }
+            let denom = n - 1.0;
+            let cov_samp = cov_sum / denom;
+            let var_x_samp = var_x_sum / denom;
+            let var_y_samp = var_y_sum / denom;
+
+            if var_x_samp == 0.0 || var_y_samp == 0.0 {
+                return "NULL".to_string();
+            }
+
+            let corr = cov_samp / (var_x_samp.sqrt() * var_y_samp.sqrt());
+            corr.to_string()
+        }
     }
 }
 
@@ -1846,6 +1892,7 @@ fn evaluate_having_condition(
             col_lower == format!("stddev_samp({})", c) || col_lower == format!("stddev({})", c)
         }
         AggregateColumn::VarSamp(c) => col_lower == format!("var_samp({})", c),
+        AggregateColumn::Corr(a, b) => col_lower == format!("corr({},{})", a, b),
         AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
     });
 
@@ -3988,6 +4035,7 @@ fn apply_sorting_to_aggregates(
             || column.starts_with("variance(")
             || column.starts_with("stddev_pop(")
             || column.starts_with("stddev_samp(")
+            || column.starts_with("corr(")
         {
             // ORDER BY aggregate function - match by function name
             agg_cols.iter().position(|agg| {
@@ -4006,6 +4054,7 @@ fn apply_sorting_to_aggregates(
                     AggregateColumn::StddevPop(col) => format!("stddev_pop({})", col),
                     AggregateColumn::StddevSamp(col) => format!("stddev_samp({})", col),
                     AggregateColumn::VarSamp(col) => format!("var_samp({})", col),
+                    AggregateColumn::Corr(a, b) => format!("corr({},{})", a, b),
                     AggregateColumn::Regular(_) => String::new(),
                 };
                 agg_str.to_lowercase() == column.to_lowercase()
@@ -4919,6 +4968,98 @@ mod tests {
         let agg = super::AggregateColumn::VarSamp("value".to_string());
         let res = super::compute_aggregate(&agg, &row_refs, &schema);
         assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn test_corr_basic() {
+        let schema = vec!["id".to_string(), "x".to_string(), "y".to_string()];
+        let rows = vec![
+            Row::from_values(
+                &schema,
+                vec!["1".to_string(), "1".to_string(), "1".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["2".to_string(), "2".to_string(), "2".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["3".to_string(), "3".to_string(), "3".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["4".to_string(), "4".to_string(), "4".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["5".to_string(), "5".to_string(), "5".to_string()],
+            )
+            .unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Corr("x".to_string(), "y".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_corr_single_value_returns_null() {
+        let schema = vec!["id".to_string(), "x".to_string(), "y".to_string()];
+        let rows = vec![Row::from_values(
+            &schema,
+            vec!["1".to_string(), "42".to_string(), "43".to_string()],
+        )
+        .unwrap()];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Corr("x".to_string(), "y".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn test_corr_skips_null_values() {
+        let schema = vec!["id".to_string(), "x".to_string(), "y".to_string()];
+        let rows = vec![
+            Row::from_values(
+                &schema,
+                vec!["1".to_string(), "1".to_string(), "1".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["2".to_string(), "2".to_string(), "NULL".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["3".to_string(), "3".to_string(), "3".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["4".to_string(), "".to_string(), "4".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["5".to_string(), "5".to_string(), "5".to_string()],
+            )
+            .unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Corr("x".to_string(), "y".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Remaining pairs: (1,1), (3,3), (5,5) -> correlation 1.0
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 1.0).abs() < 0.0001);
     }
 
     #[test]
