@@ -62,6 +62,7 @@ enum AggregateColumn {
     StddevPop(String),
     StddevSamp(String),
     VarSamp(String),
+    Corr(String, String),
 }
 
 impl AggregateColumn {
@@ -118,6 +119,15 @@ impl AggregateColumn {
         } else if col.starts_with("var_samp(") && col.ends_with(")") {
             let inner = &col[9..col.len() - 1];
             AggregateColumn::VarSamp(inner.to_string())
+        } else if col.starts_with("corr(") && col.ends_with(")") {
+            let inner = &col[5..col.len() - 1];
+            // expect two args separated by comma
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            if parts.len() == 2 {
+                AggregateColumn::Corr(parts[0].to_string(), parts[1].to_string())
+            } else {
+                AggregateColumn::Regular(col.to_string())
+            }
         } else {
             AggregateColumn::Regular(col.to_string())
         }
