@@ -3208,6 +3208,8 @@ fn parse_select_tokens(
         | Some(Token::Max)
         | Some(Token::StringAgg)
         | Some(Token::Median)
+        | Some(Token::PercentileCont)
+        | Some(Token::PercentileDisc)
         | Some(Token::Mode)
         | Some(Token::Variance)
         | Some(Token::Stddev)
@@ -3290,6 +3292,12 @@ fn parse_select_tokens(
                                 }
                                 AggregateFunc::Median(name) => format!("median({})", name),
                                 AggregateFunc::Mode(name) => format!("mode({})", name),
+                                AggregateFunc::PercentileCont(name, p) => {
+                                    format!("percentile_cont({},{})", name, p)
+                                }
+                                AggregateFunc::PercentileDisc(name, p) => {
+                                    format!("percentile_disc({},{})", name, p)
+                                }
                                 AggregateFunc::Variance(name) => format!("variance({})", name),
                                 AggregateFunc::StddevPop(name) => format!("stddev_pop({})", name),
                                 AggregateFunc::StddevSamp(name) => format!("stddev_samp({})", name),

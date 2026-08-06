@@ -4149,6 +4149,12 @@ fn apply_sorting_to_aggregates(
                     AggregateColumn::Max(col) => format!("max({})", col),
                     AggregateColumn::StringAgg(a, b) => format!("string_agg({},{})", a, b),
                     AggregateColumn::Median(col) => format!("median({})", col),
+                    AggregateColumn::PercentileCont(col, p) => {
+                        format!("percentile_cont({},{})", col, p)
+                    }
+                    AggregateColumn::PercentileDisc(col, p) => {
+                        format!("percentile_disc({},{})", col, p)
+                    }
                     AggregateColumn::Mode(col) => format!("mode({})", col),
                     AggregateColumn::Variance(col) => format!("variance({})", col),
                     AggregateColumn::StddevPop(col) => format!("stddev_pop({})", col),

@@ -1710,6 +1710,28 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_percentile_cont_basic() {
+        let r = parse_select("SELECT PERCENTILE_CONT(score, 0.5) FROM users");
+        assert!(r.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = r.unwrap();
+        assert!(cols.is_some());
+        let c = cols.unwrap();
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0], "percentile_cont(score,0.5)");
+    }
+
+    #[test]
+    fn test_parse_select_percentile_disc_basic() {
+        let r = parse_select("SELECT PERCENTILE_DISC(score, 0.9) FROM users");
+        assert!(r.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = r.unwrap();
+        assert!(cols.is_some());
+        let c = cols.unwrap();
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0], "percentile_disc(score,0.9)");
+    }
+
+    #[test]
     fn test_parse_select_variance_basic() {
         let tokens = tokenize("SELECT VARIANCE(salary) FROM employees");
         println!("Tokens: {:?}", tokens);
