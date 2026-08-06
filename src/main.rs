@@ -62,6 +62,8 @@ enum AggregateColumn {
     StddevPop(String),
     StddevSamp(String),
     VarSamp(String),
+    PercentileCont(String, String),
+    PercentileDisc(String, String),
     Corr(String, String),
 }
 
@@ -100,6 +102,22 @@ impl AggregateColumn {
         } else if col.starts_with("median(") && col.ends_with(")") {
             let inner = &col[7..col.len() - 1];
             AggregateColumn::Median(inner.to_string())
+        } else if col.starts_with("percentile_cont(") && col.ends_with(")") {
+            let inner = &col[16..col.len() - 1];
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            if parts.len() == 2 {
+                AggregateColumn::PercentileCont(parts[0].to_string(), parts[1].to_string())
+            } else {
+                AggregateColumn::Regular(col.to_string())
+            }
+        } else if col.starts_with("percentile_disc(") && col.ends_with(")") {
+            let inner = &col[16..col.len() - 1];
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            if parts.len() == 2 {
+                AggregateColumn::PercentileDisc(parts[0].to_string(), parts[1].to_string())
+            } else {
+                AggregateColumn::Regular(col.to_string())
+            }
         } else if col.starts_with("mode(") && col.ends_with(")") {
             let inner = &col[5..col.len() - 1];
             AggregateColumn::Mode(inner.to_string())
@@ -1816,6 +1834,82 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 variance_samp.to_string()
             }
         }
+        AggregateColumn::PercentileCont(col_name, perc_str) => {
+            if !schema.iter().any(|c| c == col_name) {
+                return "NULL".to_string();
+            }
+            let mut values: Vec<f64> = Vec::new();
+            for row in rows {
+                if let Some(val) = row.get_value(col_name) {
+                    if !val.is_empty() && val != "NULL" {
+                        if let Ok(num) = val.parse::<f64>() {
+                            values.push(num);
+                        }
+                    }
+                }
+            }
+            if values.is_empty() {
+                return "NULL".to_string();
+            }
+            // parse percentile
+            let p: f64 = match perc_str.parse::<f64>() {
+                Ok(v) => v,
+                Err(_) => return "NULL".to_string(),
+            };
+            if p < 0.0 || p > 1.0 {
+                return "NULL".to_string();
+            }
+            values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let n = values.len() as f64;
+            if n == 1.0 {
+                return values[0].to_string();
+            }
+            let rank = p * (n - 1.0);
+            let lower = rank.floor() as usize;
+            let upper = rank.ceil() as usize;
+            if lower == upper {
+                return values[lower].to_string();
+            }
+            let frac = rank - (lower as f64);
+            let v = values[lower] + frac * (values[upper] - values[lower]);
+            v.to_string()
+        }
+        AggregateColumn::PercentileDisc(col_name, perc_str) => {
+            if !schema.iter().any(|c| c == col_name) {
+                return "NULL".to_string();
+            }
+            let mut values: Vec<f64> = Vec::new();
+            for row in rows {
+                if let Some(val) = row.get_value(col_name) {
+                    if !val.is_empty() && val != "NULL" {
+                        if let Ok(num) = val.parse::<f64>() {
+                            values.push(num);
+                        }
+                    }
+                }
+            }
+            if values.is_empty() {
+                return "NULL".to_string();
+            }
+            let p: f64 = match perc_str.parse::<f64>() {
+                Ok(v) => v,
+                Err(_) => return "NULL".to_string(),
+            };
+            if p < 0.0 || p > 1.0 {
+                return "NULL".to_string();
+            }
+            values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let n = values.len();
+            // ordinal selection: ceil(p * n) -> position 1..n
+            let mut pos = (p * n as f64).ceil() as usize;
+            if pos == 0 {
+                pos = 1;
+            }
+            if pos > n {
+                pos = n;
+            }
+            values[pos - 1].to_string()
+        }
         AggregateColumn::Corr(a_name, b_name) => {
             // Require both columns to exist in schema
             if !schema.iter().any(|c| c == a_name) || !schema.iter().any(|c| c == b_name) {
@@ -1890,6 +1984,12 @@ fn evaluate_having_condition(
         AggregateColumn::StddevPop(c) => col_lower == format!("stddev_pop({})", c),
         AggregateColumn::StddevSamp(c) => {
             col_lower == format!("stddev_samp({})", c) || col_lower == format!("stddev({})", c)
+        }
+        AggregateColumn::PercentileCont(c, p) => {
+            col_lower == format!("percentile_cont({},{})", c, p)
+        }
+        AggregateColumn::PercentileDisc(c, p) => {
+            col_lower == format!("percentile_disc({},{})", c, p)
         }
         AggregateColumn::VarSamp(c) => col_lower == format!("var_samp({})", c),
         AggregateColumn::Corr(a, b) => col_lower == format!("corr({},{})", a, b),

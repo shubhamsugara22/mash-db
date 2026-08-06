@@ -57,6 +57,8 @@ pub enum Token {
     StringAgg,
     Median,
     Mode,
+    PercentileCont,
+    PercentileDisc,
     Corr,
     Variance,
     StddevPop,
@@ -173,19 +175,21 @@ pub enum AlterTableAction {
 // Aggregate function representation
 #[derive(Debug, Clone)]
 pub enum AggregateFunc {
-    Count(Option<String>),     // COUNT(*) or COUNT(column)
-    Sum(String),               // SUM(column)
-    Avg(String),               // AVG(column)
-    Min(String),               // MIN(column)
-    Max(String),               // MAX(column)
-    StringAgg(String, String), // STRING_AGG(expr, sep)
-    Median(String),            // MEDIAN(column)
-    Mode(String),              // MODE(column)
-    Variance(String),          // VARIANCE(column)
-    StddevPop(String),         // STDDEV_POP(column)
-    StddevSamp(String),        // STDDEV_SAMP(column)
-    VarSamp(String),           // VAR_SAMP(column)
-    Corr(String, String),      // CORR(col1, col2)
+    Count(Option<String>),          // COUNT(*) or COUNT(column)
+    Sum(String),                    // SUM(column)
+    Avg(String),                    // AVG(column)
+    Min(String),                    // MIN(column)
+    Max(String),                    // MAX(column)
+    StringAgg(String, String),      // STRING_AGG(expr, sep)
+    Median(String),                 // MEDIAN(column)
+    Mode(String),                   // MODE(column)
+    Variance(String),               // VARIANCE(column)
+    StddevPop(String),              // STDDEV_POP(column)
+    StddevSamp(String),             // STDDEV_SAMP(column)
+    VarSamp(String),                // VAR_SAMP(column)
+    PercentileCont(String, String), // PERCENTILE_CONT(col, p)
+    PercentileDisc(String, String), // PERCENTILE_DISC(col, p)
+    Corr(String, String),           // CORR(col1, col2)
 }
 
 // Column in SELECT can be a regular column or an aggregate
@@ -368,6 +372,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "STRING_AGG" => Token::StringAgg,
                     "MEDIAN" => Token::Median,
                     "MODE" => Token::Mode,
+                    "PERCENTILE_CONT" => Token::PercentileCont,
+                    "PERCENTILE_DISC" => Token::PercentileDisc,
                     "CORR" => Token::Corr,
                     "VARIANCE" => Token::Variance,
                     "STDDEV_POP" => Token::StddevPop,
@@ -624,6 +630,8 @@ fn token_to_sql(token: &Token) -> String {
         Token::StringAgg => "STRING_AGG".to_string(),
         Token::Median => "MEDIAN".to_string(),
         Token::Mode => "MODE".to_string(),
+        Token::PercentileCont => "PERCENTILE_CONT".to_string(),
+        Token::PercentileDisc => "PERCENTILE_DISC".to_string(),
         Token::Corr => "CORR".to_string(),
         Token::Variance => "VARIANCE".to_string(),
         Token::StddevPop => "STDDEV_POP".to_string(),
@@ -710,6 +718,8 @@ pub fn parse_select_columns(
         | Some(Token::StringAgg)
         | Some(Token::Median)
         | Some(Token::Mode)
+        | Some(Token::PercentileCont)
+        | Some(Token::PercentileDisc)
         | Some(Token::StddevPop)
         | Some(Token::StddevSamp)
         | Some(Token::Corr)
@@ -2606,6 +2616,96 @@ pub fn parse_select_columns(
                             SelectColumn::Aggregate(AggregateFunc::Mode(col_name))
                         } else {
                             return Err("Expected column after MODE(".to_string());
+                        }
+                    }
+                    Some(Token::PercentileCont) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after PERCENTILE_CONT".to_string());
+                        }
+                        *i += 1;
+                        // first arg: column name
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::Comma) {
+                                return Err(
+                                    "Expected , after column in PERCENTILE_CONT".to_string()
+                                );
+                            }
+                            *i += 1;
+                            // second arg: percentile (number or string for decimals)
+                            let perc = match tokens.get(*i) {
+                                Some(Token::Number(n)) => {
+                                    let s = n.to_string();
+                                    *i += 1;
+                                    s
+                                }
+                                Some(Token::String(s)) => {
+                                    let s = s.clone();
+                                    *i += 1;
+                                    s
+                                }
+                                _ => {
+                                    return Err(
+                                        "Expected percentile value in PERCENTILE_CONT".to_string()
+                                    )
+                                }
+                            };
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err(
+                                    "Expected ) after PERCENTILE_CONT arguments".to_string()
+                                );
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::PercentileCont(col_name, perc))
+                        } else {
+                            return Err("Expected column after PERCENTILE_CONT(".to_string());
+                        }
+                    }
+                    Some(Token::PercentileDisc) => {
+                        *i += 1;
+                        if tokens.get(*i) != Some(&Token::LParen) {
+                            return Err("Expected ( after PERCENTILE_DISC".to_string());
+                        }
+                        *i += 1;
+                        // first arg: column name
+                        if let Some(Token::Identifier(col)) = tokens.get(*i) {
+                            let col_name = col.clone();
+                            *i += 1;
+                            if tokens.get(*i) != Some(&Token::Comma) {
+                                return Err(
+                                    "Expected , after column in PERCENTILE_DISC".to_string()
+                                );
+                            }
+                            *i += 1;
+                            // second arg: percentile
+                            let perc = match tokens.get(*i) {
+                                Some(Token::Number(n)) => {
+                                    let s = n.to_string();
+                                    *i += 1;
+                                    s
+                                }
+                                Some(Token::String(s)) => {
+                                    let s = s.clone();
+                                    *i += 1;
+                                    s
+                                }
+                                _ => {
+                                    return Err(
+                                        "Expected percentile value in PERCENTILE_DISC".to_string()
+                                    )
+                                }
+                            };
+                            if tokens.get(*i) != Some(&Token::RParen) {
+                                return Err(
+                                    "Expected ) after PERCENTILE_DISC arguments".to_string()
+                                );
+                            }
+                            *i += 1;
+                            SelectColumn::Aggregate(AggregateFunc::PercentileDisc(col_name, perc))
+                        } else {
+                            return Err("Expected column after PERCENTILE_DISC(".to_string());
                         }
                     }
                     Some(Token::StddevPop) => {
