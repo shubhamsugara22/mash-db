@@ -847,7 +847,7 @@ impl Row {
             if let Ok(timestamp) = raw.parse::<u64>() {
                 // UNIX timestamp - truncate and convert back
                 let days_since_epoch = timestamp / 86400;
-                let seconds_in_day = timestamp % 86400;
+                let _seconds_in_day = timestamp % 86400;
 
                 match unit.as_str() {
                     "year" => {

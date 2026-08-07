@@ -3671,7 +3671,7 @@ mod tests {
         let sql = "WITH temp AS (SELECT id, username FROM users) SELECT * FROM temp";
         let result = parse_cte(sql);
         assert!(result.is_ok());
-        let (cte, main_query) = result.unwrap();
+        let (cte, _main_query) = result.unwrap();
         assert!(cte.is_some());
         let cte = cte.unwrap();
         assert_eq!(cte.name, "temp");
