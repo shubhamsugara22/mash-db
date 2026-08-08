@@ -281,6 +281,16 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_select_approx_percentile_basic() {
+        let result = parse_select("SELECT APPROX_PERCENTILE(score,0.5) FROM users");
+        assert!(result.is_ok());
+        let (_, cols, _, _, _, _, _, _, _, _) = result.unwrap();
+        assert!(cols.is_some());
+        let cols = cols.unwrap();
+        assert_eq!(cols[0].to_lowercase(), "approx_percentile(score,0.5)");
+    }
+
+    #[test]
     fn test_tokenize_unsigned_leading_dot_literal() {
         let tokens = tokenize("reading >= .5");
         assert_eq!(tokens[0], Token::Identifier("reading".to_string()));

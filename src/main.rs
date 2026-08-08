@@ -65,6 +65,7 @@ enum AggregateColumn {
     VarSamp(String),
     PercentileCont(String, String),
     PercentileDisc(String, String),
+    ApproxPercentile(String, String),
     Corr(String, String),
 }
 
@@ -116,6 +117,14 @@ impl AggregateColumn {
             let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
             if parts.len() == 2 {
                 AggregateColumn::PercentileDisc(parts[0].to_string(), parts[1].to_string())
+            } else {
+                AggregateColumn::Regular(col.to_string())
+            }
+        } else if col.starts_with("approx_percentile(") && col.ends_with(")") {
+            let inner = &col[17..col.len() - 1];
+            let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+            if parts.len() == 2 {
+                AggregateColumn::ApproxPercentile(parts[0].to_string(), parts[1].to_string())
             } else {
                 AggregateColumn::Regular(col.to_string())
             }
@@ -1910,6 +1919,47 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 pos = n;
             }
             values[pos - 1].to_string()
+        }
+        AggregateColumn::ApproxPercentile(col_name, perc_str) => {
+            // Implement a simple P^2-like streaming quantile estimator by sorting small groups.
+            // For now, do a deterministic fallback: sort values and return the same as PERCENTILE_CONT.
+            if !schema.iter().any(|c| c == col_name) {
+                return "NULL".to_string();
+            }
+            let mut values: Vec<f64> = Vec::new();
+            for row in rows {
+                if let Some(val) = row.get_value(col_name) {
+                    if !val.is_empty() && val != "NULL" {
+                        if let Ok(num) = val.parse::<f64>() {
+                            values.push(num);
+                        }
+                    }
+                }
+            }
+            if values.is_empty() {
+                return "NULL".to_string();
+            }
+            let p: f64 = match perc_str.parse::<f64>() {
+                Ok(v) => v,
+                Err(_) => return "NULL".to_string(),
+            };
+            if p < 0.0 || p > 1.0 {
+                return "NULL".to_string();
+            }
+            values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let n = values.len() as f64;
+            if n == 1.0 {
+                return values[0].to_string();
+            }
+            let rank = p * (n - 1.0);
+            let lower = rank.floor() as usize;
+            let upper = rank.ceil() as usize;
+            if lower == upper {
+                return values[lower].to_string();
+            }
+            let frac = rank - (lower as f64);
+            let v = values[lower] + frac * (values[upper] - values[lower]);
+            v.to_string()
         }
         AggregateColumn::Corr(a_name, b_name) => {
             // Require both columns to exist in schema
