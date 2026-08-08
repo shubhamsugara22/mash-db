@@ -2042,6 +2042,9 @@ fn evaluate_having_condition(
         AggregateColumn::PercentileDisc(c, p) => {
             col_lower == format!("percentile_disc({},{})", c, p)
         }
+        AggregateColumn::ApproxPercentile(c, p) => {
+            col_lower == format!("approx_percentile({},{})", c, p)
+        }
         AggregateColumn::VarSamp(c) => col_lower == format!("var_samp({})", c),
         AggregateColumn::Corr(a, b) => col_lower == format!("corr({},{})", a, b),
         AggregateColumn::Regular(c) => col_lower == c.to_lowercase(),
@@ -4205,6 +4208,9 @@ fn apply_sorting_to_aggregates(
                     }
                     AggregateColumn::PercentileDisc(col, p) => {
                         format!("percentile_disc({},{})", col, p)
+                    }
+                    AggregateColumn::ApproxPercentile(col, p) => {
+                        format!("approx_percentile({},{})", col, p)
                     }
                     AggregateColumn::Mode(col) => format!("mode({})", col),
                     AggregateColumn::Variance(col) => format!("variance({})", col),
