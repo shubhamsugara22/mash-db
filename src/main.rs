@@ -1921,8 +1921,9 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
             values[pos - 1].to_string()
         }
         AggregateColumn::ApproxPercentile(col_name, perc_str) => {
-            // Implement a simple P^2-like streaming quantile estimator by sorting small groups.
-            // For now, do a deterministic fallback: sort values and return the same as PERCENTILE_CONT.
+            // Approximate percentile: for small inputs compute exact, for large inputs
+            // sample up to SAMPLE_SIZE evenly and compute percentile on the sample.
+            const SAMPLE_SIZE: usize = 1000;
             if !schema.iter().any(|c| c == col_name) {
                 return "NULL".to_string();
             }
@@ -1946,19 +1947,39 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
             if p < 0.0 || p > 1.0 {
                 return "NULL".to_string();
             }
-            values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let n = values.len() as f64;
-            if n == 1.0 {
-                return values[0].to_string();
+
+            let n = values.len();
+            // Choose sample: if small, use full data; otherwise pick evenly spaced sample points.
+            let mut sample: Vec<f64> = if n <= SAMPLE_SIZE {
+                values
+            } else {
+                let mut s: Vec<f64> = Vec::with_capacity(SAMPLE_SIZE);
+                let step = n as f64 / SAMPLE_SIZE as f64;
+                let mut idxf = 0.0_f64;
+                for _ in 0..SAMPLE_SIZE {
+                    let i = idxf.floor() as usize;
+                    // guard in case of rounding to n
+                    let ii = if i >= n { n - 1 } else { i };
+                    s.push(values[ii]);
+                    idxf += step;
+                }
+                s
+            };
+
+            // Sort the sample and compute continuous percentile on it
+            sample.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let m = sample.len() as f64;
+            if m == 1.0 {
+                return sample[0].to_string();
             }
-            let rank = p * (n - 1.0);
+            let rank = p * (m - 1.0);
             let lower = rank.floor() as usize;
             let upper = rank.ceil() as usize;
             if lower == upper {
-                return values[lower].to_string();
+                return sample[lower].to_string();
             }
             let frac = rank - (lower as f64);
-            let v = values[lower] + frac * (values[upper] - values[lower]);
+            let v = sample[lower] + frac * (sample[upper] - sample[lower]);
             v.to_string()
         }
         AggregateColumn::Corr(a_name, b_name) => {
