@@ -46,6 +46,67 @@ impl JoinedRow {
     }
 }
 
+// Small deterministic LCG RNG used for reservoir sampling (no external deps)
+struct LcgRng {
+    state: u64,
+}
+
+impl LcgRng {
+    fn new(seed: u64) -> Self {
+        LcgRng { state: seed }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        // 64-bit LCG (constants from Numerical Recipes)
+        self.state = self
+            .state
+            .wrapping_mul(6364136223846793005_u64)
+            .wrapping_add(1442695040888963407_u64);
+        self.state
+    }
+
+    fn gen_f64(&mut self) -> f64 {
+        // produce a uniform f64 in [0,1)
+        let v = self.next_u64() >> 11; // keep top 53 bits
+        (v as f64) / ((1u64 << 53) as f64)
+    }
+}
+
+struct ReservoirSampler {
+    capacity: usize,
+    count: usize,
+    sample: Vec<f64>,
+    rng: LcgRng,
+}
+
+impl ReservoirSampler {
+    fn new(capacity: usize, seed: u64) -> Self {
+        ReservoirSampler {
+            capacity,
+            count: 0,
+            sample: Vec::with_capacity(capacity),
+            rng: LcgRng::new(seed),
+        }
+    }
+
+    fn add(&mut self, value: f64) {
+        self.count += 1;
+        if self.sample.len() < self.capacity {
+            self.sample.push(value);
+        } else {
+            // replace with probability capacity/count
+            let r = (self.rng.gen_f64() * (self.count as f64)) as usize;
+            if r < self.capacity {
+                self.sample[r] = value;
+            }
+        }
+    }
+
+    fn into_vec(mut self) -> Vec<f64> {
+        self.sample
+    }
+}
+
 // Helper struct to represent aggregate functions and their values
 #[derive(Debug, Clone)]
 enum AggregateColumn {
@@ -1949,24 +2010,22 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
             }
 
             let n = values.len();
-            // Choose sample: if small, use full data; otherwise pick evenly spaced sample points.
-            let mut sample: Vec<f64> = if n <= SAMPLE_SIZE {
+            // Choose sample: if small, use full data; otherwise use reservoir sampling to
+            // maintain a representative sample in fixed memory.
+            let sample: Vec<f64> = if n <= SAMPLE_SIZE {
                 values
             } else {
-                let mut s: Vec<f64> = Vec::with_capacity(SAMPLE_SIZE);
-                let step = n as f64 / SAMPLE_SIZE as f64;
-                let mut idxf = 0.0_f64;
-                for _ in 0..SAMPLE_SIZE {
-                    let i = idxf.floor() as usize;
-                    // guard in case of rounding to n
-                    let ii = if i >= n { n - 1 } else { i };
-                    s.push(values[ii]);
-                    idxf += step;
+                let seed =
+                    0x9E3779B97F4A7C15_u64 ^ perc_str.parse::<f64>().unwrap_or(0.0).to_bits();
+                let mut sampler = ReservoirSampler::new(SAMPLE_SIZE, seed);
+                for v in values {
+                    sampler.add(v);
                 }
-                s
+                sampler.into_vec()
             };
 
             // Sort the sample and compute continuous percentile on it
+            let mut sample = sample;
             sample.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let m = sample.len() as f64;
             if m == 1.0 {
