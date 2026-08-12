@@ -5150,6 +5150,42 @@ mod tests {
     }
 
     #[test]
+    fn test_approx_percentile_small_exact() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "10".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "20".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "30".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "40".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "50".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::ApproxPercentile("value".to_string(), "0.5".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Median of [10,20,30,40,50] is 30
+        assert_eq!(res, "30");
+    }
+
+    #[test]
+    fn test_approx_percentile_large_sampled() {
+        // Generate a large dataset; values increasing from 1..=5000
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let mut rows: Vec<Row> = Vec::new();
+        for i in 1..=5000 {
+            rows.push(
+                Row::from_values(&schema, vec![i.to_string(), i.to_string()]).unwrap(),
+            );
+        }
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::ApproxPercentile("value".to_string(), "0.5".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // For 1..=5000 median is ~2500.5; allow a generous tolerance due to sampling
+        let val: f64 = res.parse().unwrap();
+        assert!((val - 2500.5).abs() < 150.0);
+    }
+
+    #[test]
     fn test_var_samp_basic() {
         let schema = vec!["id".to_string(), "value".to_string()];
         let rows = vec![
