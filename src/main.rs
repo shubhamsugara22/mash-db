@@ -5173,9 +5173,7 @@ mod tests {
         let schema = vec!["id".to_string(), "value".to_string()];
         let mut rows: Vec<Row> = Vec::new();
         for i in 1..=5000 {
-            rows.push(
-                Row::from_values(&schema, vec![i.to_string(), i.to_string()]).unwrap(),
-            );
+            rows.push(Row::from_values(&schema, vec![i.to_string(), i.to_string()]).unwrap());
         }
         let row_refs: Vec<&Row> = rows.iter().collect();
         let agg = super::AggregateColumn::ApproxPercentile("value".to_string(), "0.5".to_string());
@@ -5460,6 +5458,15 @@ mod tests {
         let schema = vec!["id".to_string(), "value".to_string()];
         let rows = vec![
             Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+}
             Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
         ];
 
