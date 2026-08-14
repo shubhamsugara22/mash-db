@@ -5467,6 +5467,20 @@ mod tests {
         assert_eq!(res, "NULL");
     }
 }
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Values: 2,4,6 => sample variance = ( (2-4)^2 + (4-4)^2 + (6-4)^2 ) / (3-1) = 8/2 = 4, stddev = 2
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 2.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_stddev_samp_all_nulls_returns_null() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
             Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
         ];
 
