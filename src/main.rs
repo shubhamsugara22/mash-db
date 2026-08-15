@@ -1992,46 +1992,7 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 variance_samp.to_string()
             }
         }
-        AggregateColumn::ApproxPercentile(col_name, perc_str) => {
-            if !schema.iter().any(|c| c == col_name) {
-                return "NULL".to_string();
-            }
-            let p: f64 = match perc_str.parse::<f64>() {
-                Ok(v) => v,
-                Err(_) => return "NULL".to_string(),
-            };
-            if p < 0.0 || p > 1.0 {
-                return "NULL".to_string();
-            }
 
-            let mut estimator = P2Estimator::new(p);
-            let mut any = false;
-            for row in rows {
-                if let Some(val) = row.get_value(col_name) {
-                    if !val.is_empty() && val != "NULL" {
-                        if let Ok(num) = val.parse::<f64>() {
-                            estimator.add(num);
-                            any = true;
-                        }
-                    }
-                }
-            }
-            if !any {
-                return "NULL".to_string();
-            }
-            if let Some(res) = estimator.result() {
-                return res.to_string();
-            }
-            "NULL".to_string()
-            let lower = rank.floor() as usize;
-            let upper = rank.ceil() as usize;
-            if lower == upper {
-                return values[lower].to_string();
-            }
-            let frac = rank - (lower as f64);
-            let v = values[lower] + frac * (values[upper] - values[lower]);
-            v.to_string()
-        }
         AggregateColumn::PercentileDisc(col_name, perc_str) => {
             if !schema.iter().any(|c| c == col_name) {
                 return "NULL".to_string();
@@ -2068,10 +2029,7 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
             }
             values[pos - 1].to_string()
         }
-        AggregateColumn::ApproxPercentile(col_name, perc_str) => {
-            // Approximate percentile: for small inputs compute exact, for large inputs
-            // sample up to SAMPLE_SIZE evenly and compute percentile on the sample.
-            const SAMPLE_SIZE: usize = 1000;
+        AggregateColumn::PercentileCont(col_name, perc_str) => {
             if !schema.iter().any(|c| c == col_name) {
                 return "NULL".to_string();
             }
@@ -2095,38 +2053,54 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
             if p < 0.0 || p > 1.0 {
                 return "NULL".to_string();
             }
-
-            let n = values.len();
-            // Choose sample: if small, use full data; otherwise use reservoir sampling to
-            // maintain a representative sample in fixed memory.
-            let sample: Vec<f64> = if n <= SAMPLE_SIZE {
-                values
-            } else {
-                let seed =
-                    0x9E3779B97F4A7C15_u64 ^ perc_str.parse::<f64>().unwrap_or(0.0).to_bits();
-                let mut sampler = ReservoirSampler::new(SAMPLE_SIZE, seed);
-                for v in values {
-                    sampler.add(v);
-                }
-                sampler.into_vec()
-            };
-
-            // Sort the sample and compute continuous percentile on it
-            let mut sample = sample;
-            sample.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let m = sample.len() as f64;
+            values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let m = values.len() as f64;
             if m == 1.0 {
-                return sample[0].to_string();
+                return values[0].to_string();
             }
             let rank = p * (m - 1.0);
             let lower = rank.floor() as usize;
             let upper = rank.ceil() as usize;
             if lower == upper {
-                return sample[lower].to_string();
+                return values[lower].to_string();
             }
             let frac = rank - (lower as f64);
-            let v = sample[lower] + frac * (sample[upper] - sample[lower]);
+            let v = values[lower] + frac * (values[upper] - values[lower]);
             v.to_string()
+        }
+
+        AggregateColumn::ApproxPercentile(col_name, perc_str) => {
+            // P² streaming estimator implementation
+            if !schema.iter().any(|c| c == col_name) {
+                return "NULL".to_string();
+            }
+            let p: f64 = match perc_str.parse::<f64>() {
+                Ok(v) => v,
+                Err(_) => return "NULL".to_string(),
+            };
+            if p < 0.0 || p > 1.0 {
+                return "NULL".to_string();
+            }
+
+            let mut estimator = P2Estimator::new(p);
+            let mut any = false;
+            for row in rows {
+                if let Some(val) = row.get_value(col_name) {
+                    if !val.is_empty() && val != "NULL" {
+                        if let Ok(num) = val.parse::<f64>() {
+                            estimator.add(num);
+                            any = true;
+                        }
+                    }
+                }
+            }
+            if !any {
+                return "NULL".to_string();
+            }
+            if let Some(res) = estimator.result() {
+                return res.to_string();
+            }
+            "NULL".to_string()
         }
         AggregateColumn::Corr(a_name, b_name) => {
             // Require both columns to exist in schema
