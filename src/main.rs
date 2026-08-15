@@ -46,64 +46,151 @@ impl JoinedRow {
     }
 }
 
-// Small deterministic LCG RNG used for reservoir sampling (no external deps)
-struct LcgRng {
-    state: u64,
-}
-
-impl LcgRng {
-    fn new(seed: u64) -> Self {
-        LcgRng { state: seed }
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        // 64-bit LCG (constants from Numerical Recipes)
-        self.state = self
-            .state
-            .wrapping_mul(6364136223846793005_u64)
-            .wrapping_add(1442695040888963407_u64);
-        self.state
-    }
-
-    fn gen_f64(&mut self) -> f64 {
-        // produce a uniform f64 in [0,1)
-        let v = self.next_u64() >> 11; // keep top 53 bits
-        (v as f64) / ((1u64 << 53) as f64)
-    }
-}
-
-struct ReservoirSampler {
-    capacity: usize,
+// P² streaming quantile estimator for a single quantile `p` (one-pass, constant memory)
+struct P2Estimator {
+    p: f64,
     count: usize,
-    sample: Vec<f64>,
-    rng: LcgRng,
+    buffer: Vec<f64>,    // store first 5 values
+    q: [f64; 5],         // heights
+    n: [usize; 5],       // positions
+    n_desired: [f64; 5], // desired positions
 }
 
-impl ReservoirSampler {
-    fn new(capacity: usize, seed: u64) -> Self {
-        ReservoirSampler {
-            capacity,
+impl P2Estimator {
+    fn new(p: f64) -> Self {
+        P2Estimator {
+            p,
             count: 0,
-            sample: Vec::with_capacity(capacity),
-            rng: LcgRng::new(seed),
+            buffer: Vec::with_capacity(5),
+            q: [0.0; 5],
+            n: [0; 5],
+            n_desired: [0.0; 5],
         }
     }
 
-    fn add(&mut self, value: f64) {
+    fn initialize_from_buffer(&mut self) {
+        self.buffer
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        for i in 0..5 {
+            self.q[i] = self.buffer[i];
+            self.n[i] = i + 1;
+        }
+        self.update_desired_positions();
+    }
+
+    fn update_desired_positions(&mut self) {
+        if self.count < 1 {
+            return;
+        }
+        let pi = [0.0, self.p / 2.0, self.p, (1.0 + self.p) / 2.0, 1.0];
+        for i in 0..5 {
+            self.n_desired[i] = 1.0 + (self.count as f64 - 1.0) * pi[i];
+        }
+    }
+
+    fn add(&mut self, x: f64) {
         self.count += 1;
-        if self.sample.len() < self.capacity {
-            self.sample.push(value);
+        if self.count <= 5 {
+            self.buffer.push(x);
+            if self.count == 5 {
+                self.initialize_from_buffer();
+            }
+            return;
+        }
+
+        // count >=6 now
+        // find k: index such that q[k] <= x < q[k+1]
+        let k = if x < self.q[0] {
+            0
+        } else if x >= self.q[4] {
+            3 // we'll increment markers 4..4 later
         } else {
-            // replace with probability capacity/count
-            let r = (self.rng.gen_f64() * (self.count as f64)) as usize;
-            if r < self.capacity {
-                self.sample[r] = value;
+            let mut kk = 0;
+            for i in 0..4 {
+                if x >= self.q[i] && x < self.q[i + 1] {
+                    kk = i;
+                    break;
+                }
+            }
+            kk
+        };
+
+        // Update marker positions
+        if x < self.q[0] {
+            self.q[0] = x;
+            self.n[0] = 1;
+        } else if x > self.q[4] {
+            self.q[4] = x;
+            self.n[4] = self.count;
+        }
+        // increment n for markers > k
+        for i in (k + 1)..5 {
+            self.n[i] += 1;
+        }
+        // desired positions
+        self.update_desired_positions();
+
+        // adjust heights for i = 1..3
+        for i in 1..4 {
+            let d = self.n_desired[i] - (self.n[i] as f64);
+            if (d >= 1.0 && (self.n[i + 1] - self.n[i]) > 1)
+                || (d <= -1.0 && (self.n[i] - self.n[i - 1]) > 1)
+            {
+                let sign = if d > 0.0 { 1 } else { -1 };
+                let ni = self.n[i] as f64;
+                let nim1 = self.n[i - 1] as f64;
+                let nip1 = self.n[i + 1] as f64;
+                let qi = self.q[i];
+                let qim1 = self.q[i - 1];
+                let qip1 = self.q[i + 1];
+                let d_f = sign as f64;
+
+                let denom = nip1 - nim1;
+                let delta = (d_f / denom)
+                    * ((ni - nim1 + d_f) * (qip1 - qi) / (nip1 - ni)
+                        + (nip1 - ni - d_f) * (qi - qim1) / (ni - nim1));
+
+                let q_new = qi + delta;
+                if q_new > qim1 && q_new < qip1 {
+                    self.q[i] = q_new;
+                } else {
+                    // linear
+                    if sign > 0 {
+                        self.q[i] = qi + (qip1 - qi) / (nip1 - ni);
+                    } else {
+                        self.q[i] = qi + (qim1 - qi) / (nim1 - ni);
+                    }
+                }
+                self.n[i] = ((self.n[i] as isize) + sign) as usize;
             }
         }
     }
 
-    fn into_vec(mut self) -> Vec<f64> {
-        self.sample
+    fn result(&self) -> Option<f64> {
+        if self.count == 0 {
+            None
+        } else if self.count < 5 {
+            // exact on buffer
+            let mut b = self.buffer.clone();
+            b.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let m = b.len();
+            if m == 0 {
+                None
+            } else {
+                let p = self.p;
+                let rank = p * (m as f64 - 1.0);
+                let lower = rank.floor() as usize;
+                let upper = rank.ceil() as usize;
+                if lower == upper {
+                    Some(b[lower])
+                } else {
+                    let frac = rank - (lower as f64);
+                    Some(b[lower] + frac * (b[upper] - b[lower]))
+                }
+            }
+        } else {
+            Some(self.q[2])
+        }
     }
 }
 
@@ -1905,24 +1992,10 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
                 variance_samp.to_string()
             }
         }
-        AggregateColumn::PercentileCont(col_name, perc_str) => {
+        AggregateColumn::ApproxPercentile(col_name, perc_str) => {
             if !schema.iter().any(|c| c == col_name) {
                 return "NULL".to_string();
             }
-            let mut values: Vec<f64> = Vec::new();
-            for row in rows {
-                if let Some(val) = row.get_value(col_name) {
-                    if !val.is_empty() && val != "NULL" {
-                        if let Ok(num) = val.parse::<f64>() {
-                            values.push(num);
-                        }
-                    }
-                }
-            }
-            if values.is_empty() {
-                return "NULL".to_string();
-            }
-            // parse percentile
             let p: f64 = match perc_str.parse::<f64>() {
                 Ok(v) => v,
                 Err(_) => return "NULL".to_string(),
@@ -1930,12 +2003,26 @@ fn compute_aggregate(agg: &AggregateColumn, rows: &[&Row], schema: &[String]) ->
             if p < 0.0 || p > 1.0 {
                 return "NULL".to_string();
             }
-            values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let n = values.len() as f64;
-            if n == 1.0 {
-                return values[0].to_string();
+
+            let mut estimator = P2Estimator::new(p);
+            let mut any = false;
+            for row in rows {
+                if let Some(val) = row.get_value(col_name) {
+                    if !val.is_empty() && val != "NULL" {
+                        if let Ok(num) = val.parse::<f64>() {
+                            estimator.add(num);
+                            any = true;
+                        }
+                    }
+                }
             }
-            let rank = p * (n - 1.0);
+            if !any {
+                return "NULL".to_string();
+            }
+            if let Some(res) = estimator.result() {
+                return res.to_string();
+            }
+            "NULL".to_string()
             let lower = rank.floor() as usize;
             let upper = rank.ceil() as usize;
             if lower == upper {
