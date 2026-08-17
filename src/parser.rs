@@ -4185,7 +4185,7 @@ fn parse_select_tokens(
         None
     };
 
-    // Parse GROUP BY clause
+    // Parse GROUP BY clause (supports simple GROUP BY and ROLLUP)
     let group_by = if tokens.get(i) == Some(&Token::Group) {
         i += 1;
         if tokens.get(i) != Some(&Token::By) {
@@ -4193,24 +4193,60 @@ fn parse_select_tokens(
         }
         i += 1;
 
-        let mut columns = Vec::new();
-        if let Some(Token::Identifier(col)) = tokens.get(i) {
-            columns.push(resolve_alias(col, &alias_map));
+        // Support ROLLUP: GROUP BY ROLLUP(col1, col2, ...)
+        if tokens.get(i) == Some(&Token::Identifier("ROLLUP".to_string())) || tokens.get(i) == Some(&Token::Identifier("rollup".to_string())) {
+            // Normalize token stream: accept either ROLLUP keyword or function-like ROLLUP(...)
+            // If it's an identifier 'ROLLUP', expect LParen next
             i += 1;
-
-            // Parse additional columns separated by commas
-            while tokens.get(i) == Some(&Token::Comma) {
-                i += 1;
-                if let Some(Token::Identifier(col)) = tokens.get(i) {
-                    columns.push(resolve_alias(col, &alias_map));
-                    i += 1;
-                } else {
-                    return Err("Expected column after comma in GROUP BY".to_string());
-                }
+            if tokens.get(i) != Some(&Token::LParen) {
+                return Err("Expected ( after ROLLUP".to_string());
             }
-            Some(columns)
+            i += 1;
+            let mut columns = Vec::new();
+            // Read columns inside ROLLUP(...)
+            if let Some(Token::Identifier(col)) = tokens.get(i) {
+                columns.push(resolve_alias(col, &alias_map));
+                i += 1;
+                while tokens.get(i) == Some(&Token::Comma) {
+                    i += 1;
+                    if let Some(Token::Identifier(col)) = tokens.get(i) {
+                        columns.push(resolve_alias(col, &alias_map));
+                        i += 1;
+                    } else {
+                        return Err("Expected column after comma in ROLLUP".to_string());
+                    }
+                }
+            } else {
+                return Err("Expected column inside ROLLUP(...)".to_string());
+            }
+            if tokens.get(i) != Some(&Token::RParen) {
+                return Err("Expected ) after ROLLUP(...)".to_string());
+            }
+            i += 1;
+            // Represent ROLLUP as a special group_by vector with marker: prefix "ROLLUP:"
+            let mut encoded = Vec::new();
+            encoded.push(format!("ROLLUP:{}", columns.join(",")));
+            Some(encoded)
         } else {
-            return Err("Expected column after GROUP BY".to_string());
+            let mut columns = Vec::new();
+            if let Some(Token::Identifier(col)) = tokens.get(i) {
+                columns.push(resolve_alias(col, &alias_map));
+                i += 1;
+
+                // Parse additional columns separated by commas
+                while tokens.get(i) == Some(&Token::Comma) {
+                    i += 1;
+                    if let Some(Token::Identifier(col)) = tokens.get(i) {
+                        columns.push(resolve_alias(col, &alias_map));
+                        i += 1;
+                    } else {
+                        return Err("Expected column after comma in GROUP BY".to_string());
+                    }
+                }
+                Some(columns)
+            } else {
+                return Err("Expected column after GROUP BY".to_string());
+            }
         }
     } else {
         None
