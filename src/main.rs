@@ -3070,9 +3070,8 @@ fn execute_statement(
                 if let Some(ref group_cols) = group_by {
                     // GROUP BY with aggregates
                     let table_schema = get_schema_for(table_name, schemas);
-                    let groups = group_rows_by_columns(rows, group_cols, &table_schema);
 
-                    // Parse columns for aggregates
+                    // Parse columns for aggregates (these may include regular columns)
                     let agg_cols: Vec<AggregateColumn> = match &columns {
                         Some(cols) => cols
                             .iter()
@@ -3081,17 +3080,64 @@ fn execute_statement(
                         None => vec![],
                     };
 
-                    // Compute aggregate results
-                    let mut result_rows = Vec::new();
-                    for (_, group_rows) in groups {
-                        let mut values = Vec::new();
-                        for agg in &agg_cols {
-                            values.push(compute_aggregate(agg, &group_rows, &table_schema));
-                        }
+                    // Handle ROLLUP encoded by parser as single-element vec starting with "ROLLUP:"
+                    let mut result_rows: Vec<Vec<String>> = Vec::new();
+                    if group_cols.len() == 1 && group_cols[0].starts_with("ROLLUP:") {
+                        // decode base columns
+                        let base = group_cols[0].strip_prefix("ROLLUP:").unwrap_or("");
+                        let base_cols: Vec<String> = if base.is_empty() {
+                            Vec::new()
+                        } else {
+                            base.split(',').map(|s| s.to_string()).collect()
+                        };
 
-                        // Apply HAVING filter
-                        if passes_having_filter(&having, &agg_cols, &values) {
-                            result_rows.push(values);
+                        // Generate grouping sets: full, then drop last, ... down to empty
+                        for k in (0..=base_cols.len()).rev() {
+                            let grouping_set = base_cols[..k].to_vec();
+                            let groups =
+                                group_rows_by_columns(rows.clone(), &grouping_set, &table_schema);
+                            for (_key, group_rows) in groups {
+                                // Build output values: for regular (non-aggregate) columns that are grouping
+                                // columns but not present in this grouping_set, emit NULL per ROLLUP semantics.
+                                let mut values: Vec<String> = Vec::new();
+                                for agg in &agg_cols {
+                                    match agg {
+                                        AggregateColumn::Regular(col) => {
+                                            if grouping_set.iter().any(|c| c == col) {
+                                                values.push(compute_aggregate(
+                                                    agg,
+                                                    &group_rows,
+                                                    &table_schema,
+                                                ));
+                                            } else {
+                                                values.push("NULL".to_string());
+                                            }
+                                        }
+                                        _ => {
+                                            values.push(compute_aggregate(
+                                                agg,
+                                                &group_rows,
+                                                &table_schema,
+                                            ));
+                                        }
+                                    }
+                                }
+                                if passes_having_filter(&having, &agg_cols, &values) {
+                                    result_rows.push(values);
+                                }
+                            }
+                        }
+                    } else {
+                        // Regular GROUP BY
+                        let groups = group_rows_by_columns(rows.clone(), group_cols, &table_schema);
+                        for (_key, group_rows) in groups {
+                            let mut values = Vec::new();
+                            for agg in &agg_cols {
+                                values.push(compute_aggregate(agg, &group_rows, &table_schema));
+                            }
+                            if passes_having_filter(&having, &agg_cols, &values) {
+                                result_rows.push(values);
+                            }
                         }
                     }
 

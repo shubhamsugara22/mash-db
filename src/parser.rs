@@ -4194,7 +4194,9 @@ fn parse_select_tokens(
         i += 1;
 
         // Support ROLLUP: GROUP BY ROLLUP(col1, col2, ...)
-        if tokens.get(i) == Some(&Token::Identifier("ROLLUP".to_string())) || tokens.get(i) == Some(&Token::Identifier("rollup".to_string())) {
+        if tokens.get(i) == Some(&Token::Identifier("ROLLUP".to_string()))
+            || tokens.get(i) == Some(&Token::Identifier("rollup".to_string()))
+        {
             // Normalize token stream: accept either ROLLUP keyword or function-like ROLLUP(...)
             // If it's an identifier 'ROLLUP', expect LParen next
             i += 1;
