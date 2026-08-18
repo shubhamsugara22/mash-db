@@ -452,6 +452,9 @@ enum Statement {
     DropIndex {
         index_name: String,
     },
+    Analyze {
+        table_name: String,
+    },
     ShowTables,
     ShowIndexes,
 }
@@ -1678,6 +1681,19 @@ fn prepare_statement(input: &str) -> PrepareResult {
         match parser::parse_drop_index(input) {
             Ok(index_name) => PrepareResult::Success(Statement::DropIndex { index_name }),
             Err(_) => PrepareResult::UnrecognizedStatement,
+        }
+    } else if upper.starts_with("ANALYZE") {
+        // Accept both "ANALYZE table_name" and "ANALYZE TABLE table_name"
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let table_name = if parts.len() >= 3 && parts[1].to_uppercase() == "TABLE" {
+                parts[2].to_string()
+            } else {
+                parts[1].to_string()
+            };
+            PrepareResult::Success(Statement::Analyze { table_name })
+        } else {
+            PrepareResult::UnrecognizedStatement
         }
     } else {
         PrepareResult::UnrecognizedStatement
