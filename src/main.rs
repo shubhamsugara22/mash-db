@@ -2835,6 +2835,74 @@ fn execute_statement(
                 Err(e) => println!("Error: {}", e),
             }
         }
+        Statement::Analyze { table_name } => {
+            // Load the table and schema
+            let tbl = load_table_by_name(&table_name, tables, schemas);
+            let schema = get_schema_for(&table_name, schemas);
+            let rows = tbl.select_all();
+
+            // Compute basic stats per column: row_count, null_count, distinct_count, min, max
+            let mut table_stats: serde_json::Map<String, serde_json::Value> =
+                serde_json::Map::new();
+            table_stats.insert("row_count".to_string(), serde_json::json!(rows.len()));
+
+            let mut cols: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+            for col in &schema {
+                let mut null_count = 0usize;
+                let mut distinct = std::collections::HashSet::new();
+                let mut min_val: Option<String> = None;
+                let mut max_val: Option<String> = None;
+                for r in &rows {
+                    if let Some(v) = r.get_value(col) {
+                        if v.is_empty() {
+                            null_count += 1;
+                        } else {
+                            distinct.insert(v.clone());
+                            match &min_val {
+                                None => min_val = Some(v.clone()),
+                                Some(cur) => {
+                                    if v < cur {
+                                        min_val = Some(v.clone())
+                                    }
+                                }
+                            }
+                            match &max_val {
+                                None => max_val = Some(v.clone()),
+                                Some(cur) => {
+                                    if v > cur {
+                                        max_val = Some(v.clone())
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        null_count += 1;
+                    }
+                }
+                let mut m = serde_json::Map::new();
+                m.insert("null_count".to_string(), serde_json::json!(null_count));
+                m.insert(
+                    "distinct_count".to_string(),
+                    serde_json::json!(distinct.len()),
+                );
+                m.insert("min".to_string(), serde_json::json!(min_val));
+                m.insert("max".to_string(), serde_json::json!(max_val));
+                cols.insert(col.clone(), serde_json::Value::Object(m));
+            }
+            table_stats.insert("columns".to_string(), serde_json::Value::Object(cols));
+
+            // Write stats to file stats_<table>.json
+            let stats_file = format!("stats_{}.json", table_name);
+            if let Ok(json_text) =
+                serde_json::to_string_pretty(&serde_json::Value::Object(table_stats.clone()))
+            {
+                let _ = std::fs::write(&stats_file, json_text);
+            }
+            println!(
+                "Analyzed table {}. Stats written to {}",
+                table_name, stats_file
+            );
+        }
         Statement::SelectWithCTE {
             cte_name,
             cte_query,
@@ -4245,7 +4313,7 @@ fn execute_statement(
             combined.extend(rows2);
             if !all {
                 let mut seen = std::collections::HashSet::new();
-                combined.retain(|r| seen.insert(r.join(",")));
+                let _result = super::execute_statement(
             }
             for row in &combined {
                 println!("({})", row.join(", "));
@@ -4269,6 +4337,18 @@ fn build_where_clause(conditions: &[(String, String, String)], operators: &[Stri
             clause.push(' ');
         }
         clause.push_str(col);
+                // Test ANALYZE runs without error
+                let _ = super::execute_statement(
+                    Statement::Analyze {
+                        table_name: "test_right_users".to_string(),
+                    },
+                    &mut tables,
+                    &mut schemas,
+                    &mut views,
+                    &mut constraints,
+                    &mut indexes,
+                    &mut tx_state,
+                );
         clause.push(' ');
         clause.push_str(op);
         clause.push(' ');
