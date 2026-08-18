@@ -4337,18 +4337,6 @@ fn build_where_clause(conditions: &[(String, String, String)], operators: &[Stri
             clause.push(' ');
         }
         clause.push_str(col);
-                // Test ANALYZE runs without error
-                let _ = super::execute_statement(
-                    Statement::Analyze {
-                        table_name: "test_right_users".to_string(),
-                    },
-                    &mut tables,
-                    &mut schemas,
-                    &mut views,
-                    &mut constraints,
-                    &mut indexes,
-                    &mut tx_state,
-                );
         clause.push(' ');
         clause.push_str(op);
         clause.push(' ');
@@ -4995,6 +4983,48 @@ mod tests {
         assert_eq!(jc.join_type, parser::JoinType::Right);
         assert_eq!(jc.on_left, "id");
         assert_eq!(jc.on_right, "id");
+    }
+
+    #[test]
+    fn test_analyze_runs() {
+        let mut users = Table::new("test_analyze_users.json".to_string(), default_schema());
+        users.clear();
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "a@t".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut tables: std::collections::HashMap<String, Table> = std::collections::HashMap::new();
+        tables.insert("test_analyze_users".to_string(), users);
+        let mut schemas: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        schemas.insert(
+            "test_analyze_users".to_string(),
+            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+        );
+        let mut views = std::collections::HashMap::new();
+        let mut constraints = std::collections::HashMap::new();
+        let mut indexes = std::collections::HashMap::new();
+        let mut tx_state = TransactionState {
+            active: false,
+            table_snapshots: std::collections::HashMap::new(),
+            schema_snapshot: std::collections::HashMap::new(),
+        };
+
+        let _ = super::execute_statement(
+            Statement::Analyze {
+                table_name: "test_analyze_users".to_string(),
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx_state,
+        );
+
+        // Stats file should have been created
+        assert!(std::path::Path::new("stats_test_analyze_users.json").exists());
+        let _ = std::fs::remove_file("stats_test_analyze_users.json");
     }
 
     #[test]
