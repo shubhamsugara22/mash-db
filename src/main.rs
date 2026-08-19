@@ -2861,7 +2861,7 @@ fn execute_statement(
                             match &min_val {
                                 None => min_val = Some(v.clone()),
                                 Some(cur) => {
-                                    if v < cur {
+                                    if &v < cur {
                                         min_val = Some(v.clone())
                                     }
                                 }
@@ -2869,7 +2869,7 @@ fn execute_statement(
                             match &max_val {
                                 None => max_val = Some(v.clone()),
                                 Some(cur) => {
-                                    if v > cur {
+                                    if &v > cur {
                                         max_val = Some(v.clone())
                                     }
                                 }
@@ -2897,6 +2897,33 @@ fn execute_statement(
                 serde_json::to_string_pretty(&serde_json::Value::Object(table_stats.clone()))
             {
                 let _ = std::fs::write(&stats_file, json_text);
+            }
+            // Human-readable summary
+            println!("Analysis summary for table: {}", table_name);
+            println!("  Rows: {}", rows.len());
+            println!("  Columns:");
+            if let Some(serde_json::Value::Object(col_map)) = table_stats.get("columns") {
+                for col in &schema {
+                    if let Some(serde_json::Value::Object(m)) = col_map.get(col) {
+                        let null_count = m.get("null_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let distinct_count = m
+                            .get("distinct_count")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let min = match m.get("min") {
+                            Some(serde_json::Value::String(s)) => s.as_str(),
+                            _ => "NULL",
+                        };
+                        let max = match m.get("max") {
+                            Some(serde_json::Value::String(s)) => s.as_str(),
+                            _ => "NULL",
+                        };
+                        println!(
+                            "    - {}: nulls={}, distinct={}, min={}, max={}",
+                            col, null_count, distinct_count, min, max
+                        );
+                    }
+                }
             }
             println!(
                 "Analyzed table {}. Stats written to {}",
@@ -4313,7 +4340,18 @@ fn execute_statement(
             combined.extend(rows2);
             if !all {
                 let mut seen = std::collections::HashSet::new();
-                let _result = super::execute_statement(
+                combined = combined
+                    .into_iter()
+                    .filter(|row| {
+                        let key = row.join(", ");
+                        if seen.contains(&key) {
+                            false
+                        } else {
+                            seen.insert(key);
+                            true
+                        }
+                    })
+                    .collect();
             }
             for row in &combined {
                 println!("({})", row.join(", "));
@@ -4996,10 +5034,15 @@ mod tests {
 
         let mut tables: std::collections::HashMap<String, Table> = std::collections::HashMap::new();
         tables.insert("test_analyze_users".to_string(), users);
-        let mut schemas: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let mut schemas: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
         schemas.insert(
             "test_analyze_users".to_string(),
-            vec!["id".to_string(), "username".to_string(), "email".to_string()],
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
         );
         let mut views = std::collections::HashMap::new();
         let mut constraints = std::collections::HashMap::new();
