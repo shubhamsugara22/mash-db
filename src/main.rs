@@ -5163,6 +5163,132 @@ mod tests {
     }
 
     #[test]
+    fn test_show_stats_specific_table() {
+        // First, create and analyze a table
+        let mut users = Table::new("test_show_stats.json".to_string(), default_schema());
+        users.clear();
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "a@t".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut tables: std::collections::HashMap<String, Table> = std::collections::HashMap::new();
+        tables.insert("test_show_stats".to_string(), users);
+        let mut schemas: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        schemas.insert(
+            "test_show_stats".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+        let mut views = std::collections::HashMap::new();
+        let mut constraints = std::collections::HashMap::new();
+        let mut indexes = std::collections::HashMap::new();
+        let mut tx_state = TransactionState {
+            active: false,
+            table_snapshots: std::collections::HashMap::new(),
+            schema_snapshot: std::collections::HashMap::new(),
+        };
+
+        // Analyze the table first
+        let _ = super::execute_statement(
+            Statement::Analyze {
+                table_name: "test_show_stats".to_string(),
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx_state,
+        );
+
+        // Stats file should exist
+        assert!(std::path::Path::new("stats_test_show_stats.json").exists());
+
+        // Now show the stats
+        let _ = super::execute_statement(
+            Statement::ShowStats {
+                table_name: Some("test_show_stats".to_string()),
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx_state,
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_file("stats_test_show_stats.json");
+    }
+
+    #[test]
+    fn test_show_stats_all_tables() {
+        // First, create and analyze a table
+        let mut users = Table::new("test_show_all_stats.json".to_string(), default_schema());
+        users.clear();
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "a@t".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut tables: std::collections::HashMap<String, Table> = std::collections::HashMap::new();
+        tables.insert("test_show_all_stats".to_string(), users);
+        let mut schemas: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        schemas.insert(
+            "test_show_all_stats".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+        let mut views = std::collections::HashMap::new();
+        let mut constraints = std::collections::HashMap::new();
+        let mut indexes = std::collections::HashMap::new();
+        let mut tx_state = TransactionState {
+            active: false,
+            table_snapshots: std::collections::HashMap::new(),
+            schema_snapshot: std::collections::HashMap::new(),
+        };
+
+        // Analyze the table
+        let _ = super::execute_statement(
+            Statement::Analyze {
+                table_name: "test_show_all_stats".to_string(),
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx_state,
+        );
+
+        // Stats file should exist
+        assert!(std::path::Path::new("stats_test_show_all_stats.json").exists());
+
+        // Now show all stats (no table specified)
+        let _ = super::execute_statement(
+            Statement::ShowStats { table_name: None },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx_state,
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_file("stats_test_show_all_stats.json");
+    }
+
+    #[test]
     fn test_inner_join_filters_correctly() {
         // Create test tables
         let mut users = Table::new("test_inner_users.json".to_string(), default_schema());
