@@ -2847,6 +2847,86 @@ fn execute_statement(
                 Err(e) => println!("Error: {}", e),
             }
         }
+        Statement::ShowStats { table_name } => {
+            if let Some(tbl_name) = table_name {
+                // Show stats for specific table
+                let stats_file = format!("stats_{}.json", tbl_name);
+                match std::fs::read_to_string(&stats_file) {
+                    Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
+                        Ok(json) => {
+                            println!("Statistics for table: {}", tbl_name);
+                            if let Some(row_count) = json.get("row_count") {
+                                println!("  Total rows: {}", row_count);
+                            }
+                            if let Some(serde_json::Value::Object(col_map)) = json.get("columns") {
+                                println!("  Columns:");
+                                for (col_name, col_stats) in col_map.iter() {
+                                    if let serde_json::Value::Object(m) = col_stats {
+                                        let null_count = m
+                                            .get("null_count")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let distinct_count = m
+                                            .get("distinct_count")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let min = match m.get("min") {
+                                            Some(serde_json::Value::String(s)) => s.as_str(),
+                                            _ => "NULL",
+                                        };
+                                        let max = match m.get("max") {
+                                            Some(serde_json::Value::String(s)) => s.as_str(),
+                                            _ => "NULL",
+                                        };
+                                        println!(
+                                            "    - {}: nulls={}, distinct={}, min={}, max={}",
+                                            col_name, null_count, distinct_count, min, max
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            println!("Error: Could not parse stats file for table {}", tbl_name)
+                        }
+                    },
+                    Err(_) => println!(
+                        "No stats available for table {}. Run ANALYZE {} first.",
+                        tbl_name, tbl_name
+                    ),
+                }
+            } else {
+                // Show stats for all tables that have been analyzed
+                use std::fs;
+                match fs::read_dir(".") {
+                    Ok(entries) => {
+                        let mut found_any = false;
+                        for entry_result in entries {
+                            if let Ok(entry) = entry_result {
+                                if let Ok(filename) = entry.file_name().into_string() {
+                                    if filename.starts_with("stats_") && filename.ends_with(".json")
+                                    {
+                                        let tbl = filename
+                                            .strip_prefix("stats_")
+                                            .and_then(|s| s.strip_suffix(".json"))
+                                            .unwrap_or(&filename);
+                                        if !found_any {
+                                            println!("Available statistics:");
+                                            found_any = true;
+                                        }
+                                        println!("  - {}", tbl);
+                                    }
+                                }
+                            }
+                        }
+                        if !found_any {
+                            println!("No statistics available. Run ANALYZE on a table first.");
+                        }
+                    }
+                    Err(_) => println!("Error reading directory."),
+                }
+            }
+        }
         Statement::Analyze { table_name } => {
             // Load the table and schema
             let tbl = load_table_by_name(&table_name, tables, schemas);
