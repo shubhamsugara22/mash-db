@@ -455,6 +455,9 @@ enum Statement {
     Analyze {
         table_name: String,
     },
+    ShowStats {
+        table_name: Option<String>,
+    },
     ShowTables,
     ShowIndexes,
 }
@@ -1664,6 +1667,15 @@ fn prepare_statement(input: &str) -> PrepareResult {
         } else {
             PrepareResult::UnrecognizedStatement
         }
+    } else if upper.starts_with("SHOW STATS") {
+        // Parse SHOW STATS [table_name] - table_name is optional to show all
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        let table_name = if parts.len() >= 3 {
+            Some(parts[2].to_string())
+        } else {
+            None
+        };
+        PrepareResult::Success(Statement::ShowStats { table_name })
     } else if upper.starts_with("SHOW TABLES") {
         PrepareResult::Success(Statement::ShowTables)
     } else if upper.starts_with("SHOW INDEXES") || upper.starts_with("SHOW INDEX") {
