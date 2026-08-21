@@ -458,6 +458,9 @@ enum Statement {
     ShowStats {
         table_name: Option<String>,
     },
+    Describe {
+        table_name: String,
+    },
     ShowTables,
     ShowIndexes,
 }
@@ -1666,6 +1669,17 @@ fn prepare_statement(input: &str) -> PrepareResult {
             PrepareResult::Success(Statement::DropView { view_name })
         } else {
             PrepareResult::UnrecognizedStatement
+        }
+    } else if upper.starts_with("DESCRIBE") || upper.starts_with("DESC") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        let table_name = if parts.len() >= 2 && parts[1].eq_ignore_ascii_case("TABLE") {
+            parts.get(2).map(|name| (*name).to_string())
+        } else {
+            parts.get(1).map(|name| (*name).to_string())
+        };
+        match table_name {
+            Some(table_name) => PrepareResult::Success(Statement::Describe { table_name }),
+            None => PrepareResult::UnrecognizedStatement,
         }
     } else if upper.starts_with("SHOW STATS") {
         // Parse SHOW STATS [table_name] - table_name is optional to show all
@@ -4165,6 +4179,23 @@ fn execute_statement(
                 }
             }
         }
+        Statement::Describe { table_name } => {
+            match schemas.get(&table_name).or_else(|| {
+                schemas
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case(&table_name))
+                    .map(|(_, columns)| columns)
+            }) {
+                Some(columns) => {
+                    println!("Table: {}", table_name);
+                    println!("Columns:");
+                    for (position, column) in columns.iter().enumerate() {
+                        println!("  {}. {}", position + 1, column);
+                    }
+                }
+                None => println!("Error: Table '{}' does not exist", table_name),
+            }
+        }
         Statement::CreateIndex {
             index_name,
             table_name,
@@ -5224,6 +5255,28 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_file("stats_test_show_stats.json");
+    }
+
+    #[test]
+    fn test_describe_table_parsing() {
+        match prepare_statement("DESCRIBE users") {
+            PrepareResult::Success(Statement::Describe { table_name }) => {
+                assert_eq!(table_name, "users");
+            }
+            _ => panic!("DESCRIBE users should parse as a Describe statement"),
+        }
+
+        match prepare_statement("DESC TABLE orders") {
+            PrepareResult::Success(Statement::Describe { table_name }) => {
+                assert_eq!(table_name, "orders");
+            }
+            _ => panic!("DESC TABLE orders should parse as a Describe statement"),
+        }
+
+        assert!(matches!(
+            prepare_statement("DESCRIBE"),
+            PrepareResult::UnrecognizedStatement
+        ));
     }
 
     #[test]
