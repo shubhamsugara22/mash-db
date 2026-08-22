@@ -45,6 +45,7 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
   - `CREATE TABLE table_name (id INTEGER PRIMARY KEY, email TEXT UNIQUE, ...)` - Create table with constraints
   - `DROP TABLE table_name` - Drop an existing table (removes from registry and deletes .json file)
   - `ALTER TABLE table_name RENAME TO new_name` - Rename a table
+  - `DESCRIBE table_name` / `DESC table_name` - Display table columns
 - **Advanced SQL Features**:
   - **Aggregate Functions**: `COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`
     - ✅ **Works with custom columns**: Aggregates compute over any column
@@ -418,6 +419,7 @@ Error: Index 'nonexistent' not found
 - [x] ALTER TABLE (add/drop columns, rename) — metadata only
 - [x] Dynamic Schema Support (custom table columns)
 - [x] SHOW TABLES command
+- [x] DESCRIBE / DESC table metadata commands
 - [x] TRUNCATE TABLE command
 - [x] Subqueries — IN subquery support
 - [x] Transactions — BEGIN/COMMIT/ROLLBACK (snapshot-based)

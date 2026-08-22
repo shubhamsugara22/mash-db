@@ -1464,7 +1464,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
-    } else if upper.starts_with("SELECT") {
+    } else if upper.starts_with("SELECT") || upper.starts_with("WITH") {
         // Check if this is a CTE (WITH clause)
         if let Ok((Some(cte), main_query)) = parser::parse_cte(input) {
             // CTE found - return it as a special statement that will be handled during execution
@@ -3049,13 +3049,35 @@ fn execute_statement(
             limit,
             offset,
         } => {
-            // CTE Parsing Recognition: Display parsed CTE information
-            println!("WITH {} AS ({}) recognized", cte_name, cte_query);
-            println!(
-                "Main SELECT from: {}",
-                from_table.as_deref().unwrap_or("(none)")
+            let view_key = cte_name.to_lowercase();
+            let previous_view = views.insert(view_key.clone(), cte_query);
+            execute_statement(
+                Statement::Select {
+                    distinct,
+                    columns,
+                    from_table,
+                    join,
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                },
+                tables,
+                schemas,
+                views,
+                constraints,
+                indexes,
+                tx,
             );
-            println!("Note: CTE execution is parsing-complete. Full recursive execution coming in next phase.");
+            match previous_view {
+                Some(view_query) => {
+                    views.insert(view_key, view_query);
+                }
+                None => {
+                    views.remove(&view_key);
+                }
+            }
         }
         Statement::SelectWithCTEWhere {
             cte_name,
@@ -3072,15 +3094,37 @@ fn execute_statement(
             limit,
             offset,
         } => {
-            // Similar to SelectWithCTE but includes WHERE clause conditions
-            let where_clause = build_where_clause(&conditions, &operators);
-            println!("WITH {} AS ({}) recognized", cte_name, cte_query);
-            println!(
-                "Main SELECT from: {} WHERE {}",
-                from_table.as_deref().unwrap_or("(none)"),
-                where_clause
+            let view_key = cte_name.to_lowercase();
+            let previous_view = views.insert(view_key.clone(), cte_query);
+            execute_statement(
+                Statement::SelectWhere {
+                    distinct,
+                    columns,
+                    from_table,
+                    join,
+                    conditions,
+                    operators,
+                    group_by,
+                    having,
+                    order_by,
+                    limit,
+                    offset,
+                },
+                tables,
+                schemas,
+                views,
+                constraints,
+                indexes,
+                tx,
             );
-            println!("Note: CTE execution is parsing-complete. Full recursive execution coming in next phase.");
+            match previous_view {
+                Some(view_query) => {
+                    views.insert(view_key, view_query);
+                }
+                None => {
+                    views.remove(&view_key);
+                }
+            }
         }
         Statement::Select {
             distinct,
@@ -5277,6 +5321,55 @@ mod tests {
             prepare_statement("DESCRIBE"),
             PrepareResult::UnrecognizedStatement
         ));
+    }
+
+    #[test]
+    fn test_cte_executes_outer_query() {
+        let mut users = Table::new("test_cte_users.json".to_string(), default_schema());
+        users.clear();
+        assert!(users
+            .insert(Row::new(1, "alice".to_string(), "a@t".to_string()).unwrap())
+            .is_ok());
+        users.save().unwrap();
+
+        let mut tables = std::collections::HashMap::new();
+        tables.insert("test_cte_users".to_string(), users);
+        let mut schemas = std::collections::HashMap::new();
+        schemas.insert(
+            "test_cte_users".to_string(),
+            vec![
+                "id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ],
+        );
+        let mut views = std::collections::HashMap::new();
+        let mut constraints = std::collections::HashMap::new();
+        let mut indexes = std::collections::HashMap::new();
+        let mut tx_state = TransactionState {
+            active: false,
+            table_snapshots: std::collections::HashMap::new(),
+            schema_snapshot: std::collections::HashMap::new(),
+        };
+
+        let statement = match prepare_statement(
+            "WITH recent_users AS (SELECT * FROM test_cte_users) SELECT * FROM recent_users",
+        ) {
+            PrepareResult::Success(statement) => statement,
+            PrepareResult::UnrecognizedStatement => panic!("CTE should parse"),
+        };
+        execute_statement(
+            statement,
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx_state,
+        );
+
+        assert!(!views.contains_key("recent_users"));
+        let _ = std::fs::remove_file("test_cte_users.json");
     }
 
     #[test]
