@@ -426,7 +426,7 @@ Error: Index 'nonexistent' not found
 - [x] BETWEEN operator for range queries
 - [x] Window functions (ROW_NUMBER, RANK, DENSE_RANK, LEAD, LAG with offset/default) — PARTITION BY and ORDER BY supported
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY)
-- [x] Common Table Expressions (WITH clause) — Parser complete, execution integration pending
+- [x] Common Table Expressions (WITH clause) — Single CTE execution integrated with SELECT
 - [x] CREATE INDEX / DROP INDEX statements — Parser complete for explicit index creation
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB, WEEK, QUARTER, DATEDIFF, DATE_TRUNC)
 - [x] Views (CREATE VIEW, DROP VIEW) — Views with subquery substitution, support for aggregates, joins, nested views
