@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
 
-mod column;
 mod auth;
+mod column;
 mod pager;
 mod parser;
 mod parser_tests;

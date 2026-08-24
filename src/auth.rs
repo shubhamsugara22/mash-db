@@ -1,17 +1,14 @@
-use rand::rngs::OsRng;
-use rand::RngCore;
+use argon2::password_hash::rand_core::OsRng;
+use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
 
-const SALT_BYTES: usize = 16;
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Account {
     pub username: String,
     pub role: String,
-    salt: String,
     password_hash: String,
 }
 
@@ -56,16 +53,16 @@ impl AuthCatalog {
             return Err(format!("User '{}' already exists", username));
         }
 
-        let mut salt = [0_u8; SALT_BYTES];
-        OsRng.fill_bytes(&mut salt);
-        let salt_hex = to_hex(&salt);
-        let password_hash = hash_password(&salt_hex, password);
+        let salt = SaltString::generate(&mut OsRng);
+        let password_hash = Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|error| format!("Could not hash password: {}", error))?
+            .to_string();
         self.accounts.insert(
             username.clone(),
             Account {
                 username,
                 role,
-                salt: salt_hex,
                 password_hash,
             },
         );
@@ -76,7 +73,12 @@ impl AuthCatalog {
         let username = username.to_lowercase();
         self.accounts
             .get(&username)
-            .map(|account| hash_password(&account.salt, password) == account.password_hash)
+            .and_then(|account| PasswordHash::new(&account.password_hash).ok())
+            .map(|hash| {
+                Argon2::default()
+                    .verify_password(password.as_bytes(), &hash)
+                    .is_ok()
+            })
             .unwrap_or(false)
     }
 
@@ -147,18 +149,6 @@ fn normalize_identifier(value: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
-fn hash_password(salt: &str, password: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(salt.as_bytes());
-    hasher.update(b":");
-    hasher.update(password.as_bytes());
-    to_hex(&hasher.finalize())
-}
-
-fn to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{:02x}", byte)).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::AuthCatalog;
@@ -172,6 +162,7 @@ mod tests {
         assert!(!catalog.verify_password("alice", "wrong"));
         let account = catalog.accounts.get("alice").unwrap();
         assert!(!account.password_hash.contains("secret"));
+        assert!(account.password_hash.starts_with("$argon2"));
     }
 
     #[test]
