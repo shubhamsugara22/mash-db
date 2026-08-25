@@ -329,9 +329,36 @@ struct TransactionState {
     schema_snapshot: HashMap<String, Vec<String>>,
 }
 
+struct SessionState {
+    catalog: auth::AuthCatalog,
+    current_user: Option<String>,
+}
+
+impl SessionState {
+    fn new(catalog: auth::AuthCatalog) -> Self {
+        Self {
+            catalog,
+            current_user: None,
+        }
+    }
+
+    fn set_current_user(&mut self, username: String) {
+        self.current_user = Some(username);
+    }
+
+    fn logout(&mut self) {
+        self.current_user = None;
+    }
+}
+
 #[allow(clippy::type_complexity)]
 enum Statement {
     BeginTransaction,
+    Login {
+        username: String,
+        password: String,
+    },
+    Logout,
     CommitTransaction,
     RollbackTransaction,
     Insert {
@@ -1398,6 +1425,31 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
     }
 }
 
+fn handle_session_statement(statement: &Statement, session: &mut SessionState) -> bool {
+    match statement {
+        Statement::Login { username, password } => {
+            if session.catalog.verify_password(username, password) {
+                session.set_current_user(username.clone());
+                println!("Logged in as {}", username);
+            } else {
+                println!("Login failed: invalid username or password");
+            }
+            true
+        }
+        Statement::Logout => {
+            let user = session.current_user.clone();
+            if let Some(username) = user {
+                session.logout();
+                println!("Logged out user {}", username);
+            } else {
+                println!("No user is currently logged in.");
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 fn split_on_union(input: &str) -> Option<(String, String, bool)> {
     let upper = input.to_uppercase();
     let bytes = input.as_bytes();
@@ -1434,6 +1486,18 @@ fn prepare_statement(input: &str) -> PrepareResult {
 
     if upper == "BEGIN" || upper == "BEGIN TRANSACTION" {
         PrepareResult::Success(Statement::BeginTransaction)
+    } else if upper.starts_with("LOGIN") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 3 {
+            PrepareResult::Success(Statement::Login {
+                username: parts[1].to_string(),
+                password: parts[2].to_string(),
+            })
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
+    } else if upper == "LOGOUT" {
+        PrepareResult::Success(Statement::Logout)
     } else if upper == "COMMIT" || upper == "COMMIT TRANSACTION" {
         PrepareResult::Success(Statement::CommitTransaction)
     } else if upper == "ROLLBACK" || upper == "ROLLBACK TRANSACTION" {
@@ -2729,6 +2793,9 @@ fn execute_statement(
     }
 
     match statement {
+        Statement::Login { .. } | Statement::Logout => {
+            return;
+        }
         Statement::BeginTransaction => {
             if tx.active {
                 println!("Error: Transaction already active");
@@ -4842,6 +4909,9 @@ fn main() {
     // Initialize index registry: store index_name -> (table_name, column_name)
     let mut indexes: HashMap<String, (String, String)> = HashMap::new();
 
+    // Initialize authenticated session state.
+    let mut session = SessionState::new(auth::AuthCatalog::load("auth.json"));
+
     // Load or initialize schema registry
     let mut schemas = load_schemas();
     if schemas.is_empty() {
@@ -4923,6 +4993,10 @@ fn main() {
 
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
+                if handle_session_statement(&statement, &mut session) {
+                    continue;
+                }
+
                 execute_statement(
                     statement,
                     &mut tables,
