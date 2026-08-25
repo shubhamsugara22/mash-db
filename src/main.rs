@@ -5325,6 +5325,26 @@ mod tests {
     }
 
     #[test]
+    fn test_login_and_logout_session_flow() {
+        let catalog = auth::AuthCatalog::default();
+        let mut session = SessionState::new(catalog);
+
+        assert!(matches!(
+            prepare_statement("LOGIN alice secret"),
+            PrepareResult::Success(Statement::Login { .. })
+        ));
+        assert!(matches!(
+            prepare_statement("LOGOUT"),
+            PrepareResult::Success(Statement::Logout)
+        ));
+
+        session.set_current_user("alice".to_string());
+        assert_eq!(session.current_user.as_deref(), Some("alice"));
+        session.logout();
+        assert_eq!(session.current_user, None);
+    }
+
+    #[test]
     fn test_cte_executes_outer_query() {
         let mut users = Table::new("test_cte_users.json".to_string(), default_schema());
         users.clear();
