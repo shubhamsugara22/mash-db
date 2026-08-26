@@ -1484,6 +1484,7 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         Statement::CreateView { view_name, .. } => Some(("ddl", view_name.to_lowercase())),
         Statement::DropView { view_name } => Some(("ddl", view_name.to_lowercase())),
         Statement::CreateIndex { table_name, .. } => Some(("ddl", table_name.to_lowercase())),
+        Statement::Describe { table_name } => Some(("select", table_name.to_lowercase())),
         Statement::DropIndex { .. }
         | Statement::Analyze { .. }
         | Statement::ShowStats { .. }
@@ -1566,7 +1567,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
 
     if upper == "BEGIN" || upper == "BEGIN TRANSACTION" {
         PrepareResult::Success(Statement::BeginTransaction)
-    } else if upper.starts_with("LOGIN") {
+    } else if upper == "LOGIN" || upper.starts_with("LOGIN ") {
         let parts: Vec<&str> = input.split_whitespace().collect();
         if parts.len() == 3 {
             PrepareResult::Success(Statement::Login {
@@ -5497,6 +5498,36 @@ mod tests {
         assert_eq!(session.current_user.as_deref(), Some("alice"));
         session.logout();
         assert_eq!(session.current_user, None);
+    }
+
+    #[test]
+    fn test_statement_permission_mapping() {
+        let insert = match prepare_statement("INSERT INTO products VALUES (1, 'a', 'b')") {
+            PrepareResult::Success(statement) => statement,
+            PrepareResult::UnrecognizedStatement => panic!("INSERT should parse"),
+        };
+        assert_eq!(
+            statement_permission(&insert),
+            Some(("insert", "products".to_string()))
+        );
+
+        let describe = match prepare_statement("DESCRIBE TABLE orders") {
+            PrepareResult::Success(statement) => statement,
+            PrepareResult::UnrecognizedStatement => panic!("DESCRIBE should parse"),
+        };
+        assert_eq!(
+            statement_permission(&describe),
+            Some(("select", "orders".to_string()))
+        );
+
+        let default_select = match prepare_statement("SELECT *") {
+            PrepareResult::Success(statement) => statement,
+            PrepareResult::UnrecognizedStatement => panic!("SELECT should parse"),
+        };
+        assert_eq!(
+            statement_permission(&default_select),
+            Some(("select", "users".to_string()))
+        );
     }
 
     #[test]
