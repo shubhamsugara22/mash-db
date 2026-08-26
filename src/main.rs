@@ -1450,6 +1450,86 @@ fn handle_session_statement(statement: &Statement, session: &mut SessionState) -
     }
 }
 
+fn statement_permission(statement: &Statement) -> Option<(&'static str, String)> {
+    match statement {
+        Statement::Select { from_table, .. }
+        | Statement::SelectWhere { from_table, .. }
+        | Statement::SelectWithCTE { from_table, .. }
+        | Statement::SelectWithCTEWhere { from_table, .. } => Some((
+            "select",
+            from_table.as_deref().unwrap_or("users").to_lowercase(),
+        )),
+        Statement::Insert { table_name, .. } => Some((
+            "insert",
+            table_name.as_deref().unwrap_or("users").to_lowercase(),
+        )),
+        Statement::InsertSelect { table_name, .. } => Some(("insert", table_name.to_lowercase())),
+        Statement::Update { table_name, .. } => Some((
+            "update",
+            table_name.as_deref().unwrap_or("users").to_lowercase(),
+        )),
+        Statement::Delete { table_name, .. } | Statement::DeleteWhere { table_name, .. } => Some((
+            "delete",
+            table_name.as_deref().unwrap_or("users").to_lowercase(),
+        )),
+        Statement::DeleteAll => Some(("delete", "users".to_string())),
+        Statement::CreateTable { table_name, .. }
+        | Statement::DropTable { table_name }
+        | Statement::TruncateTable { table_name } => Some(("ddl", table_name.to_lowercase())),
+        Statement::AlterTableRename { table_name, .. }
+        | Statement::AlterTableAddColumn { table_name, .. }
+        | Statement::AlterTableDropColumn { table_name, .. } => {
+            Some(("ddl", table_name.to_lowercase()))
+        }
+        Statement::CreateView { view_name, .. } => Some(("ddl", view_name.to_lowercase())),
+        Statement::DropView { view_name } => Some(("ddl", view_name.to_lowercase())),
+        Statement::CreateIndex { table_name, .. } => Some(("ddl", table_name.to_lowercase())),
+        Statement::DropIndex { .. }
+        | Statement::Analyze { .. }
+        | Statement::ShowStats { .. }
+        | Statement::ShowTables
+        | Statement::ShowIndexes
+        | Statement::BeginTransaction
+        | Statement::CommitTransaction
+        | Statement::RollbackTransaction
+        | Statement::Login { .. }
+        | Statement::Logout
+        | Statement::Union { .. } => None,
+    }
+}
+
+fn execute_authorized_statement(
+    statement: Statement,
+    session: &SessionState,
+    tables: &mut HashMap<String, Table>,
+    schemas: &mut HashMap<String, Vec<String>>,
+    views: &mut HashMap<String, String>,
+    constraints: &mut HashMap<String, (Option<String>, Vec<String>)>,
+    indexes: &mut HashMap<String, (String, String)>,
+    tx: &mut TransactionState,
+) {
+    if !session.catalog.accounts.is_empty() {
+        let Some(username) = session.current_user.as_deref() else {
+            println!("Error: Login required");
+            return;
+        };
+
+        if let Some((privilege, table_name)) = statement_permission(&statement) {
+            if !session.catalog.has_grant(username, privilege, &table_name)
+                && !session.catalog.has_grant(username, "all", &table_name)
+            {
+                println!(
+                    "Error: User '{}' lacks {} permission on table '{}'",
+                    username, privilege, table_name
+                );
+                return;
+            }
+        }
+    }
+
+    execute_statement(statement, tables, schemas, views, constraints, indexes, tx);
+}
+
 fn split_on_union(input: &str) -> Option<(String, String, bool)> {
     let upper = input.to_uppercase();
     let bytes = input.as_bytes();
@@ -4997,8 +5077,9 @@ fn main() {
                     continue;
                 }
 
-                execute_statement(
+                execute_authorized_statement(
                     statement,
+                    &session,
                     &mut tables,
                     &mut schemas,
                     &mut views,
