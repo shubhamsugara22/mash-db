@@ -184,6 +184,24 @@ mod tests {
         assert!(catalog.has_grant("admin", "drop", "anything"));
     }
 }
+    #[test]
+    fn account_can_be_altered_and_dropped() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("alice", "old", "reader").unwrap();
+
+        catalog
+            .alter_account("alice", Some("new"), Some("writer"))
+            .unwrap();
+        assert!(!catalog.verify_password("alice", "old"));
+        assert!(catalog.verify_password("alice", "new"));
+        assert_eq!(catalog.accounts.get("alice").unwrap().role, "writer");
+
+        catalog.grant("alice", "select", "products").unwrap();
+        catalog.drop_account("alice").unwrap();
+        assert!(!catalog.accounts.contains_key("alice"));
+        assert!(catalog.grants.is_empty());
+    }
+}
 
 #[cfg(test)]
 mod tests {

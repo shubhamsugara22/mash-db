@@ -359,19 +359,6 @@ enum Statement {
         password: String,
     },
     Logout,
-    CreateUser {
-        username: String,
-        password: String,
-        role: String,
-    },
-    AlterUser {
-        username: String,
-        password: Option<String>,
-        role: Option<String>,
-    },
-    DropUser {
-        username: String,
-    },
     CommitTransaction,
     RollbackTransaction,
     Insert {
@@ -1459,75 +1446,6 @@ fn handle_session_statement(statement: &Statement, session: &mut SessionState) -
             }
             true
         }
-        Statement::CreateUser {
-            username,
-            password,
-            role,
-        } => {
-            if !session.catalog.accounts.is_empty()
-                && !session
-                    .current_user
-                    .as_deref()
-                    .map(|user| session.catalog.has_grant(user, "admin", "*"))
-                    .unwrap_or(false)
-            {
-                println!("Error: Administrator login required");
-                return true;
-            }
-            match session.catalog.create_account(username, password, role) {
-                Ok(()) => match session.catalog.save("auth.json") {
-                    Ok(()) => println!("User '{}' created.", username),
-                    Err(error) => println!("Error saving authorization catalog: {}", error),
-                },
-                Err(error) => println!("Error: {}", error),
-            }
-            true
-        }
-        Statement::AlterUser {
-            username,
-            password,
-            role,
-        } => {
-            if !session
-                .current_user
-                .as_deref()
-                .map(|user| session.catalog.has_grant(user, "admin", "*"))
-                .unwrap_or(false)
-            {
-                println!("Error: Administrator login required");
-                return true;
-            }
-            match session
-                .catalog
-                .alter_account(username, password.as_deref(), role.as_deref())
-            {
-                Ok(()) => match session.catalog.save("auth.json") {
-                    Ok(()) => println!("User '{}' altered.", username),
-                    Err(error) => println!("Error saving authorization catalog: {}", error),
-                },
-                Err(error) => println!("Error: {}", error),
-            }
-            true
-        }
-        Statement::DropUser { username } => {
-            if !session
-                .current_user
-                .as_deref()
-                .map(|user| session.catalog.has_grant(user, "admin", "*"))
-                .unwrap_or(false)
-            {
-                println!("Error: Administrator login required");
-                return true;
-            }
-            match session.catalog.drop_account(username) {
-                Ok(()) => match session.catalog.save("auth.json") {
-                    Ok(()) => println!("User '{}' dropped.", username),
-                    Err(error) => println!("Error saving authorization catalog: {}", error),
-                },
-                Err(error) => println!("Error: {}", error),
-            }
-            true
-        }
         _ => false,
     }
 }
@@ -1577,9 +1495,6 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::RollbackTransaction
         | Statement::Login { .. }
         | Statement::Logout
-        | Statement::CreateUser { .. }
-        | Statement::AlterUser { .. }
-        | Statement::DropUser { .. }
         | Statement::Union { .. } => None,
     }
 }
@@ -6248,6 +6163,157 @@ mod tests {
             .unwrap(),
             Row::from_values(
                 &schema,
+                vec!["3".to_string(), "3".to_string(), "3".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["4".to_string(), "".to_string(), "4".to_string()],
+            )
+            .unwrap(),
+            Row::from_values(
+                &schema,
+                vec!["5".to_string(), "5".to_string(), "5".to_string()],
+            )
+            .unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::Corr("x".to_string(), "y".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Remaining pairs: (1,1), (3,3), (5,5) -> correlation 1.0
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_stddev_pop_basic() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "1".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "2".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "3".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "4".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "5".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevPop("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Population variance = 2, stddev = sqrt(2)
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 2f64.sqrt()).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_stddev_pop_single_value() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows =
+            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevPop("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "0");
+    }
+
+    #[test]
+    fn test_stddev_pop_skips_null_values() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevPop("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Values: 2,4,6; mean = 4; variance = ((2-4)^2 + (4-4)^2 + (6-4)^2) / 3 = (4+0+4)/3 = 2.666...
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 2.666666_f64.sqrt()).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_stddev_pop_all_nulls_returns_null() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevPop("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn test_stddev_samp_basic() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "1".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "2".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "3".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "4".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "5".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Sample variance = 2.5, stddev = sqrt(2.5)
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 2.5f64.sqrt()).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_stddev_samp_single_value() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows =
+            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn test_stddev_samp_skips_null_values() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        // Values: 2,4,6 => sample variance = ( (2-4)^2 + (4-4)^2 + (6-4)^2 ) / (3-1) = 8/2 = 4, stddev = 2
+        let result_f64: f64 = res.parse().unwrap();
+        assert!((result_f64 - 2.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_stddev_samp_all_nulls_returns_null() {
+        let schema = vec!["id".to_string(), "value".to_string()];
+        let rows = vec![
+            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
+            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
+        ];
+
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+}
                 vec!["3".to_string(), "3".to_string(), "3".to_string()],
             )
             .unwrap(),
