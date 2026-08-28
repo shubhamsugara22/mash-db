@@ -359,6 +359,19 @@ enum Statement {
         password: String,
     },
     Logout,
+    CreateUser {
+        username: String,
+        password: String,
+        role: String,
+    },
+    AlterUser {
+        username: String,
+        password: Option<String>,
+        role: Option<String>,
+    },
+    DropUser {
+        username: String,
+    },
     CommitTransaction,
     RollbackTransaction,
     Insert {
@@ -1446,6 +1459,95 @@ fn handle_session_statement(statement: &Statement, session: &mut SessionState) -
             }
             true
         }
+        Statement::CreateUser {
+            username,
+            password,
+            role,
+        } => {
+            let is_admin = session
+                .current_user
+                .as_deref()
+                .map(|user| {
+                    session
+                        .catalog
+                        .accounts
+                        .get(user)
+                        .map(|account| account.role == "admin")
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !session.catalog.accounts.is_empty() && !is_admin {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            match session.catalog.create_account(username, password, role) {
+                Ok(()) => match session.catalog.save("auth.json") {
+                    Ok(()) => println!("User '{}' created.", username),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                },
+                Err(error) => println!("Error: {}", error),
+            }
+            true
+        }
+        Statement::AlterUser {
+            username,
+            password,
+            role,
+        } => {
+            let is_admin = session
+                .current_user
+                .as_deref()
+                .map(|user| {
+                    session
+                        .catalog
+                        .accounts
+                        .get(user)
+                        .map(|account| account.role == "admin")
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !is_admin {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            match session
+                .catalog
+                .alter_account(username, password.as_deref(), role.as_deref())
+            {
+                Ok(()) => match session.catalog.save("auth.json") {
+                    Ok(()) => println!("User '{}' altered.", username),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                },
+                Err(error) => println!("Error: {}", error),
+            }
+            true
+        }
+        Statement::DropUser { username } => {
+            let is_admin = session
+                .current_user
+                .as_deref()
+                .map(|user| {
+                    session
+                        .catalog
+                        .accounts
+                        .get(user)
+                        .map(|account| account.role == "admin")
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !is_admin {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            match session.catalog.drop_account(username) {
+                Ok(()) => match session.catalog.save("auth.json") {
+                    Ok(()) => println!("User '{}' dropped.", username),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                },
+                Err(error) => println!("Error: {}", error),
+            }
+            true
+        }
         _ => false,
     }
 }
@@ -1495,6 +1597,9 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::RollbackTransaction
         | Statement::Login { .. }
         | Statement::Logout
+        | Statement::CreateUser { .. }
+        | Statement::AlterUser { .. }
+        | Statement::DropUser { .. }
         | Statement::Union { .. } => None,
     }
 }
@@ -1748,15 +1853,15 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if upper.starts_with("CREATE USER ") {
         let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() == 4 && parts[2].eq_ignore_ascii_case("PASSWORD") {
+        if parts.len() == 5 && parts[3].eq_ignore_ascii_case("PASSWORD") {
             PrepareResult::Success(Statement::CreateUser {
                 username: parts[1].to_string(),
                 password: parts[3].to_string(),
                 role: "user".to_string(),
             })
-        } else if parts.len() == 6
-            && parts[2].eq_ignore_ascii_case("PASSWORD")
-            && parts[4].eq_ignore_ascii_case("ROLE")
+        } else if parts.len() == 7
+            && parts[3].eq_ignore_ascii_case("PASSWORD")
+            && parts[5].eq_ignore_ascii_case("ROLE")
         {
             PrepareResult::Success(Statement::CreateUser {
                 username: parts[1].to_string(),
@@ -1768,13 +1873,13 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if upper.starts_with("ALTER USER ") {
         let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() == 4 && parts[2].eq_ignore_ascii_case("PASSWORD") {
+        if parts.len() == 5 && parts[3].eq_ignore_ascii_case("PASSWORD") {
             PrepareResult::Success(Statement::AlterUser {
                 username: parts[1].to_string(),
                 password: Some(parts[3].to_string()),
                 role: None,
             })
-        } else if parts.len() == 4 && parts[2].eq_ignore_ascii_case("ROLE") {
+        } else if parts.len() == 5 && parts[3].eq_ignore_ascii_case("ROLE") {
             PrepareResult::Success(Statement::AlterUser {
                 username: parts[1].to_string(),
                 password: None,
@@ -2920,7 +3025,11 @@ fn execute_statement(
     }
 
     match statement {
-        Statement::Login { .. } | Statement::Logout => {
+        Statement::Login { .. }
+        | Statement::Logout
+        | Statement::CreateUser { .. }
+        | Statement::AlterUser { .. }
+        | Statement::DropUser { .. } => {
             return;
         }
         Statement::BeginTransaction => {
@@ -5574,6 +5683,26 @@ mod tests {
             statement_permission(&default_select),
             Some(("select", "users".to_string()))
         );
+    }
+
+    #[test]
+    fn test_user_management_parsing() {
+        assert!(matches!(
+            prepare_statement("CREATE USER alice PASSWORD secret ROLE reader"),
+            PrepareResult::Success(Statement::CreateUser { .. })
+        ));
+        assert!(matches!(
+            prepare_statement("ALTER USER alice PASSWORD newer"),
+            PrepareResult::Success(Statement::AlterUser { .. })
+        ));
+        assert!(matches!(
+            prepare_statement("DROP USER alice"),
+            PrepareResult::Success(Statement::DropUser { .. })
+        ));
+        assert!(matches!(
+            prepare_statement("CREATE USER alice"),
+            PrepareResult::UnrecognizedStatement
+        ));
     }
 
     #[test]

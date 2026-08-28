@@ -81,6 +81,42 @@ impl AuthCatalog {
             .unwrap_or(false)
     }
 
+    pub fn alter_account(
+        &mut self,
+        username: &str,
+        password: Option<&str>,
+        role: Option<&str>,
+    ) -> Result<(), String> {
+        let username = normalize_identifier(username)?;
+        let account = self
+            .accounts
+            .get_mut(&username)
+            .ok_or_else(|| format!("User '{}' does not exist", username))?;
+        if let Some(password) = password {
+            if password.is_empty() {
+                return Err("Password cannot be empty".to_string());
+            }
+            let salt = SaltString::generate(&mut OsRng);
+            account.password_hash = Argon2::default()
+                .hash_password(password.as_bytes(), &salt)
+                .map_err(|error| format!("Could not hash password: {}", error))?
+                .to_string();
+        }
+        if let Some(role) = role {
+            account.role = normalize_identifier(role)?;
+        }
+        Ok(())
+    }
+
+    pub fn drop_account(&mut self, username: &str) -> Result<(), String> {
+        let username = normalize_identifier(username)?;
+        if self.accounts.remove(&username).is_none() {
+            return Err(format!("User '{}' does not exist", username));
+        }
+        self.grants.retain(|grant| grant.username != username);
+        Ok(())
+    }
+
     pub fn grant(
         &mut self,
         username: &str,
@@ -183,7 +219,7 @@ mod tests {
 
         assert!(catalog.has_grant("admin", "drop", "anything"));
     }
-}
+
     #[test]
     fn account_can_be_altered_and_dropped() {
         let mut catalog = AuthCatalog::default();
@@ -200,42 +236,5 @@ mod tests {
         catalog.drop_account("alice").unwrap();
         assert!(!catalog.accounts.contains_key("alice"));
         assert!(catalog.grants.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::AuthCatalog;
-
-    #[test]
-    fn account_password_is_hashed_and_verifiable() {
-        let mut catalog = AuthCatalog::default();
-        catalog.create_account("Alice", "secret", "reader").unwrap();
-
-        assert!(catalog.verify_password("alice", "secret"));
-        assert!(!catalog.verify_password("alice", "wrong"));
-        let account = catalog.accounts.get("alice").unwrap();
-        assert!(!account.password_hash.contains("secret"));
-        assert!(account.password_hash.starts_with("$argon2"));
-    }
-
-    #[test]
-    fn grants_can_be_added_checked_and_revoked() {
-        let mut catalog = AuthCatalog::default();
-        catalog.create_account("alice", "secret", "reader").unwrap();
-
-        catalog.grant("alice", "select", "products").unwrap();
-        assert!(catalog.has_grant("alice", "select", "products"));
-        assert!(!catalog.has_grant("alice", "insert", "products"));
-        assert!(catalog.revoke("alice", "select", "products"));
-        assert!(!catalog.has_grant("alice", "select", "products"));
-    }
-
-    #[test]
-    fn admin_has_all_grants() {
-        let mut catalog = AuthCatalog::default();
-        catalog.create_account("admin", "secret", "admin").unwrap();
-
-        assert!(catalog.has_grant("admin", "drop", "anything"));
     }
 }
