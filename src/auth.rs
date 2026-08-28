@@ -184,3 +184,40 @@ mod tests {
         assert!(catalog.has_grant("admin", "drop", "anything"));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::AuthCatalog;
+
+    #[test]
+    fn account_password_is_hashed_and_verifiable() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("Alice", "secret", "reader").unwrap();
+
+        assert!(catalog.verify_password("alice", "secret"));
+        assert!(!catalog.verify_password("alice", "wrong"));
+        let account = catalog.accounts.get("alice").unwrap();
+        assert!(!account.password_hash.contains("secret"));
+        assert!(account.password_hash.starts_with("$argon2"));
+    }
+
+    #[test]
+    fn grants_can_be_added_checked_and_revoked() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("alice", "secret", "reader").unwrap();
+
+        catalog.grant("alice", "select", "products").unwrap();
+        assert!(catalog.has_grant("alice", "select", "products"));
+        assert!(!catalog.has_grant("alice", "insert", "products"));
+        assert!(catalog.revoke("alice", "select", "products"));
+        assert!(!catalog.has_grant("alice", "select", "products"));
+    }
+
+    #[test]
+    fn admin_has_all_grants() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("admin", "secret", "admin").unwrap();
+
+        assert!(catalog.has_grant("admin", "drop", "anything"));
+    }
+}

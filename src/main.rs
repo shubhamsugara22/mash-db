@@ -359,6 +359,19 @@ enum Statement {
         password: String,
     },
     Logout,
+    CreateUser {
+        username: String,
+        password: String,
+        role: String,
+    },
+    AlterUser {
+        username: String,
+        password: Option<String>,
+        role: Option<String>,
+    },
+    DropUser {
+        username: String,
+    },
     CommitTransaction,
     RollbackTransaction,
     Insert {
@@ -1446,6 +1459,75 @@ fn handle_session_statement(statement: &Statement, session: &mut SessionState) -
             }
             true
         }
+        Statement::CreateUser {
+            username,
+            password,
+            role,
+        } => {
+            if !session.catalog.accounts.is_empty()
+                && !session
+                    .current_user
+                    .as_deref()
+                    .map(|user| session.catalog.has_grant(user, "admin", "*"))
+                    .unwrap_or(false)
+            {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            match session.catalog.create_account(username, password, role) {
+                Ok(()) => match session.catalog.save("auth.json") {
+                    Ok(()) => println!("User '{}' created.", username),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                },
+                Err(error) => println!("Error: {}", error),
+            }
+            true
+        }
+        Statement::AlterUser {
+            username,
+            password,
+            role,
+        } => {
+            if !session
+                .current_user
+                .as_deref()
+                .map(|user| session.catalog.has_grant(user, "admin", "*"))
+                .unwrap_or(false)
+            {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            match session
+                .catalog
+                .alter_account(username, password.as_deref(), role.as_deref())
+            {
+                Ok(()) => match session.catalog.save("auth.json") {
+                    Ok(()) => println!("User '{}' altered.", username),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                },
+                Err(error) => println!("Error: {}", error),
+            }
+            true
+        }
+        Statement::DropUser { username } => {
+            if !session
+                .current_user
+                .as_deref()
+                .map(|user| session.catalog.has_grant(user, "admin", "*"))
+                .unwrap_or(false)
+            {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            match session.catalog.drop_account(username) {
+                Ok(()) => match session.catalog.save("auth.json") {
+                    Ok(()) => println!("User '{}' dropped.", username),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                },
+                Err(error) => println!("Error: {}", error),
+            }
+            true
+        }
         _ => false,
     }
 }
@@ -1495,6 +1577,9 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::RollbackTransaction
         | Statement::Login { .. }
         | Statement::Logout
+        | Statement::CreateUser { .. }
+        | Statement::AlterUser { .. }
+        | Statement::DropUser { .. }
         | Statement::Union { .. } => None,
     }
 }
