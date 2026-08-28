@@ -1746,6 +1746,52 @@ fn prepare_statement(input: &str) -> PrepareResult {
                 Err(_) => PrepareResult::UnrecognizedStatement,
             }
         }
+    } else if upper.starts_with("CREATE USER ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 4 && parts[2].eq_ignore_ascii_case("PASSWORD") {
+            PrepareResult::Success(Statement::CreateUser {
+                username: parts[1].to_string(),
+                password: parts[3].to_string(),
+                role: "user".to_string(),
+            })
+        } else if parts.len() == 6
+            && parts[2].eq_ignore_ascii_case("PASSWORD")
+            && parts[4].eq_ignore_ascii_case("ROLE")
+        {
+            PrepareResult::Success(Statement::CreateUser {
+                username: parts[1].to_string(),
+                password: parts[3].to_string(),
+                role: parts[5].to_string(),
+            })
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
+    } else if upper.starts_with("ALTER USER ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 4 && parts[2].eq_ignore_ascii_case("PASSWORD") {
+            PrepareResult::Success(Statement::AlterUser {
+                username: parts[1].to_string(),
+                password: Some(parts[3].to_string()),
+                role: None,
+            })
+        } else if parts.len() == 4 && parts[2].eq_ignore_ascii_case("ROLE") {
+            PrepareResult::Success(Statement::AlterUser {
+                username: parts[1].to_string(),
+                password: None,
+                role: Some(parts[3].to_string()),
+            })
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
+    } else if upper.starts_with("DROP USER ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 3 {
+            PrepareResult::Success(Statement::DropUser {
+                username: parts[2].to_string(),
+            })
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
     } else if upper.starts_with("CREATE TABLE") {
         match parser::parse_create_table(input) {
             Ok((table_name, columns, primary_key, unique_columns)) => {
@@ -6314,6 +6360,7 @@ mod tests {
         assert_eq!(res, "NULL");
     }
 }
+/*
             Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
             Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
         ];
@@ -6388,7 +6435,6 @@ mod tests {
         assert_eq!(res, "NULL");
     }
 }
-/*
                 vec!["3".to_string(), "3".to_string(), "3".to_string()],
             )
             .unwrap(),
