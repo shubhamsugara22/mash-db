@@ -221,6 +221,26 @@ mod tests {
     }
 
     #[test]
+    fn wildcard_grants_cover_all_tables_for_same_privilege() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("alice", "secret", "reader").unwrap();
+        catalog.grant("alice", "select", "*").unwrap();
+
+        assert!(catalog.has_grant("alice", "select", "products"));
+        assert!(catalog.has_grant("alice", "select", "orders"));
+        assert!(!catalog.has_grant("alice", "insert", "products"));
+    }
+
+    #[test]
+    fn user_is_denied_when_privilege_is_missing() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("alice", "secret", "reader").unwrap();
+
+        assert!(!catalog.has_grant("alice", "delete", "orders"));
+        assert!(!catalog.has_grant("alice", "update", "products"));
+    }
+
+    #[test]
     fn account_can_be_altered_and_dropped() {
         let mut catalog = AuthCatalog::default();
         catalog.create_account("alice", "old", "reader").unwrap();
