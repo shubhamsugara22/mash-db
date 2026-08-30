@@ -125,7 +125,7 @@ impl AuthCatalog {
     ) -> Result<(), String> {
         let username = normalize_identifier(username)?;
         let privilege = normalize_identifier(privilege)?;
-        let table_name = normalize_identifier(table_name)?;
+        let table_name = normalize_table_name(table_name)?;
         if !self.accounts.contains_key(&username) {
             return Err(format!("User '{}' does not exist", username));
         }
@@ -146,7 +146,8 @@ impl AuthCatalog {
     pub fn revoke(&mut self, username: &str, privilege: &str, table_name: &str) -> bool {
         let username = username.to_lowercase();
         let privilege = privilege.to_lowercase();
-        let table_name = table_name.to_lowercase();
+        let table_name =
+            normalize_table_name(table_name).unwrap_or_else(|_| table_name.to_lowercase());
         let before = self.grants.len();
         self.grants.retain(|grant| {
             !(grant.username == username
@@ -182,6 +183,14 @@ fn normalize_identifier(value: &str) -> Result<String, String> {
         return Err(format!("Invalid identifier '{}'", value));
     }
     Ok(normalized)
+}
+
+fn normalize_table_name(value: &str) -> Result<String, String> {
+    let normalized = value.trim();
+    if normalized == "*" {
+        return Ok("*".to_string());
+    }
+    normalize_identifier(normalized)
 }
 
 #[cfg(test)]

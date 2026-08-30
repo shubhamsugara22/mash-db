@@ -372,6 +372,16 @@ enum Statement {
     DropUser {
         username: String,
     },
+    Grant {
+        username: String,
+        privilege: String,
+        table_name: String,
+    },
+    Revoke {
+        username: String,
+        privilege: String,
+        table_name: String,
+    },
     CommitTransaction,
     RollbackTransaction,
     Insert {
@@ -1548,6 +1558,76 @@ fn handle_session_statement(statement: &Statement, session: &mut SessionState) -
             }
             true
         }
+        Statement::Grant {
+            username,
+            privilege,
+            table_name,
+        } => {
+            let is_admin = session
+                .current_user
+                .as_deref()
+                .map(|user| {
+                    session
+                        .catalog
+                        .accounts
+                        .get(user)
+                        .map(|account| account.role == "admin")
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !is_admin {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            match session.catalog.grant(username, privilege, table_name) {
+                Ok(()) => match session.catalog.save("auth.json") {
+                    Ok(()) => println!(
+                        "Granted '{}' on table '{}' to user '{}'.",
+                        privilege, table_name, username
+                    ),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                },
+                Err(error) => println!("Error: {}", error),
+            }
+            true
+        }
+        Statement::Revoke {
+            username,
+            privilege,
+            table_name,
+        } => {
+            let is_admin = session
+                .current_user
+                .as_deref()
+                .map(|user| {
+                    session
+                        .catalog
+                        .accounts
+                        .get(user)
+                        .map(|account| account.role == "admin")
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !is_admin {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            if session.catalog.revoke(username, privilege, table_name) {
+                match session.catalog.save("auth.json") {
+                    Ok(()) => println!(
+                        "Revoked '{}' on table '{}' from user '{}'.",
+                        privilege, table_name, username
+                    ),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                }
+            } else {
+                println!(
+                    "Error: No matching grant for user '{}' on privilege '{}' for table '{}'",
+                    username, privilege, table_name
+                );
+            }
+            true
+        }
         _ => false,
     }
 }
@@ -1893,6 +1973,34 @@ fn prepare_statement(input: &str) -> PrepareResult {
         if parts.len() == 3 {
             PrepareResult::Success(Statement::DropUser {
                 username: parts[2].to_string(),
+            })
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
+    } else if upper.starts_with("GRANT ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 6
+            && parts[2].eq_ignore_ascii_case("ON")
+            && parts[4].eq_ignore_ascii_case("TO")
+        {
+            PrepareResult::Success(Statement::Grant {
+                username: parts[5].to_string(),
+                privilege: parts[1].to_string(),
+                table_name: parts[3].to_string(),
+            })
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
+    } else if upper.starts_with("REVOKE ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 6
+            && parts[2].eq_ignore_ascii_case("ON")
+            && parts[4].eq_ignore_ascii_case("FROM")
+        {
+            PrepareResult::Success(Statement::Revoke {
+                username: parts[5].to_string(),
+                privilege: parts[1].to_string(),
+                table_name: parts[3].to_string(),
             })
         } else {
             PrepareResult::UnrecognizedStatement
@@ -5702,6 +5810,18 @@ mod tests {
         assert!(matches!(
             prepare_statement("CREATE USER alice"),
             PrepareResult::UnrecognizedStatement
+        ));
+    }
+
+    #[test]
+    fn test_grant_revoke_parsing() {
+        assert!(matches!(
+            prepare_statement("GRANT SELECT ON products TO alice"),
+            PrepareResult::Success(Statement::Grant { .. })
+        ));
+        assert!(matches!(
+            prepare_statement("REVOKE SELECT ON products FROM alice"),
+            PrepareResult::Success(Statement::Revoke { .. })
         ));
     }
 
