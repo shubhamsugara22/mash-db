@@ -1680,6 +1680,8 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::CreateUser { .. }
         | Statement::AlterUser { .. }
         | Statement::DropUser { .. }
+        | Statement::Grant { .. }
+        | Statement::Revoke { .. }
         | Statement::Union { .. } => None,
     }
 }
@@ -3137,7 +3139,9 @@ fn execute_statement(
         | Statement::Logout
         | Statement::CreateUser { .. }
         | Statement::AlterUser { .. }
-        | Statement::DropUser { .. } => {
+        | Statement::DropUser { .. }
+        | Statement::Grant { .. }
+        | Statement::Revoke { .. } => {
             return;
         }
         Statement::BeginTransaction => {
