@@ -152,6 +152,12 @@ impl DatabaseManager {
         self.metadata.register_table(table_name, columns);
     }
 
+    pub fn ensure_table(&mut self, table_name: &str, columns: Vec<String>) {
+        if !self.metadata.tables.contains_key(table_name) {
+            self.metadata.register_table(table_name, columns);
+        }
+    }
+
     /// Update table statistics
     pub fn update_table_stats(&mut self, table_name: &str, row_count: usize) {
         self.metadata.update_table_stats(table_name, row_count);

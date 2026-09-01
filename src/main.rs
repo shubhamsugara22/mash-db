@@ -1,4 +1,6 @@
 #![allow(unused_variables)]
+use db_manager::DatabaseManager;
+use persistence::DurabilityConfig;
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
@@ -1690,6 +1692,33 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
     }
 }
 
+fn persistence_write_target(statement: &Statement) -> Option<(&'static str, String)> {
+    match statement {
+        Statement::Insert { table_name, .. } => Some((
+            "INSERT",
+            table_name.as_deref().unwrap_or("users").to_lowercase(),
+        )),
+        Statement::InsertSelect { table_name, .. } => Some(("INSERT", table_name.to_lowercase())),
+        Statement::Update { table_name, .. } => Some((
+            "UPDATE",
+            table_name.as_deref().unwrap_or("users").to_lowercase(),
+        )),
+        Statement::Delete { table_name, .. } | Statement::DeleteWhere { table_name, .. } => Some((
+            "DELETE",
+            table_name.as_deref().unwrap_or("users").to_lowercase(),
+        )),
+        Statement::DeleteAll => Some(("DELETE", "users".to_string())),
+        Statement::CreateTable { table_name, .. } => {
+            Some(("CREATE TABLE", table_name.to_lowercase()))
+        }
+        Statement::DropTable { table_name } => Some(("DROP TABLE", table_name.to_lowercase())),
+        Statement::TruncateTable { table_name } => {
+            Some(("TRUNCATE TABLE", table_name.to_lowercase()))
+        }
+        _ => None,
+    }
+}
+
 fn execute_authorized_statement(
     statement: Statement,
     session: &SessionState,
@@ -1699,6 +1728,7 @@ fn execute_authorized_statement(
     constraints: &mut HashMap<String, (Option<String>, Vec<String>)>,
     indexes: &mut HashMap<String, (String, String)>,
     tx: &mut TransactionState,
+    database_manager: &mut DatabaseManager,
 ) {
     if !session.catalog.accounts.is_empty() {
         let Some(username) = session.current_user.as_deref() else {
@@ -1719,7 +1749,28 @@ fn execute_authorized_statement(
         }
     }
 
+    let write_target = persistence_write_target(&statement);
+    if let Some((operation, table_name)) = &write_target {
+        if let Err(error) = database_manager.log_write_before(table_name, operation) {
+            println!("Error writing durability log: {}", error);
+            return;
+        }
+    }
+
     execute_statement(statement, tables, schemas, views, constraints, indexes, tx);
+
+    if let Some((operation, table_name)) = write_target {
+        if let Some(table) = tables.get(&table_name) {
+            database_manager.ensure_table(&table_name, table.schema().clone());
+            database_manager.update_table_stats(&table_name, table.select_all().len());
+        }
+        if let Err(error) = database_manager.log_write_after(&table_name, operation, true) {
+            println!("Error completing durability log: {}", error);
+        }
+        if let Err(error) = database_manager.save_state() {
+            println!("Error saving database metadata: {}", error);
+        }
+    }
 }
 
 fn split_on_union(input: &str) -> Option<(String, String, bool)> {
@@ -5240,6 +5291,22 @@ fn save_schemas(schemas: &HashMap<String, Vec<String>>) {
 }
 
 fn main() {
+    let mut database_manager =
+        match DatabaseManager::new("mash_db", "data", 100, DurabilityConfig::default()) {
+            Ok(manager) => manager,
+            Err(error) => {
+                eprintln!("Failed to initialize database persistence: {}", error);
+                return;
+            }
+        };
+    let session_id = match database_manager.create_connection() {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            eprintln!("Failed to initialize database session: {}", error);
+            return;
+        }
+    };
+
     // Initialize table registry with default "users" table
     let mut tables: HashMap<String, Table> = HashMap::new();
     let default_schema = vec![
@@ -5346,6 +5413,10 @@ fn main() {
         match prepare_statement(input) {
             PrepareResult::Success(statement) => {
                 if handle_session_statement(&statement, &mut session) {
+                    if let Some(username) = session.current_user.as_deref() {
+                        let _ = database_manager.login_to_session(&session_id, username);
+                    }
+                    let _ = database_manager.update_session_activity(&session_id);
                     continue;
                 }
 
@@ -5358,13 +5429,20 @@ fn main() {
                     &mut constraints,
                     &mut indexes,
                     &mut tx_state,
+                    &mut database_manager,
                 );
+                let _ = database_manager.update_session_activity(&session_id);
             }
             PrepareResult::UnrecognizedStatement => {
                 println!("Unrecognized keyword at start of '{}'", input);
             }
         }
     }
+
+    if let Err(error) = database_manager.checkpoint() {
+        eprintln!("Error completing database checkpoint: {}", error);
+    }
+    let _ = database_manager.close_connection(&session_id);
 }
 
 #[cfg(test)]
@@ -6740,5 +6818,69 @@ mod tests {
         let agg = super::AggregateColumn::StddevSamp("value".to_string());
         let res = super::compute_aggregate(&agg, &row_refs, &schema);
         assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn durable_insert_updates_wal_and_metadata() {
+        let persistence_path = "test_dispatch_persistence";
+        let table_path = "test_dispatch_users.json";
+        let _ = std::fs::remove_dir_all(persistence_path);
+        let _ = std::fs::remove_file(table_path);
+
+        let schema = default_schema();
+        let mut tables = HashMap::new();
+        tables.insert(
+            "users".to_string(),
+            Table::new(table_path.to_string(), schema.clone()),
+        );
+        let mut schemas = HashMap::new();
+        schemas.insert("users".to_string(), schema);
+        let mut views = HashMap::new();
+        let mut constraints = HashMap::new();
+        let mut indexes = HashMap::new();
+        let mut transaction = TransactionState {
+            active: false,
+            table_snapshots: HashMap::new(),
+            schema_snapshot: HashMap::new(),
+        };
+        let session = SessionState::new(auth::AuthCatalog::default());
+        let mut manager = DatabaseManager::new(
+            "test_dispatch",
+            persistence_path,
+            1,
+            DurabilityConfig::default(),
+        )
+        .unwrap();
+
+        execute_authorized_statement(
+            Statement::Insert {
+                table_name: Some("users".to_string()),
+                values: vec![
+                    "1".to_string(),
+                    "alice".to_string(),
+                    "alice@example.com".to_string(),
+                ],
+            },
+            &session,
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut transaction,
+            &mut manager,
+        );
+
+        assert_eq!(tables["users"].select_all().len(), 1);
+        let metadata: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(format!("{}/metadata.json", persistence_path)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(metadata["tables"]["users"]["row_count"], 1);
+        let wal = std::fs::read_to_string(format!("{}/wal.log", persistence_path)).unwrap();
+        assert_eq!(wal.lines().count(), 2);
+
+        let _ = std::fs::remove_dir_all(persistence_path);
+        let _ = std::fs::remove_file(table_path);
     }
 }
