@@ -1,4 +1,4 @@
-use crate::backup::{BackupManager, BackupMetadata, BackupType};
+use crate::backup::{BackupManager, BackupMetadata};
 /// RDS-Ready Database Manager
 ///
 /// Orchestrates:
@@ -15,7 +15,6 @@ use crate::persistence::{
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub struct DatabaseManager {
@@ -222,14 +221,12 @@ impl DatabaseManager {
 
     /// Get WAL file size
     fn get_wal_size(&self) -> u64 {
-        let wal_path = self
-            .db_path
-            .parent()
-            .map(|p| p.join("wal.log"))
-            .and_then(|p| fs::metadata(&p).ok())
+        self.db_path
+            .join("wal.log")
+            .metadata()
+            .ok()
             .map(|m| m.len())
-            .unwrap_or(0);
-        wal_path
+            .unwrap_or(0)
     }
 
     /// Perform checkpoint (save state and clear WAL)

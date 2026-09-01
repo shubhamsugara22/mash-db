@@ -9,8 +9,8 @@
 /// - Connection session tracking
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -53,10 +53,9 @@ pub struct WriteAheadLog {
 
 impl WriteAheadLog {
     pub fn new(db_path: &str) -> Result<Self, String> {
-        let log_path = Path::new(db_path)
-            .parent()
-            .ok_or("Invalid path".to_string())?
-            .join("wal.log");
+        std::fs::create_dir_all(db_path)
+            .map_err(|e| format!("Failed to create WAL directory: {}", e))?;
+        let log_path = Path::new(db_path).join("wal.log");
 
         let entries = Self::recover_from_log(&log_path)?;
 
