@@ -1,4 +1,4 @@
-use argon2::password_hash::rand_core::OsRng;
+use ar::password_hash::rand_core::OsRng;
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

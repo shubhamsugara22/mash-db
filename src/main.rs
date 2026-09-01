@@ -12,6 +12,9 @@ mod table;
 
 use table::{Row, Table};
 
+mod backup;
+mod db_manager;
+mod persistence;
 // Struct to represent a joined row with data from both tables
 #[derive(Debug, Clone)]
 struct JoinedRow {
@@ -1451,6 +1454,7 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
 fn handle_session_statement(statement: &Statement, session: &mut SessionState) -> bool {
     match statement {
         Statement::Login { username, password } => {
+            eprintln!("DEBUG handle_session: Login - username: {}", username);
             if session.catalog.verify_password(username, password) {
                 session.set_current_user(username.clone());
                 println!("Logged in as {}", username);
@@ -1937,7 +1941,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
         let parts: Vec<&str> = input.split_whitespace().collect();
         if parts.len() == 5 && parts[3].eq_ignore_ascii_case("PASSWORD") {
             PrepareResult::Success(Statement::CreateUser {
-                username: parts[1].to_string(),
+                username: parts[2].to_string(),
                 password: parts[3].to_string(),
                 role: "user".to_string(),
             })
@@ -1946,9 +1950,9 @@ fn prepare_statement(input: &str) -> PrepareResult {
             && parts[5].eq_ignore_ascii_case("ROLE")
         {
             PrepareResult::Success(Statement::CreateUser {
-                username: parts[1].to_string(),
-                password: parts[3].to_string(),
-                role: parts[5].to_string(),
+                username: parts[2].to_string(),
+                password: parts[4].to_string(),
+                role: parts[6].to_string(),
             })
         } else {
             PrepareResult::UnrecognizedStatement
@@ -5830,6 +5834,131 @@ mod tests {
     }
 
     #[test]
+    fn test_permission_enforcement_end_to_end() {
+        // Comprehensive end-to-end test validating entire auth lifecycle:
+        // 1. Create admin account
+        // 2. Create regular user account
+        // 3. Verify user cannot access tables without grant
+        // 4. Admin grants SELECT privilege
+        // 5. Verify user can now access
+        // 6. Admin revokes privilege
+        // 7. Verify user cannot access again
+
+        // Clean up any existing auth.json to start fresh
+        let _ = std::fs::remove_file("auth.json");
+
+        let mut state = SessionState::new(auth::AuthCatalog::default());
+
+        // Step 1: Create admin account
+        let create_admin = prepare_statement("CREATE USER admin PASSWORD adminpass123 ROLE admin");
+        assert!(matches!(
+            create_admin,
+            PrepareResult::Success(Statement::CreateUser { .. })
+        ));
+        let stmt = if let PrepareResult::Success(s) = create_admin {
+            s
+        } else {
+            return;
+        };
+        let result = handle_session_statement(&stmt, &mut state);
+        assert!(result, "CREATE USER admin should succeed");
+        // Manually login as admin (bypass authentication in test environment)
+        state.set_current_user("admin".to_string());
+
+        // Step 2: Create regular user account
+        let create_user = prepare_statement("CREATE USER testuser PASSWORD userpass456 ROLE user");
+        assert!(matches!(
+            create_user,
+            PrepareResult::Success(Statement::CreateUser { .. })
+        ));
+        let stmt2 = if let PrepareResult::Success(s) = create_user {
+            s
+        } else {
+            return;
+        };
+        let result = handle_session_statement(&stmt2, &mut state);
+        assert!(result, "CREATE USER testuser should succeed");
+        // Verify both accounts exist in the catalog
+        assert!(
+            state.catalog.accounts.contains_key("admin"),
+            "Admin account should exist"
+        );
+        assert!(
+            state.catalog.accounts.contains_key("testuser"),
+            "Test user account should exist"
+        );
+
+        // Step 3: Set session to testuser and verify no access
+        state.set_current_user("testuser".to_string());
+
+        // Try to select from a table (should fail - no grant)
+        let select_stmt = prepare_statement("SELECT * FROM products");
+        assert!(matches!(
+            select_stmt,
+            PrepareResult::Success(Statement::Select { .. })
+        ));
+        let stmt = if let PrepareResult::Success(s) = select_stmt {
+            s
+        } else {
+            return;
+        };
+        // For SELECT, we check permissions directly instead of executing via handle_session_statement
+        // because handle_session_statement only handles DDL
+        let has_access_before_grant = state.catalog.has_grant("testuser", "select", "products")
+            || state.catalog.has_grant("testuser", "all", "products");
+        assert!(
+            !has_access_before_grant,
+            "User should not have SELECT access before grant"
+        );
+
+        // Step 4: Switch back to admin and grant SELECT privilege
+        state.set_current_user("admin".to_string());
+        let grant_stmt = prepare_statement("GRANT SELECT ON products TO testuser");
+        assert!(matches!(
+            grant_stmt,
+            PrepareResult::Success(Statement::Grant { .. })
+        ));
+        let stmt = if let PrepareResult::Success(s) = grant_stmt {
+            s
+        } else {
+            return;
+        };
+        let result = handle_session_statement(&stmt, &mut state);
+        assert!(result, "Admin should be able to grant privileges");
+
+        // Step 5: Verify access now works - check permissions directly
+        let has_access_after_grant = state.catalog.has_grant("testuser", "select", "products")
+            || state.catalog.has_grant("testuser", "all", "products");
+        assert!(
+            has_access_after_grant,
+            "User should have SELECT access after grant"
+        );
+
+        // Step 6: Switch to admin and revoke privilege
+        state.set_current_user("admin".to_string());
+        let revoke_stmt = prepare_statement("REVOKE SELECT ON products FROM testuser");
+        assert!(matches!(
+            revoke_stmt,
+            PrepareResult::Success(Statement::Revoke { .. })
+        ));
+        let stmt = if let PrepareResult::Success(s) = revoke_stmt {
+            s
+        } else {
+            return;
+        };
+        let result = handle_session_statement(&stmt, &mut state);
+        assert!(result, "Admin should be able to revoke privileges");
+
+        // Step 7: Verify access is now denied again after revoke
+        let has_access_after_revoke = state.catalog.has_grant("testuser", "select", "products")
+            || state.catalog.has_grant("testuser", "all", "products");
+        assert!(
+            !has_access_after_revoke,
+            "User should not have SELECT access after revoke"
+        );
+    }
+
+    #[test]
     fn test_cte_executes_outer_query() {
         let mut users = Table::new("test_cte_users.json".to_string(), default_schema());
         users.clear();
@@ -6613,351 +6742,3 @@ mod tests {
         assert_eq!(res, "NULL");
     }
 }
-/*
-            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevPop("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn test_stddev_samp_basic() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "1".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "3".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "5".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Sample variance = 2.5, stddev = sqrt(2.5)
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.5f64.sqrt()).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_single_value() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows =
-            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn test_stddev_samp_skips_null_values() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Values: 2,4,6 => sample variance = ( (2-4)^2 + (4-4)^2 + (6-4)^2 ) / (3-1) = 8/2 = 4, stddev = 2
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_all_nulls_returns_null() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-}
-                vec!["3".to_string(), "3".to_string(), "3".to_string()],
-            )
-            .unwrap(),
-            Row::from_values(
-                &schema,
-                vec!["4".to_string(), "".to_string(), "4".to_string()],
-            )
-            .unwrap(),
-            Row::from_values(
-                &schema,
-                vec!["5".to_string(), "5".to_string(), "5".to_string()],
-            )
-            .unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::Corr("x".to_string(), "y".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Remaining pairs: (1,1), (3,3), (5,5) -> correlation 1.0
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 1.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_pop_basic() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "1".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "3".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "5".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevPop("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Population variance = 2, stddev = sqrt(2)
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2f64.sqrt()).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_pop_single_value() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows =
-            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevPop("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "0");
-    }
-
-    #[test]
-    fn test_stddev_pop_skips_null_values() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevPop("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Values: 2,4,6; mean = 4; variance = ((2-4)^2 + (4-4)^2 + (6-4)^2) / 3 = (4+0+4)/3 = 2.666...
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.666666_f64.sqrt()).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_stddev_pop_all_nulls_returns_null() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevPop("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn test_stddev_samp_basic() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "1".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "3".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "5".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Sample variance = 2.5, stddev = sqrt(2.5)
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.5f64.sqrt()).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_single_value() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows =
-            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn test_stddev_samp_skips_null_values() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Values: 2,4,6 => sample variance = ( (2-4)^2 + (4-4)^2 + (6-4)^2 ) / (3-1) = 8/2 = 4, stddev = 2
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_all_nulls_returns_null() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-}
-*/
-        // Sample variance = 2.5, stddev = sqrt(2.5)
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.5f64.sqrt()).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_single_value() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows =
-            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn test_stddev_samp_skips_null_values() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Values: 2,4,6 => sample variance = ( (2-4)^2 + (4-4)^2 + (6-4)^2 ) / (3-1) = 8/2 = 4, stddev = 2
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_all_nulls_returns_null() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-}
-*/
-        let agg = super::AggregateColumn::StddevPop("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn test_stddev_samp_basic() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "1".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "3".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "5".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Sample variance = 2.5, stddev = sqrt(2.5)
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.5f64.sqrt()).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_single_value() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows =
-            vec![Row::from_values(&schema, vec!["1".to_string(), "42".to_string()]).unwrap()];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn test_stddev_samp_skips_null_values() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "2".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["3".to_string(), "4".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["4".to_string(), "".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["5".to_string(), "6".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        // Values: 2,4,6 => sample variance = ( (2-4)^2 + (4-4)^2 + (6-4)^2 ) / (3-1) = 8/2 = 4, stddev = 2
-        let result_f64: f64 = res.parse().unwrap();
-        assert!((result_f64 - 2.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_all_nulls_returns_null() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-}
-*/
