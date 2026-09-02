@@ -12,7 +12,10 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LogEntry {
@@ -451,9 +454,8 @@ fn current_timestamp() -> u64 {
 }
 
 fn uuid_stub() -> String {
-    use std::time::Instant;
-    let now = Instant::now();
-    format!("{:?}", now.elapsed().as_nanos())
+    let counter = ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}_{}", current_timestamp(), counter)
 }
 
 #[cfg(test)]
