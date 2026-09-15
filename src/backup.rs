@@ -8,9 +8,12 @@
 /// - Backup verification
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static BACKUP_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupMetadata {
@@ -210,6 +213,9 @@ impl BackupManager {
             if path.is_dir() {
                 Self::hash_directory(&path, hasher)?;
             } else {
+                if path.file_name().and_then(|name| name.to_str()) == Some("metadata.json") {
+                    continue;
+                }
                 let data = fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))?;
                 data.hash(hasher);
             }
@@ -323,9 +329,8 @@ fn current_timestamp() -> u64 {
 }
 
 fn uuid_stub() -> String {
-    use std::time::Instant;
-    let now = Instant::now();
-    format!("{:?}", now.elapsed().as_nanos())
+    let counter = BACKUP_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}_{}", current_timestamp(), counter)
 }
 
 #[cfg(test)]

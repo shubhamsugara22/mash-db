@@ -1719,6 +1719,30 @@ fn persistence_write_target(statement: &Statement) -> Option<(&'static str, Stri
     }
 }
 
+fn backup_file_for(table_name: &str) -> String {
+    match table_name.to_lowercase().as_str() {
+        "users" => "data.json".to_string(),
+        "orders" => "orders.json".to_string(),
+        other => format!("{}.json", other),
+    }
+}
+
+fn collect_backup_files(tables: &HashMap<String, Table>) -> Vec<(String, Vec<u8>)> {
+    let mut files = Vec::new();
+    for table_name in tables.keys() {
+        let filename = backup_file_for(table_name);
+        if let Ok(data) = std::fs::read(&filename) {
+            files.push((filename, data));
+        }
+    }
+    for filename in ["schemas.json", "auth.json"] {
+        if let Ok(data) = std::fs::read(filename) {
+            files.push((filename.to_string(), data));
+        }
+    }
+    files
+}
+
 fn execute_authorized_statement(
     statement: Statement,
     session: &SessionState,
@@ -1769,6 +1793,16 @@ fn execute_authorized_statement(
         }
         if let Err(error) = database_manager.save_state() {
             println!("Error saving database metadata: {}", error);
+        }
+        let backup_files = collect_backup_files(tables);
+        let backup_file_refs = backup_files
+            .iter()
+            .map(|(filename, data)| (filename.as_str(), data.clone()))
+            .collect();
+        match database_manager.backup_if_due(backup_file_refs) {
+            Ok(Some(backup)) => println!("Automatic backup created: {}", backup.backup_id),
+            Ok(None) => {}
+            Err(error) => println!("Error creating automatic backup: {}", error),
         }
     }
 }

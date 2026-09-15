@@ -15,6 +15,7 @@ use crate::persistence::{
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub struct DatabaseManager {
@@ -26,6 +27,7 @@ pub struct DatabaseManager {
     wal: WriteAheadLog,
     backup_manager: BackupManager,
     health: DatabaseHealth,
+    last_automatic_backup: Option<u64>,
 }
 
 impl DatabaseManager {
@@ -57,7 +59,7 @@ impl DatabaseManager {
         let backup_dir = db_path_buf.join("backups");
         let backup_manager = BackupManager::new(
             backup_dir.to_str().ok_or("Invalid path".to_string())?,
-            10, // Keep last 10 backups
+            config.backup_retention_count,
         )?;
 
         Ok(DatabaseManager {
@@ -69,6 +71,7 @@ impl DatabaseManager {
             wal,
             backup_manager,
             health: DatabaseHealth::new(),
+            last_automatic_backup: None,
         })
     }
 
@@ -171,6 +174,31 @@ impl DatabaseManager {
         self.backup_manager.backup_full(&self.db_name, data_files)
     }
 
+    /// Create an automatic backup when the configured interval has elapsed.
+    /// An interval of zero makes every call eligible, which is useful for tests
+    /// and operator-triggered scheduling loops.
+    pub fn backup_if_due(
+        &mut self,
+        data_files: Vec<(&str, Vec<u8>)>,
+    ) -> Result<Option<BackupMetadata>, String> {
+        let now = current_timestamp();
+        let due = self
+            .last_automatic_backup
+            .map(|last| {
+                self.config.snapshot_interval_seconds == 0
+                    || now.saturating_sub(last) >= self.config.snapshot_interval_seconds
+            })
+            .unwrap_or(true);
+
+        if !due {
+            return Ok(None);
+        }
+
+        let backup = self.backup_full(data_files)?;
+        self.last_automatic_backup = Some(now);
+        Ok(Some(backup))
+    }
+
     /// Restore database from backup
     pub fn restore_backup(&self, backup_id: &str, restore_path: &str) -> Result<(), String> {
         self.backup_manager.restore_backup(backup_id, restore_path)
@@ -268,6 +296,13 @@ pub struct DatabaseStatistics {
     pub backup_total_size: u64,
     pub wal_size: u64,
     pub health_status: DatabaseStatus,
+}
+
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[cfg(test)]
