@@ -366,4 +366,27 @@ mod tests {
         let stats = manager.get_statistics();
         assert_eq!(stats.total_backups, 0);
     }
+
+    #[test]
+    fn test_backup_restore_verifies_checksum() {
+        let backup_dir = "test_backups_restore";
+        let restore_dir = "test_restore_output";
+        let _ = fs::remove_dir_all(backup_dir);
+        let _ = fs::remove_dir_all(restore_dir);
+        let mut manager = BackupManager::new(backup_dir, 10).unwrap();
+        let backup = manager
+            .backup_full("test_db", vec![("data.json", b"row".to_vec())])
+            .unwrap();
+
+        manager
+            .restore_backup(&backup.backup_id, restore_dir)
+            .unwrap();
+        assert_eq!(
+            fs::read(format!("{}/data.json", restore_dir)).unwrap(),
+            b"row"
+        );
+
+        let _ = fs::remove_dir_all(backup_dir);
+        let _ = fs::remove_dir_all(restore_dir);
+    }
 }
