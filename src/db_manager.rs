@@ -350,3 +350,26 @@ mod tests {
         let _ = fs::remove_dir_all(path);
     }
 }
+        let config = DurabilityConfig::default();
+        let manager = DatabaseManager::new("test_db", "test_db_path3", 10, config).unwrap();
+
+        let stats = manager.get_statistics();
+        assert_eq!(stats.db_name, "test_db");
+        assert_eq!(stats.tables_count, 0);
+    }
+
+    #[test]
+    fn test_backup_if_due_runs_once_per_interval() {
+        let mut config = DurabilityConfig::default();
+        config.snapshot_interval_seconds = 3600;
+        let path = "test_db_auto_backup";
+        let _ = fs::remove_dir_all(path);
+        let mut manager = DatabaseManager::new("test_db", path, 10, config).unwrap();
+
+        let files = vec![("data.json", b"row".to_vec())];
+        assert!(manager.backup_if_due(files.clone()).unwrap().is_some());
+        assert!(manager.backup_if_due(files).unwrap().is_none());
+        assert_eq!(manager.list_backups().len(), 1);
+        let _ = fs::remove_dir_all(path);
+    }
+}
