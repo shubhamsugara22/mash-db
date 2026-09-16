@@ -58,6 +58,7 @@ mash_db/
 ├── data/                           # Main database directory
 │   ├── *.json                       # Table data files
 │   ├── wal.log                      # Write-ahead log for crash recovery
+│   ├── audit.log                    # JSONL security and operation audit trail
 │   ├── metadata.json                # Database metadata and catalog
 │   └── backups/                     # Backup storage
 │       ├── backup_xxxx/
@@ -215,6 +216,19 @@ manager.update_table_stats("users", row_count);
 
 **Status Determination**:
 ```
+
+### 6. Audit Logging
+
+Every routed SQL command is appended durably to `audit.log` as one JSON object per line. Entries include:
+
+- UTC-equivalent Unix timestamp
+- authenticated username or `anonymous`
+- connection session ID
+- operation name and optional table name
+- success status
+- a bounded failure reason for authorization or WAL failures
+
+Passwords and raw SQL text are never written to the audit log. Permission denials and login-required failures are recorded as unsuccessful entries for security review.
 Healthy          : Normal operations, WAL < 100MB, balanced load
 Degraded         : WAL > 100MB (needs checkpoint), high load potential
 RecoveryInProgress : Database recovering from crash
@@ -232,7 +246,7 @@ println!("Status: {:?}", health.status);
 println!("Active connections: {}", health.connections_active);
 ```
 
-### 6. Durability Configuration - src/persistence.rs
+### 7. Durability Configuration - src/persistence.rs
 
 **Purpose**: Control persistence behavior
 

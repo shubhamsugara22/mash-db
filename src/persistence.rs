@@ -54,6 +54,45 @@ pub struct WriteAheadLog {
     entries: Vec<LogEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuditEntry {
+    pub timestamp: u64,
+    pub username: String,
+    pub session_id: String,
+    pub operation: String,
+    pub table_name: Option<String>,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct AuditLogger {
+    log_file_path: PathBuf,
+}
+
+impl AuditLogger {
+    pub fn new(db_path: &str) -> Result<Self, String> {
+        std::fs::create_dir_all(db_path)
+            .map_err(|e| format!("Failed to create audit directory: {}", e))?;
+        Ok(Self {
+            log_file_path: Path::new(db_path).join("audit.log"),
+        })
+    }
+
+    pub fn log(&self, entry: &AuditEntry) -> Result<(), String> {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log_file_path)
+            .map_err(|e| format!("Failed to open audit log: {}", e))?;
+        let json = serde_json::to_string(entry)
+            .map_err(|e| format!("Failed to serialize audit entry: {}", e))?;
+        writeln!(file, "{}", json).map_err(|e| format!("Failed to write audit log: {}", e))?;
+        file.sync_all()
+            .map_err(|e| format!("Failed to sync audit log: {}", e))
+    }
+}
+
 impl WriteAheadLog {
     pub fn new(db_path: &str) -> Result<Self, String> {
         std::fs::create_dir_all(db_path)
@@ -475,46 +514,6 @@ mod tests {
         assert_eq!(metadata.tables.len(), 0);
     }
 
-    #[test]
-    fn test_connection_session_idle_detection() {
-        let mut session = ConnectionSession::new("sess_1".to_string());
-        session.idle_timeout_secs = 1;
-        // Session should not be idle immediately
-        assert!(!session.is_idle());
-    }
-
-    #[test]
-    fn test_connection_pool_creation() {
-        let mut pool = ConnectionPool::new(5);
-        let session_id = pool.create_session().unwrap();
-        assert!(!session_id.is_empty());
-        assert!(pool.get_session(&session_id).is_some());
-    }
-
-    #[test]
-    fn test_connection_pool_max_connections() {
-        let mut pool = ConnectionPool::new(2);
-        let _ = pool.create_session().unwrap();
-        let _ = pool.create_session().unwrap();
-        let result = pool.create_session();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_database_health_status() {
-        let mut health = DatabaseHealth::new();
-        let status = health.check_health(5, 50_000_000);
-        assert_eq!(status, DatabaseStatus::Healthy);
-    }
-
-    #[test]
-    fn test_database_metadata_table_registration() {
-        let mut metadata = DatabaseMetadata::new("test_db");
-        metadata.register_table("users", vec!["id".to_string(), "name".to_string()]);
-        assert_eq!(metadata.tables.len(), 1);
-        assert!(metadata.tables.contains_key("users"));
-    }
-}
     #[test]
     fn test_connection_session_idle_detection() {
         let mut session = ConnectionSession::new("sess_1".to_string());

@@ -9,8 +9,8 @@ use crate::backup::{BackupManager, BackupMetadata};
 /// - Health monitoring
 /// - Database lifecycle
 use crate::persistence::{
-    ConnectionPool, ConnectionSession, DatabaseHealth, DatabaseMetadata, DatabaseStatus,
-    DurabilityConfig, WriteAheadLog,
+    AuditEntry, AuditLogger, ConnectionPool, ConnectionSession, DatabaseHealth, DatabaseMetadata,
+    DatabaseStatus, DurabilityConfig, WriteAheadLog,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -25,6 +25,7 @@ pub struct DatabaseManager {
     metadata: DatabaseMetadata,
     connection_pool: ConnectionPool,
     wal: WriteAheadLog,
+    audit_logger: AuditLogger,
     backup_manager: BackupManager,
     health: DatabaseHealth,
     last_automatic_backup: Option<u64>,
@@ -54,6 +55,7 @@ impl DatabaseManager {
 
         // Initialize WAL
         let wal = WriteAheadLog::new(db_path)?;
+        let audit_logger = AuditLogger::new(db_path)?;
 
         // Initialize backup manager
         let backup_dir = db_path_buf.join("backups");
@@ -69,6 +71,7 @@ impl DatabaseManager {
             metadata,
             connection_pool: ConnectionPool::new(max_connections),
             wal,
+            audit_logger,
             backup_manager,
             health: DatabaseHealth::new(),
             last_automatic_backup: None,
@@ -111,6 +114,26 @@ impl DatabaseManager {
             self.wal.log_before_write(table_name, operation)?;
         }
         Ok(())
+    }
+
+    pub fn log_audit(
+        &self,
+        username: &str,
+        session_id: &str,
+        operation: &str,
+        table_name: Option<&str>,
+        success: bool,
+        error: Option<&str>,
+    ) -> Result<(), String> {
+        self.audit_logger.log(&AuditEntry {
+            timestamp: current_timestamp(),
+            username: username.to_string(),
+            session_id: session_id.to_string(),
+            operation: operation.to_string(),
+            table_name: table_name.map(str::to_string),
+            success,
+            error: error.map(str::to_string),
+        })
     }
 
     /// Log write completion after successful execution
@@ -327,29 +350,6 @@ mod tests {
 
     #[test]
     fn test_database_statistics() {
-        let config = DurabilityConfig::default();
-        let manager = DatabaseManager::new("test_db", "test_db_path3", 10, config).unwrap();
-
-        let stats = manager.get_statistics();
-        assert_eq!(stats.db_name, "test_db");
-        assert_eq!(stats.tables_count, 0);
-    }
-
-    #[test]
-    fn test_backup_if_due_runs_once_per_interval() {
-        let mut config = DurabilityConfig::default();
-        config.snapshot_interval_seconds = 3600;
-        let path = "test_db_auto_backup";
-        let _ = fs::remove_dir_all(path);
-        let mut manager = DatabaseManager::new("test_db", path, 10, config).unwrap();
-
-        let files = vec![("data.json", b"row".to_vec())];
-        assert!(manager.backup_if_due(files.clone()).unwrap().is_some());
-        assert!(manager.backup_if_due(files).unwrap().is_none());
-        assert_eq!(manager.list_backups().len(), 1);
-        let _ = fs::remove_dir_all(path);
-    }
-}
         let config = DurabilityConfig::default();
         let manager = DatabaseManager::new("test_db", "test_db_path3", 10, config).unwrap();
 

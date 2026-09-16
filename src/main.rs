@@ -1719,6 +1719,75 @@ fn persistence_write_target(statement: &Statement) -> Option<(&'static str, Stri
     }
 }
 
+fn audit_target(statement: &Statement) -> (&'static str, Option<String>) {
+    match statement {
+        Statement::BeginTransaction => ("BEGIN", None),
+        Statement::CommitTransaction => ("COMMIT", None),
+        Statement::RollbackTransaction => ("ROLLBACK", None),
+        Statement::Login { .. } => ("LOGIN", None),
+        Statement::Logout => ("LOGOUT", None),
+        Statement::CreateUser { .. } => ("CREATE USER", None),
+        Statement::AlterUser { .. } => ("ALTER USER", None),
+        Statement::DropUser { .. } => ("DROP USER", None),
+        Statement::Grant { table_name, .. } => ("GRANT", Some(table_name.to_lowercase())),
+        Statement::Revoke { table_name, .. } => ("REVOKE", Some(table_name.to_lowercase())),
+        Statement::Insert { table_name, .. } => (
+            "INSERT",
+            Some(table_name.as_deref().unwrap_or("users").to_lowercase()),
+        ),
+        Statement::InsertSelect { table_name, .. } => {
+            ("INSERT SELECT", Some(table_name.to_lowercase()))
+        }
+        Statement::Update { table_name, .. } => (
+            "UPDATE",
+            Some(table_name.as_deref().unwrap_or("users").to_lowercase()),
+        ),
+        Statement::Delete { table_name, .. } | Statement::DeleteWhere { table_name, .. } => (
+            "DELETE",
+            Some(table_name.as_deref().unwrap_or("users").to_lowercase()),
+        ),
+        Statement::DeleteAll => ("DELETE", Some("users".to_string())),
+        Statement::CreateTable { table_name, .. } => {
+            ("CREATE TABLE", Some(table_name.to_lowercase()))
+        }
+        Statement::AlterTableRename { table_name, .. } => {
+            ("ALTER TABLE RENAME", Some(table_name.to_lowercase()))
+        }
+        Statement::AlterTableAddColumn { table_name, .. } => {
+            ("ALTER TABLE ADD COLUMN", Some(table_name.to_lowercase()))
+        }
+        Statement::AlterTableDropColumn { table_name, .. } => {
+            ("ALTER TABLE DROP COLUMN", Some(table_name.to_lowercase()))
+        }
+        Statement::DropTable { table_name } => ("DROP TABLE", Some(table_name.to_lowercase())),
+        Statement::TruncateTable { table_name } => {
+            ("TRUNCATE TABLE", Some(table_name.to_lowercase()))
+        }
+        Statement::CreateView { view_name, .. } => ("CREATE VIEW", Some(view_name.to_lowercase())),
+        Statement::DropView { view_name } => ("DROP VIEW", Some(view_name.to_lowercase())),
+        Statement::CreateIndex { table_name, .. } => {
+            ("CREATE INDEX", Some(table_name.to_lowercase()))
+        }
+        Statement::DropIndex { index_name } => ("DROP INDEX", Some(index_name.to_lowercase())),
+        Statement::Analyze { table_name } => ("ANALYZE", Some(table_name.to_lowercase())),
+        Statement::ShowStats { table_name } => (
+            "SHOW STATS",
+            table_name.as_ref().map(|name| name.to_lowercase()),
+        ),
+        Statement::Describe { table_name } => ("DESCRIBE", Some(table_name.to_lowercase())),
+        Statement::ShowTables => ("SHOW TABLES", None),
+        Statement::ShowIndexes => ("SHOW INDEXES", None),
+        Statement::Select { from_table, .. }
+        | Statement::SelectWhere { from_table, .. }
+        | Statement::SelectWithCTE { from_table, .. }
+        | Statement::SelectWithCTEWhere { from_table, .. } => (
+            "SELECT",
+            from_table.as_ref().map(|name| name.to_lowercase()),
+        ),
+        Statement::Union { .. } => ("UNION", None),
+    }
+}
+
 fn backup_file_for(table_name: &str) -> String {
     match table_name.to_lowercase().as_str() {
         "users" => "data.json".to_string(),
@@ -1753,10 +1822,21 @@ fn execute_authorized_statement(
     indexes: &mut HashMap<String, (String, String)>,
     tx: &mut TransactionState,
     database_manager: &mut DatabaseManager,
+    session_id: &str,
 ) {
+    let (audit_operation, audit_table) = audit_target(&statement);
+    let audit_user = session.current_user.as_deref().unwrap_or("anonymous");
     if !session.catalog.accounts.is_empty() {
         let Some(username) = session.current_user.as_deref() else {
             println!("Error: Login required");
+            let _ = database_manager.log_audit(
+                "anonymous",
+                session_id,
+                audit_operation,
+                audit_table.as_deref(),
+                false,
+                Some("login required"),
+            );
             return;
         };
 
@@ -1768,6 +1848,14 @@ fn execute_authorized_statement(
                     "Error: User '{}' lacks {} permission on table '{}'",
                     username, privilege, table_name
                 );
+                let _ = database_manager.log_audit(
+                    username,
+                    session_id,
+                    audit_operation,
+                    Some(&table_name),
+                    false,
+                    Some("permission denied"),
+                );
                 return;
             }
         }
@@ -1777,11 +1865,27 @@ fn execute_authorized_statement(
     if let Some((operation, table_name)) = &write_target {
         if let Err(error) = database_manager.log_write_before(table_name, operation) {
             println!("Error writing durability log: {}", error);
+            let _ = database_manager.log_audit(
+                audit_user,
+                session_id,
+                audit_operation,
+                audit_table.as_deref(),
+                false,
+                Some("WAL write failed"),
+            );
             return;
         }
     }
 
     execute_statement(statement, tables, schemas, views, constraints, indexes, tx);
+    let _ = database_manager.log_audit(
+        audit_user,
+        session_id,
+        audit_operation,
+        audit_table.as_deref(),
+        true,
+        None,
+    );
 
     if let Some((operation, table_name)) = write_target {
         if let Some(table) = tables.get(&table_name) {
@@ -5464,6 +5568,7 @@ fn main() {
                     &mut indexes,
                     &mut tx_state,
                     &mut database_manager,
+                    &session_id,
                 );
                 let _ = database_manager.update_session_activity(&session_id);
             }
@@ -6903,6 +7008,7 @@ mod tests {
             &mut indexes,
             &mut transaction,
             &mut manager,
+            "test-session",
         );
 
         assert_eq!(tables["users"].select_all().len(), 1);
@@ -6913,87 +7019,13 @@ mod tests {
         assert_eq!(metadata["tables"]["users"]["row_count"], 1);
         let wal = std::fs::read_to_string(format!("{}/wal.log", persistence_path)).unwrap();
         assert_eq!(wal.lines().count(), 2);
-
-        let _ = std::fs::remove_dir_all(persistence_path);
-        let _ = std::fs::remove_file(table_path);
-    }
-}
-        assert!((result_f64 - 2.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_stddev_samp_all_nulls_returns_null() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
-        ];
-
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn durable_insert_updates_wal_and_metadata() {
-        let persistence_path = "test_dispatch_persistence";
-        let table_path = "test_dispatch_users.json";
-        let _ = std::fs::remove_dir_all(persistence_path);
-        let _ = std::fs::remove_file(table_path);
-
-        let schema = default_schema();
-        let mut tables = HashMap::new();
-        tables.insert(
-            "users".to_string(),
-            Table::new(table_path.to_string(), schema.clone()),
-        );
-        let mut schemas = HashMap::new();
-        schemas.insert("users".to_string(), schema);
-        let mut views = HashMap::new();
-        let mut constraints = HashMap::new();
-        let mut indexes = HashMap::new();
-        let mut transaction = TransactionState {
-            active: false,
-            table_snapshots: HashMap::new(),
-            schema_snapshot: HashMap::new(),
-        };
-        let session = SessionState::new(auth::AuthCatalog::default());
-        let mut manager = DatabaseManager::new(
-            "test_dispatch",
-            persistence_path,
-            1,
-            DurabilityConfig::default(),
-        )
-        .unwrap();
-
-        execute_authorized_statement(
-            Statement::Insert {
-                table_name: Some("users".to_string()),
-                values: vec![
-                    "1".to_string(),
-                    "alice".to_string(),
-                    "alice@example.com".to_string(),
-                ],
-            },
-            &session,
-            &mut tables,
-            &mut schemas,
-            &mut views,
-            &mut constraints,
-            &mut indexes,
-            &mut transaction,
-            &mut manager,
-        );
-
-        assert_eq!(tables["users"].select_all().len(), 1);
-        let metadata: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(format!("{}/metadata.json", persistence_path)).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(metadata["tables"]["users"]["row_count"], 1);
-        let wal = std::fs::read_to_string(format!("{}/wal.log", persistence_path)).unwrap();
-        assert_eq!(wal.lines().count(), 2);
+        let audit = std::fs::read_to_string(format!("{}/audit.log", persistence_path)).unwrap();
+        let audit_entry: serde_json::Value =
+            serde_json::from_str(audit.lines().next().unwrap()).unwrap();
+        assert_eq!(audit_entry["operation"], "INSERT");
+        assert_eq!(audit_entry["table_name"], "users");
+        assert_eq!(audit_entry["session_id"], "test-session");
+        assert_eq!(audit_entry["success"], true);
 
         let _ = std::fs::remove_dir_all(persistence_path);
         let _ = std::fs::remove_file(table_path);
