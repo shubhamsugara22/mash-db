@@ -1862,6 +1862,16 @@ fn execute_authorized_statement(
     }
 
     let write_target = persistence_write_target(&statement);
+    let transaction_was_active = tx.active;
+    match &statement {
+        Statement::BeginTransaction if !transaction_was_active => {
+            if let Err(error) = database_manager.log_transaction_begin(session_id) {
+                println!("Error writing transaction WAL entry: {}", error);
+                return;
+            }
+        }
+        _ => {}
+    }
     if let Some((operation, table_name)) = &write_target {
         if let Err(error) = database_manager.log_write_before(table_name, operation) {
             println!("Error writing durability log: {}", error);
@@ -1878,6 +1888,21 @@ fn execute_authorized_statement(
     }
 
     execute_statement(statement, tables, schemas, views, constraints, indexes, tx);
+    if transaction_was_active {
+        match audit_operation {
+            "COMMIT" => {
+                if let Err(error) = database_manager.log_transaction_commit(session_id) {
+                    println!("Error writing transaction WAL entry: {}", error);
+                }
+            }
+            "ROLLBACK" => {
+                if let Err(error) = database_manager.log_transaction_rollback(session_id) {
+                    println!("Error writing transaction WAL entry: {}", error);
+                }
+            }
+            _ => {}
+        }
+    }
     let _ = database_manager.log_audit(
         audit_user,
         session_id,

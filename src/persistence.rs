@@ -553,4 +553,25 @@ mod tests {
         assert_eq!(metadata.tables.len(), 1);
         assert!(metadata.tables.contains_key("users"));
     }
+
+    #[test]
+    fn test_transaction_markers_are_durable() {
+        let path = "test_transaction_wal";
+        let _ = std::fs::remove_dir_all(path);
+        let mut wal = WriteAheadLog::new(path).unwrap();
+        wal.log_transaction_begin("session_1").unwrap();
+        wal.log_transaction_commit("session_1").unwrap();
+        wal.log_transaction_begin("session_2").unwrap();
+        wal.log_transaction_rollback("session_2").unwrap();
+
+        assert_eq!(wal.get_recovery_entries().len(), 4);
+        assert!(
+            std::fs::read_to_string(format!("{}/wal.log", path))
+                .unwrap()
+                .lines()
+                .count()
+                == 4
+        );
+        let _ = std::fs::remove_dir_all(path);
+    }
 }
