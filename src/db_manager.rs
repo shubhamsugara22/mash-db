@@ -10,7 +10,7 @@ use crate::backup::{BackupManager, BackupMetadata};
 /// - Database lifecycle
 use crate::persistence::{
     AuditEntry, AuditLogger, ConnectionPool, ConnectionSession, DatabaseHealth, DatabaseMetadata,
-    DatabaseStatus, DurabilityConfig, WriteAheadLog,
+    DatabaseStatus, DurabilityConfig, RowLockManager, WriteAheadLog,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -24,6 +24,7 @@ pub struct DatabaseManager {
     config: DurabilityConfig,
     metadata: DatabaseMetadata,
     connection_pool: ConnectionPool,
+    row_locks: RowLockManager,
     wal: WriteAheadLog,
     audit_logger: AuditLogger,
     backup_manager: BackupManager,
@@ -70,6 +71,7 @@ impl DatabaseManager {
             config,
             metadata,
             connection_pool: ConnectionPool::new(max_connections),
+            row_locks: RowLockManager::new(),
             wal,
             audit_logger,
             backup_manager,
@@ -106,6 +108,31 @@ impl DatabaseManager {
         } else {
             Err(format!("Session not found: {}", session_id))
         }
+    }
+
+    /// Lock a single row for the current session.
+    pub fn lock_row(
+        &mut self,
+        table_name: &str,
+        row_id: u32,
+        session_id: &str,
+    ) -> Result<(), String> {
+        self.row_locks.lock_row(table_name, row_id, session_id)
+    }
+
+    /// Release a row lock for the current session.
+    pub fn unlock_row(
+        &mut self,
+        table_name: &str,
+        row_id: u32,
+        session_id: &str,
+    ) -> Result<(), String> {
+        self.row_locks.unlock_row(table_name, row_id, session_id)
+    }
+
+    /// Return the current owner of a row lock if one exists.
+    pub fn get_row_lock_owner(&self, table_name: &str, row_id: u32) -> Option<String> {
+        self.row_locks.get_lock_owner(table_name, row_id)
     }
 
     /// Log a write operation before executing (for crash recovery)

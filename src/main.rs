@@ -1863,6 +1863,31 @@ fn execute_authorized_statement(
 
     let write_target = persistence_write_target(&statement);
     let transaction_was_active = tx.active;
+    let mut row_lock_acquired = false;
+    let row_lock = match &statement {
+        Statement::Update { table_name, id, .. } => {
+            Some((table_name.as_deref().unwrap_or("users").to_string(), *id))
+        }
+        Statement::Delete { table_name, id } => {
+            Some((table_name.as_deref().unwrap_or("users").to_string(), *id))
+        }
+        _ => None,
+    };
+    if let Some((table_name, row_id)) = row_lock.as_ref() {
+        if let Err(error) = database_manager.lock_row(table_name, *row_id, session_id) {
+            println!("Error: {}", error);
+            let _ = database_manager.log_audit(
+                audit_user,
+                session_id,
+                audit_operation,
+                audit_table.as_deref(),
+                false,
+                Some("row lock denied"),
+            );
+            return;
+        }
+        row_lock_acquired = true;
+    }
     match &statement {
         Statement::BeginTransaction if !transaction_was_active => {
             if let Err(error) = database_manager.log_transaction_begin(session_id) {
@@ -1888,6 +1913,11 @@ fn execute_authorized_statement(
     }
 
     execute_statement(statement, tables, schemas, views, constraints, indexes, tx);
+    if row_lock_acquired {
+        if let Some((table_name, row_id)) = row_lock.as_ref() {
+            let _ = database_manager.unlock_row(table_name, *row_id, session_id);
+        }
+    }
     if transaction_was_active {
         match audit_operation {
             "COMMIT" => {

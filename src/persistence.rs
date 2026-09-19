@@ -309,6 +309,67 @@ impl DatabaseMetadata {
     }
 }
 
+/// Row-level lock tracking for optimistic concurrency control.
+///
+/// Each table/row pair can be owned by at most one session at a time.
+/// This enables enforcing a simple single-writer lock while leaving the
+/// rest of the SQL engine unchanged.
+#[derive(Debug, Default)]
+pub struct RowLockManager {
+    locks: HashMap<(String, u32), String>,
+}
+
+impl RowLockManager {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn lock_row(
+        &mut self,
+        table_name: &str,
+        row_id: u32,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let key = (table_name.to_lowercase(), row_id);
+        match self.locks.get(&key) {
+            Some(owner) if owner != session_id => Err(format!(
+                "Row {} in table '{}' is already locked by session '{}'",
+                row_id, table_name, owner
+            )),
+            _ => {
+                self.locks.insert(key, session_id.to_string());
+                Ok(())
+            }
+        }
+    }
+
+    pub fn unlock_row(
+        &mut self,
+        table_name: &str,
+        row_id: u32,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let key = (table_name.to_lowercase(), row_id);
+        match self.locks.get(&key) {
+            Some(owner) if owner != session_id => Err(format!(
+                "Row {} in table '{}' is held by session '{}' and cannot be released by '{}'",
+                row_id, table_name, owner, session_id
+            )),
+            Some(_) => {
+                self.locks.remove(&key);
+                Ok(())
+            }
+            None => Ok(()),
+        }
+    }
+
+    pub fn get_lock_owner(&self, table_name: &str, row_id: u32) -> Option<String> {
+        self.locks
+            .get(&(table_name.to_lowercase(), row_id))
+            .cloned()
+    }
+}
+
 /// Connection session tracking for multi-client support
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionSession {
@@ -544,6 +605,20 @@ mod tests {
         let mut health = DatabaseHealth::new();
         let status = health.check_health(5, 50_000_000);
         assert_eq!(status, DatabaseStatus::Healthy);
+    }
+
+    #[test]
+    fn test_row_lock_manager_lock_and_release() {
+        let mut lock_manager = RowLockManager::new();
+
+        assert!(lock_manager.lock_row("users", 7, "sess_1").is_ok());
+        assert!(lock_manager.lock_row("users", 7, "sess_2").is_err());
+        assert!(lock_manager.unlock_row("users", 7, "sess_1").is_ok());
+        assert!(lock_manager.lock_row("users", 7, "sess_2").is_ok());
+        assert_eq!(
+            lock_manager.get_lock_owner("users", 7),
+            Some("sess_2".to_string())
+        );
     }
 
     #[test]
