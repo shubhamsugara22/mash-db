@@ -1913,7 +1913,7 @@ fn execute_authorized_statement(
     }
 
     execute_statement(statement, tables, schemas, views, constraints, indexes, tx);
-    if row_lock_acquired {
+    if row_lock_acquired && !transaction_was_active {
         if let Some((table_name, row_id)) = row_lock.as_ref() {
             let _ = database_manager.unlock_row(table_name, *row_id, session_id);
         }
@@ -1931,6 +1931,9 @@ fn execute_authorized_statement(
                 }
             }
             _ => {}
+        }
+        if matches!(audit_operation, "COMMIT" | "ROLLBACK") {
+            database_manager.release_row_locks(session_id);
         }
     }
     let _ = database_manager.log_audit(

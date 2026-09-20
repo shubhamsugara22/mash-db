@@ -135,6 +135,10 @@ impl DatabaseManager {
         self.row_locks.get_lock_owner(table_name, row_id)
     }
 
+    pub fn release_row_locks(&mut self, session_id: &str) -> usize {
+        self.row_locks.unlock_all_for_session(session_id)
+    }
+
     /// Log a write operation before executing (for crash recovery)
     pub fn log_write_before(&mut self, table_name: &str, operation: &str) -> Result<(), String> {
         if self.config.wal_enabled {

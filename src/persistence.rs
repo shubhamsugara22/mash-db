@@ -368,6 +368,12 @@ impl RowLockManager {
             .get(&(table_name.to_lowercase(), row_id))
             .cloned()
     }
+
+    pub fn unlock_all_for_session(&mut self, session_id: &str) -> usize {
+        let before = self.locks.len();
+        self.locks.retain(|_, owner| owner != session_id);
+        before - self.locks.len()
+    }
 }
 
 /// Connection session tracking for multi-client support
@@ -617,6 +623,22 @@ mod tests {
         assert!(lock_manager.lock_row("users", 7, "sess_2").is_ok());
         assert_eq!(
             lock_manager.get_lock_owner("users", 7),
+            Some("sess_2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_row_lock_manager_releases_all_session_locks() {
+        let mut lock_manager = RowLockManager::new();
+        lock_manager.lock_row("users", 1, "sess_1").unwrap();
+        lock_manager.lock_row("orders", 2, "sess_1").unwrap();
+        lock_manager.lock_row("users", 3, "sess_2").unwrap();
+
+        assert_eq!(lock_manager.unlock_all_for_session("sess_1"), 2);
+        assert_eq!(lock_manager.get_lock_owner("users", 1), None);
+        assert_eq!(lock_manager.get_lock_owner("orders", 2), None);
+        assert_eq!(
+            lock_manager.get_lock_owner("users", 3),
             Some("sess_2".to_string())
         );
     }
