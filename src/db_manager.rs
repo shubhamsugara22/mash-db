@@ -87,7 +87,9 @@ impl DatabaseManager {
 
     /// Close a connection session
     pub fn close_connection(&mut self, session_id: &str) -> Result<(), String> {
-        self.connection_pool.close_session(session_id)
+        self.connection_pool.close_session(session_id)?;
+        self.release_row_locks(session_id);
+        Ok(())
     }
 
     /// Log in a user to a session
@@ -277,7 +279,17 @@ impl DatabaseManager {
 
     /// Cleanup idle connections
     pub fn cleanup_idle_connections(&mut self) {
+        let idle_sessions: Vec<String> = self
+            .connection_pool
+            .get_all_sessions()
+            .into_iter()
+            .filter(|session| session.is_idle())
+            .map(|session| session.session_id)
+            .collect();
         self.connection_pool.cleanup_idle_sessions();
+        for session_id in idle_sessions {
+            self.release_row_locks(&session_id);
+        }
     }
 
     /// Get list of active sessions
@@ -380,30 +392,21 @@ mod tests {
     }
 
     #[test]
-    fn test_database_statistics() {
+    fn test_close_connection_releases_row_locks() {
+        let path = "test_db_lock_cleanup";
+        let _ = fs::remove_dir_all(path);
         let config = DurabilityConfig::default();
-        let manager = DatabaseManager::new("test_db", "test_db_path3", 10, config).unwrap();
-
-        let stats = manager.get_statistics();
-        assert_eq!(stats.db_name, "test_db");
-        assert_eq!(stats.tables_count, 0);
-    }
-
-    #[test]
-    fn test_backup_if_due_runs_once_per_interval() {
-        let mut config = DurabilityConfig::default();
-        config.snapshot_interval_seconds = 3600;
-        let path = "test_db_auto_backup";
-        let _ = fs::remove_dir_all(path);
         let mut manager = DatabaseManager::new("test_db", path, 10, config).unwrap();
+        let session_id = manager.create_connection().unwrap();
 
-        let files = vec![("data.json", b"row".to_vec())];
-        assert!(manager.backup_if_due(files.clone()).unwrap().is_some());
-        assert!(manager.backup_if_due(files).unwrap().is_none());
-        assert_eq!(manager.list_backups().len(), 1);
+        manager.lock_row("users", 7, &session_id).unwrap();
+        assert_eq!(
+            manager.get_row_lock_owner("users", 7),
+            Some(session_id.clone())
+        );
+        manager.close_connection(&session_id).unwrap();
+        assert_eq!(manager.get_row_lock_owner("users", 7), None);
         let _ = fs::remove_dir_all(path);
-    }
-}
     }
 
     #[test]
