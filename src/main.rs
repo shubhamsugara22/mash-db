@@ -1864,17 +1864,43 @@ fn execute_authorized_statement(
     let write_target = persistence_write_target(&statement);
     let transaction_was_active = tx.active;
     let mut row_lock_acquired = false;
-    let row_lock = match &statement {
+    let row_locks = match &statement {
         Statement::Update { table_name, id, .. } => {
-            Some((table_name.as_deref().unwrap_or("users").to_string(), *id))
+            vec![(
+                table_name.as_deref().unwrap_or("users").to_string(),
+                vec![*id],
+            )]
         }
         Statement::Delete { table_name, id } => {
-            Some((table_name.as_deref().unwrap_or("users").to_string(), *id))
+            vec![(
+                table_name.as_deref().unwrap_or("users").to_string(),
+                vec![*id],
+            )]
         }
-        _ => None,
+        Statement::DeleteWhere {
+            table_name,
+            column,
+            value,
+        } => {
+            let name = table_name.as_deref().unwrap_or("users").to_lowercase();
+            let ids = tables
+                .get(&name)
+                .and_then(|table| table.select_where(column, "=", value).ok())
+                .map(|rows| rows.into_iter().map(|row| row.id).collect())
+                .unwrap_or_default();
+            vec![(name, ids)]
+        }
+        Statement::DeleteAll => {
+            let ids = tables
+                .get("users")
+                .map(|table| table.select_all().into_iter().map(|row| row.id).collect())
+                .unwrap_or_default();
+            vec![("users".to_string(), ids)]
+        }
+        _ => Vec::new(),
     };
-    if let Some((table_name, row_id)) = row_lock.as_ref() {
-        if let Err(error) = database_manager.lock_row(table_name, *row_id, session_id) {
+    for (table_name, row_ids) in &row_locks {
+        if let Err(error) = database_manager.lock_rows(table_name, row_ids, session_id) {
             println!("Error: {}", error);
             let _ = database_manager.log_audit(
                 audit_user,
@@ -1886,7 +1912,7 @@ fn execute_authorized_statement(
             );
             return;
         }
-        row_lock_acquired = true;
+        row_lock_acquired |= !row_ids.is_empty();
     }
     match &statement {
         Statement::BeginTransaction if !transaction_was_active => {
@@ -1914,8 +1940,10 @@ fn execute_authorized_statement(
 
     execute_statement(statement, tables, schemas, views, constraints, indexes, tx);
     if row_lock_acquired && !transaction_was_active {
-        if let Some((table_name, row_id)) = row_lock.as_ref() {
-            let _ = database_manager.unlock_row(table_name, *row_id, session_id);
+        for (table_name, row_ids) in &row_locks {
+            for row_id in row_ids {
+                let _ = database_manager.unlock_row(table_name, *row_id, session_id);
+            }
         }
     }
     if transaction_was_active {

@@ -122,6 +122,15 @@ impl DatabaseManager {
         self.row_locks.lock_row(table_name, row_id, session_id)
     }
 
+    pub fn lock_rows(
+        &mut self,
+        table_name: &str,
+        row_ids: &[u32],
+        session_id: &str,
+    ) -> Result<(), String> {
+        self.row_locks.lock_rows(table_name, row_ids, session_id)
+    }
+
     /// Release a row lock for the current session.
     pub fn unlock_row(
         &mut self,

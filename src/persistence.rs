@@ -343,6 +343,29 @@ impl RowLockManager {
         }
     }
 
+    pub fn lock_rows(
+        &mut self,
+        table_name: &str,
+        row_ids: &[u32],
+        session_id: &str,
+    ) -> Result<(), String> {
+        let mut sorted_ids = row_ids.to_vec();
+        sorted_ids.sort_unstable();
+        sorted_ids.dedup();
+
+        let mut acquired = Vec::new();
+        for row_id in &sorted_ids {
+            if let Err(error) = self.lock_row(table_name, *row_id, session_id) {
+                for acquired_id in acquired {
+                    let _ = self.unlock_row(table_name, acquired_id, session_id);
+                }
+                return Err(error);
+            }
+            acquired.push(*row_id);
+        }
+        Ok(())
+    }
+
     pub fn unlock_row(
         &mut self,
         table_name: &str,
@@ -639,6 +662,22 @@ mod tests {
         assert_eq!(lock_manager.get_lock_owner("orders", 2), None);
         assert_eq!(
             lock_manager.get_lock_owner("users", 3),
+            Some("sess_2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_row_lock_manager_batch_lock_is_atomic() {
+        let mut lock_manager = RowLockManager::new();
+        lock_manager.lock_row("users", 2, "sess_2").unwrap();
+
+        assert!(lock_manager
+            .lock_rows("users", &[3, 2, 1], "sess_1")
+            .is_err());
+        assert_eq!(lock_manager.get_lock_owner("users", 1), None);
+        assert_eq!(lock_manager.get_lock_owner("users", 3), None);
+        assert_eq!(
+            lock_manager.get_lock_owner("users", 2),
             Some("sess_2".to_string())
         );
     }
