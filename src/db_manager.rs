@@ -10,7 +10,7 @@ use crate::backup::{BackupManager, BackupMetadata};
 /// - Database lifecycle
 use crate::persistence::{
     AuditEntry, AuditLogger, ConnectionPool, ConnectionSession, DatabaseHealth, DatabaseMetadata,
-    DatabaseStatus, DurabilityConfig, RowLockManager, WriteAheadLog,
+    DatabaseStatus, DurabilityConfig, RowLockInfo, RowLockManager, WriteAheadLog,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -144,6 +144,10 @@ impl DatabaseManager {
     /// Return the current owner of a row lock if one exists.
     pub fn get_row_lock_owner(&self, table_name: &str, row_id: u32) -> Option<String> {
         self.row_locks.get_lock_owner(table_name, row_id)
+    }
+
+    pub fn get_active_row_locks(&self) -> Vec<RowLockInfo> {
+        self.row_locks.active_locks()
     }
 
     pub fn release_row_locks(&mut self, session_id: &str) -> usize {
@@ -324,6 +328,7 @@ impl DatabaseManager {
             backup_count: backup_stats.total_backups,
             backup_total_size: backup_stats.total_size_bytes,
             wal_size: self.get_wal_size(),
+            row_locks_count: self.row_locks.active_locks().len(),
             health_status: self.health.status.clone(),
         }
     }
@@ -370,6 +375,7 @@ pub struct DatabaseStatistics {
     pub backup_count: usize,
     pub backup_total_size: u64,
     pub wal_size: u64,
+    pub row_locks_count: usize,
     pub health_status: DatabaseStatus,
 }
 
@@ -415,6 +421,20 @@ mod tests {
         );
         manager.close_connection(&session_id).unwrap();
         assert_eq!(manager.get_row_lock_owner("users", 7), None);
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn test_statistics_include_active_row_lock_count() {
+        let path = "test_db_lock_statistics";
+        let _ = fs::remove_dir_all(path);
+        let config = DurabilityConfig::default();
+        let mut manager = DatabaseManager::new("test_db", path, 10, config).unwrap();
+        let session_id = manager.create_connection().unwrap();
+
+        manager.lock_row("users", 7, &session_id).unwrap();
+        assert_eq!(manager.get_statistics().row_locks_count, 1);
+        assert_eq!(manager.get_active_row_locks().len(), 1);
         let _ = fs::remove_dir_all(path);
     }
 

@@ -319,6 +319,13 @@ pub struct RowLockManager {
     locks: HashMap<(String, u32), String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowLockInfo {
+    pub table_name: String,
+    pub row_id: u32,
+    pub session_id: String,
+}
+
 impl RowLockManager {
     pub fn new() -> Self {
         Self::default()
@@ -390,6 +397,25 @@ impl RowLockManager {
         self.locks
             .get(&(table_name.to_lowercase(), row_id))
             .cloned()
+    }
+
+    pub fn active_locks(&self) -> Vec<RowLockInfo> {
+        let mut locks: Vec<RowLockInfo> = self
+            .locks
+            .iter()
+            .map(|((table_name, row_id), session_id)| RowLockInfo {
+                table_name: table_name.clone(),
+                row_id: *row_id,
+                session_id: session_id.clone(),
+            })
+            .collect();
+        locks.sort_by(|left, right| {
+            left.table_name
+                .cmp(&right.table_name)
+                .then(left.row_id.cmp(&right.row_id))
+                .then(left.session_id.cmp(&right.session_id))
+        });
+        locks
     }
 
     pub fn unlock_all_for_session(&mut self, session_id: &str) -> usize {
@@ -679,6 +705,29 @@ mod tests {
         assert_eq!(
             lock_manager.get_lock_owner("users", 2),
             Some("sess_2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_row_lock_manager_reports_sorted_active_locks() {
+        let mut lock_manager = RowLockManager::new();
+        lock_manager.lock_row("orders", 4, "sess_2").unwrap();
+        lock_manager.lock_row("users", 2, "sess_1").unwrap();
+
+        assert_eq!(
+            lock_manager.active_locks(),
+            vec![
+                RowLockInfo {
+                    table_name: "orders".to_string(),
+                    row_id: 4,
+                    session_id: "sess_2".to_string(),
+                },
+                RowLockInfo {
+                    table_name: "users".to_string(),
+                    row_id: 2,
+                    session_id: "sess_1".to_string(),
+                },
+            ]
         );
     }
 
