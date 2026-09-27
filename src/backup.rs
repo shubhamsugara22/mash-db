@@ -1,3 +1,6 @@
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 /// Backup and Restore Module for RDS-Ready Database
 ///
 /// Features:
@@ -8,7 +11,7 @@
 /// - Backup verification
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,11 +44,20 @@ pub struct BackupManager {
     backup_directory: PathBuf,
     backups: Vec<BackupMetadata>,
     max_backups: usize,
+    compression_enabled: bool,
 }
 
 impl BackupManager {
     /// Create a new backup manager
     pub fn new(backup_dir: &str, max_backups: usize) -> Result<Self, String> {
+        Self::new_with_compression(backup_dir, max_backups, false)
+    }
+
+    pub fn new_with_compression(
+        backup_dir: &str,
+        max_backups: usize,
+        compression_enabled: bool,
+    ) -> Result<Self, String> {
         let backup_path = Path::new(backup_dir);
 
         // Create backup directory if it doesn't exist
@@ -58,6 +70,7 @@ impl BackupManager {
             backup_directory: backup_path.to_path_buf(),
             backups,
             max_backups,
+            compression_enabled,
         })
     }
 
@@ -78,7 +91,7 @@ impl BackupManager {
             size_bytes: 0,
             tables_backed_up: 0,
             row_count: 0,
-            compressed: false,
+            compressed: self.compression_enabled,
             checksum: String::new(),
         };
 
@@ -90,7 +103,12 @@ impl BackupManager {
         // Write data files
         let mut total_size = 0;
         for (filename, data) in data_files {
-            let file_path = backup_path.join(filename);
+            let stored_filename = if self.compression_enabled {
+                format!("{}.gz", filename)
+            } else {
+                filename.to_string()
+            };
+            let file_path = backup_path.join(stored_filename);
 
             // Create parent directories if needed
             if let Some(parent) = file_path.parent() {
@@ -98,16 +116,30 @@ impl BackupManager {
                     .map_err(|e| format!("Failed to create directory: {}", e))?;
             }
 
-            let mut file = File::create(&file_path)
-                .map_err(|e| format!("Failed to create backup file: {}", e))?;
+            if self.compression_enabled {
+                let file = File::create(&file_path)
+                    .map_err(|e| format!("Failed to create backup file: {}", e))?;
+                let mut encoder = GzEncoder::new(file, Compression::default());
+                encoder
+                    .write_all(&data)
+                    .map_err(|e| format!("Failed to compress backup data: {}", e))?;
+                encoder
+                    .finish()
+                    .map_err(|e| format!("Failed to finish compressed backup: {}", e))?
+                    .sync_all()
+                    .map_err(|e| format!("Failed to sync backup file: {}", e))?;
+            } else {
+                let mut file = File::create(&file_path)
+                    .map_err(|e| format!("Failed to create backup file: {}", e))?;
+                file.write_all(&data)
+                    .map_err(|e| format!("Failed to write backup data: {}", e))?;
+                file.sync_all()
+                    .map_err(|e| format!("Failed to sync backup file: {}", e))?;
+            }
 
-            file.write_all(&data)
-                .map_err(|e| format!("Failed to write backup data: {}", e))?;
-
-            file.sync_all()
-                .map_err(|e| format!("Failed to sync backup file: {}", e))?;
-
-            total_size += data.len() as u64;
+            total_size += fs::metadata(&file_path)
+                .map_err(|e| format!("Failed to inspect backup file: {}", e))?
+                .len();
             backup_metadata.tables_backed_up += 1;
         }
 
@@ -147,7 +179,7 @@ impl BackupManager {
             .map_err(|e| format!("Failed to create restore directory: {}", e))?;
 
         // Copy backup files to restore location
-        Self::copy_directory(&backup_dir, restore_path)?;
+        Self::restore_directory(&backup_dir, Path::new(restore_path), backup.compressed)?;
 
         println!(
             "Successfully restored backup {} (type: {:?}) at {}",
@@ -245,6 +277,49 @@ impl BackupManager {
             }
         }
 
+        Ok(())
+    }
+
+    fn restore_directory(src: &Path, dst: &Path, compressed: bool) -> Result<(), String> {
+        fs::create_dir_all(dst)
+            .map_err(|e| format!("Failed to create restore directory: {}", e))?;
+        for entry in fs::read_dir(src).map_err(|e| format!("Failed to read directory: {}", e))? {
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let source_path = entry.path();
+            let file_name = entry.file_name();
+            if source_path.is_dir() {
+                Self::restore_directory(&source_path, &dst.join(file_name), compressed)?;
+                continue;
+            }
+            if file_name == "metadata.json" {
+                continue;
+            }
+
+            let output_name = if compressed {
+                let name = file_name.to_string_lossy();
+                name.strip_suffix(".gz")
+                    .ok_or_else(|| format!("Compressed backup file has invalid name: {}", name))?
+                    .to_string()
+            } else {
+                file_name.to_string_lossy().into_owned()
+            };
+            let output_path = dst.join(output_name);
+            if compressed {
+                let input = File::open(&source_path)
+                    .map_err(|e| format!("Failed to open compressed backup file: {}", e))?;
+                let mut decoder = GzDecoder::new(input);
+                let mut output = File::create(output_path)
+                    .map_err(|e| format!("Failed to create restored file: {}", e))?;
+                std::io::copy(&mut decoder, &mut output)
+                    .map_err(|e| format!("Failed to decompress backup file: {}", e))?;
+                output
+                    .sync_all()
+                    .map_err(|e| format!("Failed to sync restored file: {}", e))?;
+            } else {
+                fs::copy(&source_path, &output_path)
+                    .map_err(|e| format!("Failed to copy file: {}", e))?;
+            }
+        }
         Ok(())
     }
 
