@@ -440,6 +440,22 @@ mod tests {
     }
 
     #[test]
+    fn test_durability_config_enables_backup_compression() {
+        let path = "test_db_compressed_backup_config";
+        let _ = fs::remove_dir_all(path);
+        let mut config = DurabilityConfig::default();
+        config.compression_enabled = true;
+        let mut manager = DatabaseManager::new("test_db", path, 10, config).unwrap();
+
+        let backup = manager
+            .backup_full(vec![("data.json", b"database data".repeat(100))])
+            .unwrap();
+        assert!(backup.compressed);
+
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
     fn test_database_statistics() {
         let config = DurabilityConfig::default();
         let manager = DatabaseManager::new("test_db", "test_db_path3", 10, config).unwrap();
