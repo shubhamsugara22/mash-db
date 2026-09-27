@@ -11,7 +11,7 @@ use flate2::Compression;
 /// - Backup verification
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -256,30 +256,6 @@ impl BackupManager {
         Ok(())
     }
 
-    /// Copy entire directory recursively
-    fn copy_directory(src: &Path, dst: &str) -> Result<(), String> {
-        let dst_path = Path::new(dst);
-
-        let entries = fs::read_dir(src).map_err(|e| format!("Failed to read directory: {}", e))?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-            let path = entry.path();
-            let file_name = entry.file_name();
-            let dest_path = dst_path.join(&file_name);
-
-            if path.is_dir() {
-                fs::create_dir_all(&dest_path)
-                    .map_err(|e| format!("Failed to create directory: {}", e))?;
-                Self::copy_directory(&path, dest_path.to_str().ok_or("Invalid path".to_string())?)?;
-            } else {
-                fs::copy(&path, &dest_path).map_err(|e| format!("Failed to copy file: {}", e))?;
-            }
-        }
-
-        Ok(())
-    }
-
     fn restore_directory(src: &Path, dst: &Path, compressed: bool) -> Result<(), String> {
         fs::create_dir_all(dst)
             .map_err(|e| format!("Failed to create restore directory: {}", e))?;
@@ -459,6 +435,32 @@ mod tests {
         assert_eq!(
             fs::read(format!("{}/data.json", restore_dir)).unwrap(),
             b"row"
+        );
+
+        let _ = fs::remove_dir_all(backup_dir);
+        let _ = fs::remove_dir_all(restore_dir);
+    }
+
+    #[test]
+    fn test_compressed_backup_restores_original_files() {
+        let backup_dir = "test_backups_compressed";
+        let restore_dir = "test_restore_compressed";
+        let _ = fs::remove_dir_all(backup_dir);
+        let _ = fs::remove_dir_all(restore_dir);
+        let mut manager = BackupManager::new_with_compression(backup_dir, 10, true).unwrap();
+        let contents = b"repeated database content".repeat(100);
+        let backup = manager
+            .backup_full("test_db", vec![("nested/data.json", contents.clone())])
+            .unwrap();
+
+        assert!(backup.compressed);
+        assert!(backup.size_bytes < contents.len() as u64);
+        manager
+            .restore_backup(&backup.backup_id, restore_dir)
+            .unwrap();
+        assert_eq!(
+            fs::read(format!("{}/nested/data.json", restore_dir)).unwrap(),
+            contents
         );
 
         let _ = fs::remove_dir_all(backup_dir);

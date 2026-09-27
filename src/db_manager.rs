@@ -60,9 +60,10 @@ impl DatabaseManager {
 
         // Initialize backup manager
         let backup_dir = db_path_buf.join("backups");
-        let backup_manager = BackupManager::new(
+        let backup_manager = BackupManager::new_with_compression(
             backup_dir.to_str().ok_or("Invalid path".to_string())?,
             config.backup_retention_count,
+            config.compression_enabled,
         )?;
 
         Ok(DatabaseManager {
