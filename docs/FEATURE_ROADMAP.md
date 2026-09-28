@@ -190,7 +190,8 @@
 
 ### 11. Concurrency Control
 - **Multi-Version Concurrency Control (MVCC)**: Non-blocking reads
-- **Row-Level Locking**: Fine-grained locks
+- ✅ **Row-Level Locking**: Fine-grained locks on individual rows
+- ✅ **Lock Timeout Enforcement**: Configurable timeout (default 30s) to prevent indefinite blocking from stale locks; expired locks automatically cleaned up before new acquisitions
 - **Deadlock Detection**: Prevent deadlocks
 - **Isolation Levels**: READ COMMITTED, REPEATABLE READ, etc.
 - **Priority**: MEDIUM

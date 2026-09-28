@@ -351,10 +351,10 @@ impl RowLockManager {
         let expired_count = self
             .locks
             .values()
-            .filter(|record| (now - record.acquired_at) > timeout_secs)
+            .filter(|record| (now - record.acquired_at) >= timeout_secs)
             .count();
         self.locks
-            .retain(|_, record| (now - record.acquired_at) <= timeout_secs);
+            .retain(|_, record| (now - record.acquired_at) < timeout_secs);
         expired_count
     }
 
@@ -436,10 +436,10 @@ impl RowLockManager {
         let mut locks: Vec<RowLockInfo> = self
             .locks
             .iter()
-            .map(|((table_name, row_id), session_id)| RowLockInfo {
+            .map(|((table_name, row_id), record)| RowLockInfo {
                 table_name: table_name.clone(),
                 row_id: *row_id,
-                session_id: session_id.clone(),
+                session_id: record.session_id.clone(),
             })
             .collect();
         locks.sort_by(|left, right| {
@@ -453,7 +453,8 @@ impl RowLockManager {
 
     pub fn unlock_all_for_session(&mut self, session_id: &str) -> usize {
         let before = self.locks.len();
-        self.locks.retain(|_, owner| owner != session_id);
+        self.locks
+            .retain(|_, record| record.session_id != session_id);
         before - self.locks.len()
     }
 }

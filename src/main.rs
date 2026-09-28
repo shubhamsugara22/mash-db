@@ -1899,6 +1899,9 @@ fn execute_authorized_statement(
         }
         _ => Vec::new(),
     };
+    // Clean up any expired locks before acquiring new ones to prevent stale locks from blocking
+    let _cleaned_count = database_manager.cleanup_expired_locks();
+
     for (table_name, row_ids) in &row_locks {
         if let Err(error) = database_manager.lock_rows(table_name, row_ids, session_id) {
             println!("Error: {}", error);
