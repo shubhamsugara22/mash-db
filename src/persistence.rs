@@ -312,11 +312,18 @@ impl DatabaseMetadata {
 /// Row-level lock tracking for optimistic concurrency control.
 ///
 /// Each table/row pair can be owned by at most one session at a time.
+/// Lock acquisition record with timestamp for timeout enforcement
+#[derive(Debug, Clone)]
+struct LockRecord {
+    session_id: String,
+    acquired_at: u64,
+}
+
 /// This enables enforcing a simple single-writer lock while leaving the
 /// rest of the SQL engine unchanged.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RowLockManager {
-    locks: HashMap<(String, u32), String>,
+    locks: HashMap<(String, u32), LockRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -326,9 +333,29 @@ pub struct RowLockInfo {
     pub session_id: String,
 }
 
+impl Default for RowLockManager {
+    fn default() -> Self {
+        RowLockManager {
+            locks: HashMap::new(),
+        }
+    }
+}
+
 impl RowLockManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn check_and_cleanup_expired_locks(&mut self, timeout_secs: u64) -> usize {
+        let now = current_timestamp();
+        let expired_count = self
+            .locks
+            .values()
+            .filter(|record| (now - record.acquired_at) > timeout_secs)
+            .count();
+        self.locks
+            .retain(|_, record| (now - record.acquired_at) <= timeout_secs);
+        expired_count
     }
 
     pub fn lock_row(
@@ -339,12 +366,18 @@ impl RowLockManager {
     ) -> Result<(), String> {
         let key = (table_name.to_lowercase(), row_id);
         match self.locks.get(&key) {
-            Some(owner) if owner != session_id => Err(format!(
+            Some(record) if record.session_id != session_id => Err(format!(
                 "Row {} in table '{}' is already locked by session '{}'",
-                row_id, table_name, owner
+                row_id, table_name, record.session_id
             )),
             _ => {
-                self.locks.insert(key, session_id.to_string());
+                self.locks.insert(
+                    key,
+                    LockRecord {
+                        session_id: session_id.to_string(),
+                        acquired_at: current_timestamp(),
+                    },
+                );
                 Ok(())
             }
         }
@@ -381,9 +414,9 @@ impl RowLockManager {
     ) -> Result<(), String> {
         let key = (table_name.to_lowercase(), row_id);
         match self.locks.get(&key) {
-            Some(owner) if owner != session_id => Err(format!(
+            Some(record) if record.session_id != session_id => Err(format!(
                 "Row {} in table '{}' is held by session '{}' and cannot be released by '{}'",
-                row_id, table_name, owner, session_id
+                row_id, table_name, record.session_id, session_id
             )),
             Some(_) => {
                 self.locks.remove(&key);
@@ -396,7 +429,7 @@ impl RowLockManager {
     pub fn get_lock_owner(&self, table_name: &str, row_id: u32) -> Option<String> {
         self.locks
             .get(&(table_name.to_lowercase(), row_id))
-            .cloned()
+            .map(|record| record.session_id.clone())
     }
 
     pub fn active_locks(&self) -> Vec<RowLockInfo> {
@@ -585,6 +618,7 @@ pub struct DurabilityConfig {
     pub snapshot_interval_seconds: u64, // Auto-snapshot interval
     pub backup_retention_count: usize,  // Keep N backups
     pub compression_enabled: bool,      // Compress backups
+    pub lock_timeout_secs: u64,         // Lock acquisition timeout
 }
 
 impl Default for DurabilityConfig {
@@ -595,6 +629,7 @@ impl Default for DurabilityConfig {
             snapshot_interval_seconds: 3600, // 1 hour
             backup_retention_count: 10,
             compression_enabled: false,
+            lock_timeout_secs: 30, // 30 second default timeout
         }
     }
 }
@@ -737,6 +772,39 @@ mod tests {
         metadata.register_table("users", vec!["id".to_string(), "name".to_string()]);
         assert_eq!(metadata.tables.len(), 1);
         assert!(metadata.tables.contains_key("users"));
+    }
+
+    #[test]
+    fn test_row_lock_manager_tracks_lock_acquisition_time() {
+        let mut lock_manager = RowLockManager::new();
+        lock_manager.lock_row("users", 5, "sess_1").unwrap();
+
+        // Verify lock was recorded with a timestamp
+        assert_eq!(
+            lock_manager.get_lock_owner("users", 5),
+            Some("sess_1".to_string())
+        );
+
+        // Cleanup with a very large timeout should not remove the lock
+        let removed = lock_manager.check_and_cleanup_expired_locks(u64::MAX);
+        assert_eq!(removed, 0);
+        assert_eq!(
+            lock_manager.get_lock_owner("users", 5),
+            Some("sess_1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_row_lock_manager_cleanup_expired_locks() {
+        let mut lock_manager = RowLockManager::new();
+        lock_manager.lock_row("users", 1, "sess_1").unwrap();
+        lock_manager.lock_row("users", 2, "sess_2").unwrap();
+
+        // All locks are very recent, so timeout of 0 should expire them all
+        let removed = lock_manager.check_and_cleanup_expired_locks(0);
+        assert!(removed > 0);
+        assert_eq!(lock_manager.get_lock_owner("users", 1), None);
+        assert_eq!(lock_manager.get_lock_owner("users", 2), None);
     }
 
     #[test]

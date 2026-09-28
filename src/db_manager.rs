@@ -155,6 +155,11 @@ impl DatabaseManager {
         self.row_locks.unlock_all_for_session(session_id)
     }
 
+    pub fn cleanup_expired_locks(&mut self) -> usize {
+        self.row_locks
+            .check_and_cleanup_expired_locks(self.config.lock_timeout_secs)
+    }
+
     /// Log a write operation before executing (for crash recovery)
     pub fn log_write_before(&mut self, table_name: &str, operation: &str) -> Result<(), String> {
         if self.config.wal_enabled {
@@ -452,6 +457,41 @@ mod tests {
             .unwrap();
         assert!(backup.compressed);
 
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn test_lock_timeout_configuration_default() {
+        let config = DurabilityConfig::default();
+        assert_eq!(config.lock_timeout_secs, 30);
+    }
+
+    #[test]
+    fn test_lock_timeout_configuration_custom() {
+        let mut config = DurabilityConfig::default();
+        config.lock_timeout_secs = 60;
+        let manager = DatabaseManager::new("test_db", "test_db_lock_timeout", 10, config).unwrap();
+        assert_eq!(manager.get_config().lock_timeout_secs, 60);
+        let _ = fs::remove_dir_all("test_db_lock_timeout");
+    }
+
+    #[test]
+    fn test_cleanup_expired_locks_integration() {
+        let path = "test_db_cleanup_locks";
+        let _ = fs::remove_dir_all(path);
+        let mut config = DurabilityConfig::default();
+        config.lock_timeout_secs = 0; // Zero timeout = immediate expiration
+        let mut manager = DatabaseManager::new("test_db", path, 10, config).unwrap();
+        let session_id = manager.create_connection().unwrap();
+
+        manager.lock_row("users", 1, &session_id).unwrap();
+        manager.lock_row("orders", 2, &session_id).unwrap();
+
+        // Cleanup should remove all expired locks
+        let removed = manager.cleanup_expired_locks();
+        assert!(removed > 0);
+        assert_eq!(manager.get_row_lock_owner("users", 1), None);
+        assert_eq!(manager.get_row_lock_owner("orders", 2), None);
         let _ = fs::remove_dir_all(path);
     }
 
