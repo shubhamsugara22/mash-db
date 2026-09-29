@@ -160,6 +160,22 @@ impl DatabaseManager {
             .check_and_cleanup_expired_locks(self.config.lock_timeout_secs)
     }
 
+    /// Analyze potential deadlock situations in the current lock state
+    pub fn analyze_deadlock_risk(&self) -> Vec<(String, String)> {
+        self.row_locks.analyze_deadlock_risk()
+    }
+
+    /// Check if a specific lock acquisition would create a deadlock
+    pub fn would_lock_create_deadlock(
+        &self,
+        table_name: &str,
+        row_id: u32,
+        session_id: &str,
+    ) -> bool {
+        self.row_locks
+            .would_create_deadlock(session_id, table_name, row_id)
+    }
+
     /// Log a write operation before executing (for crash recovery)
     pub fn log_write_before(&mut self, table_name: &str, operation: &str) -> Result<(), String> {
         if self.config.wal_enabled {

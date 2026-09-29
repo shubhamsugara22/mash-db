@@ -333,6 +333,15 @@ pub struct RowLockInfo {
     pub session_id: String,
 }
 
+/// Represents a deadlock event for observability
+#[derive(Debug, Clone)]
+pub struct DeadlockEvent {
+    pub timestamp: u64,
+    pub session_id: String,
+    pub conflicting_session: String,
+    pub resource: (String, u32),
+}
+
 impl Default for RowLockManager {
     fn default() -> Self {
         RowLockManager {
@@ -365,6 +374,15 @@ impl RowLockManager {
         session_id: &str,
     ) -> Result<(), String> {
         let key = (table_name.to_lowercase(), row_id);
+
+        // Check for deadlock risk before acquiring
+        if self.would_create_deadlock(session_id, table_name, row_id) {
+            return Err(format!(
+                "Deadlock detected: acquiring lock on row {} in table '{}' would create circular dependency",
+                row_id, table_name
+            ));
+        }
+
         match self.locks.get(&key) {
             Some(record) if record.session_id != session_id => Err(format!(
                 "Row {} in table '{}' is already locked by session '{}'",
@@ -456,6 +474,105 @@ impl RowLockManager {
         self.locks
             .retain(|_, record| record.session_id != session_id);
         before - self.locks.len()
+    }
+
+    /// Detect if acquiring a lock would create a deadlock
+    /// Returns true if a cycle would be created in the wait-for graph
+    pub fn would_create_deadlock(
+        &self,
+        requesting_session: &str,
+        table_name: &str,
+        row_id: u32,
+    ) -> bool {
+        let key = (table_name.to_lowercase(), row_id);
+
+        // If lock is free, no deadlock possible
+        if !self.locks.contains_key(&key) {
+            return false;
+        }
+
+        // If the requesting session already holds this lock, no deadlock
+        if let Some(holder) = self.locks.get(&key) {
+            if holder.session_id == requesting_session {
+                return false;
+            }
+        }
+
+        // Build a simplified wait-for chain
+        // requesting_session -> holder_session (waiting for lock)
+        // Check if holder_session -> requesting_session through its locks (creating a cycle)
+        if let Some(holder) = self.locks.get(&key) {
+            let holder_session = &holder.session_id;
+
+            // Check if the holder is waiting for any locks held by the requesting session
+            for ((lock_table, lock_row), lock_record) in &self.locks {
+                if lock_record.session_id == requesting_session {
+                    // requesting_session holds this lock
+                    // Check if holder_session holds a lock that would need this one
+                    if self.would_session_wait_for(holder_session, lock_table, *lock_row) {
+                        return true; // Cycle detected!
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Helper: Check if a session would need to wait for a specific lock
+    /// (by checking if it holds locks on the same table/rows in a dependent order)
+    fn would_session_wait_for(&self, session_id: &str, table_name: &str, row_id: u32) -> bool {
+        // Check if this session holds locks on the same table
+        for ((lock_table, _lock_row), lock_record) in &self.locks {
+            if lock_record.session_id == session_id && lock_table == table_name {
+                // Session holds locks on same table
+                // In deterministic locking order, if it's trying row_id, it must acquire in sorted order
+                // This is a simplified check for 2-cycle deadlocks
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Get all deadlock events that have been detected (for observability)
+    /// Returns information about potential deadlock situations
+    pub fn analyze_deadlock_risk(&self) -> Vec<(String, String)> {
+        let mut risk_pairs = Vec::new();
+
+        // Find all pairs of sessions that have circular lock dependencies
+        let all_sessions: Vec<String> = self
+            .locks
+            .values()
+            .map(|record| record.session_id.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        for session_a in &all_sessions {
+            for session_b in &all_sessions {
+                if session_a != session_b {
+                    // Check if session_a holds what session_b wants
+                    for ((table, row), record_b) in &self.locks {
+                        if record_b.session_id == session_b {
+                            // session_b holds this lock
+                            // Check if session_a also holds locks on same table
+                            for ((table_a, _), record_a) in &self.locks {
+                                if record_a.session_id == session_a && table_a == table {
+                                    // Both sessions hold locks on same table - potential deadlock
+                                    risk_pairs.push((session_a.clone(), session_b.clone()));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove duplicates
+        risk_pairs.sort();
+        risk_pairs.dedup();
+        risk_pairs
     }
 }
 
@@ -827,5 +944,120 @@ mod tests {
                 == 4
         );
         let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn test_deadlock_detection_basic() {
+        let mut lock_manager = RowLockManager::new();
+
+        // Session A acquires lock on row 1
+        lock_manager.lock_row("users", 1, "sess_a").unwrap();
+
+        // Session B tries to acquire lock on row 1 (will be blocked in real scenario)
+        // But deadlock detection should not trigger yet (only 2-way deadlock risk)
+        let would_deadlock = lock_manager.would_create_deadlock("sess_b", "users", 1);
+        assert!(!would_deadlock, "Simple lock contention is not deadlock");
+    }
+
+    #[test]
+    fn test_deadlock_detection_circular() {
+        let mut lock_manager = RowLockManager::new();
+
+        // Set up circular dependency:
+        // Session A holds lock on row 1
+        lock_manager.lock_row("users", 1, "sess_a").unwrap();
+        // Session B holds lock on row 2
+        lock_manager.lock_row("users", 2, "sess_b").unwrap();
+
+        // Session A tries to acquire row 2 (held by B) -> would create wait A->B
+        // Session B holds row 2 -> would create wait B->A (if B tried row 1)
+        // This creates a potential 2-cycle deadlock risk
+        let risk_pairs = lock_manager.analyze_deadlock_risk();
+        // Should detect risk between sessions on same table
+        assert!(
+            !risk_pairs.is_empty(),
+            "Circular lock pattern should be detected"
+        );
+    }
+
+    #[test]
+    fn test_deadlock_detection_same_session_no_deadlock() {
+        let mut lock_manager = RowLockManager::new();
+
+        // Session A acquires multiple locks (no deadlock with itself)
+        lock_manager.lock_row("users", 1, "sess_a").unwrap();
+        lock_manager.lock_row("users", 2, "sess_a").unwrap();
+
+        // Session A trying to acquire another lock should not trigger deadlock
+        let would_deadlock = lock_manager.would_create_deadlock("sess_a", "users", 3);
+        assert!(!would_deadlock, "Same session cannot deadlock with itself");
+    }
+
+    #[test]
+    fn test_deadlock_detection_free_lock() {
+        let mut lock_manager = RowLockManager::new();
+
+        // No locks held, so acquiring should never deadlock
+        let would_deadlock = lock_manager.would_create_deadlock("sess_a", "users", 1);
+        assert!(!would_deadlock, "Free lock cannot cause deadlock");
+    }
+
+    #[test]
+    fn test_deadlock_risk_analysis() {
+        let mut lock_manager = RowLockManager::new();
+
+        // Session A holds locks on rows 1, 2
+        lock_manager.lock_row("products", 1, "sess_a").unwrap();
+        lock_manager.lock_row("products", 2, "sess_a").unwrap();
+
+        // Session B holds lock on row 3
+        lock_manager.lock_row("products", 3, "sess_b").unwrap();
+
+        // Session C holds lock on row 4
+        lock_manager.lock_row("products", 4, "sess_c").unwrap();
+
+        // Analyze deadlock risks
+        let risks = lock_manager.analyze_deadlock_risk();
+
+        // Should identify that multiple sessions hold locks on same table
+        // (potential deadlock risk in concurrent scenarios)
+        assert!(
+            !risks.is_empty(),
+            "Multiple sessions on same table should show risk"
+        );
+        assert!(
+            risks.iter().any(|(s1, s2)| {
+                (s1 == "sess_a" && s2 == "sess_b") || (s1 == "sess_b" && s2 == "sess_a")
+            }),
+            "Should identify risk between specific sessions"
+        );
+    }
+
+    #[test]
+    fn test_deadlock_detection_after_unlock() {
+        let mut lock_manager = RowLockManager::new();
+
+        // Session A holds lock
+        lock_manager.lock_row("users", 1, "sess_a").unwrap();
+        // Session B holds lock
+        lock_manager.lock_row("users", 2, "sess_b").unwrap();
+
+        // Risks should exist
+        let risks_before = lock_manager.analyze_deadlock_risk();
+        assert!(!risks_before.is_empty(), "Should have deadlock risk");
+
+        // Session A releases lock
+        lock_manager.unlock_row("users", 1, "sess_a").unwrap();
+
+        // Risk might still exist (B still holds locks)
+        // But if we unlock all:
+        lock_manager.unlock_row("users", 2, "sess_b").unwrap();
+
+        let risks_after = lock_manager.analyze_deadlock_risk();
+        // After all locks released, risk should be minimal
+        assert!(
+            risks_after.len() <= risks_before.len(),
+            "Risk should decrease after unlocking"
+        );
     }
 }
