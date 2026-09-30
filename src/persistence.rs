@@ -552,12 +552,12 @@ impl RowLockManager {
             for session_b in &all_sessions {
                 if session_a != session_b {
                     // Check if session_a holds what session_b wants
-                    for ((table, row), record_b) in &self.locks {
-                        if record_b.session_id == session_b {
+                    for ((table, _row), record_b) in &self.locks {
+                        if &record_b.session_id == session_b {
                             // session_b holds this lock
                             // Check if session_a also holds locks on same table
                             for ((table_a, _), record_a) in &self.locks {
-                                if record_a.session_id == session_a && table_a == table {
+                                if &record_a.session_id == session_a && table_a == table {
                                     // Both sessions hold locks on same table - potential deadlock
                                     risk_pairs.push((session_a.clone(), session_b.clone()));
                                     break;
