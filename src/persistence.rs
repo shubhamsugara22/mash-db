@@ -47,6 +47,55 @@ pub enum LogEntry {
     },
 }
 
+/// Transaction Isolation Levels
+/// Defines the consistency guarantee for concurrent transactions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IsolationLevel {
+    /// Allows dirty reads (no locking)
+    /// Fastest but least safe - other transactions may see uncommitted changes
+    ReadUncommitted,
+
+    /// Prevents dirty reads (read locks only during operation)
+    /// Default mode - balances safety and performance
+    ReadCommitted,
+
+    /// Prevents non-repeatable reads (row locks held for transaction duration)
+    /// Stronger isolation - rows read at transaction start stay consistent
+    RepeatableRead,
+
+    /// Full isolation (serializes transactions)
+    /// Strongest isolation - acts as if transactions run one at a time
+    Serializable,
+}
+
+impl IsolationLevel {
+    /// Returns the numeric level (0-3) for comparison
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            IsolationLevel::ReadUncommitted => 0,
+            IsolationLevel::ReadCommitted => 1,
+            IsolationLevel::RepeatableRead => 2,
+            IsolationLevel::Serializable => 3,
+        }
+    }
+
+    /// Human-readable name
+    pub fn name(&self) -> &'static str {
+        match self {
+            IsolationLevel::ReadUncommitted => "READ UNCOMMITTED",
+            IsolationLevel::ReadCommitted => "READ COMMITTED",
+            IsolationLevel::RepeatableRead => "REPEATABLE READ",
+            IsolationLevel::Serializable => "SERIALIZABLE",
+        }
+    }
+}
+
+impl Default for IsolationLevel {
+    fn default() -> Self {
+        IsolationLevel::ReadCommitted // Sensible default: prevents dirty reads
+    }
+}
+
 /// Write-Ahead Log for crash recovery
 #[derive(Debug)]
 pub struct WriteAheadLog {
@@ -324,6 +373,7 @@ struct LockRecord {
 #[derive(Debug)]
 pub struct RowLockManager {
     locks: HashMap<(String, u32), LockRecord>,
+    isolation_level_overrides: HashMap<String, IsolationLevel>, // Per-session isolation levels
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -346,6 +396,7 @@ impl Default for RowLockManager {
     fn default() -> Self {
         RowLockManager {
             locks: HashMap::new(),
+            isolation_level_overrides: HashMap::new(),
         }
     }
 }
@@ -353,6 +404,46 @@ impl Default for RowLockManager {
 impl RowLockManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the isolation level for a specific session
+    pub fn set_session_isolation_level(&mut self, session_id: String, level: IsolationLevel) {
+        self.isolation_level_overrides.insert(session_id, level);
+    }
+
+    /// Get the isolation level for a session (returns default if not overridden)
+    pub fn get_session_isolation_level(&self, session_id: &str) -> IsolationLevel {
+        self.isolation_level_overrides
+            .get(session_id)
+            .copied()
+            .unwrap_or(IsolationLevel::ReadCommitted)
+    }
+
+    /// Clear isolation level override for a session (on disconnect/cleanup)
+    pub fn clear_session_isolation_level(&mut self, session_id: &str) {
+        self.isolation_level_overrides.remove(session_id);
+    }
+
+    /// Check if a read operation requires a lock based on isolation level
+    pub fn requires_read_lock(&self, session_id: &str) -> bool {
+        let level = self.get_session_isolation_level(session_id);
+        match level {
+            IsolationLevel::ReadUncommitted => false, // No locks for dirty reads
+            IsolationLevel::ReadCommitted => true,    // Lock during read
+            IsolationLevel::RepeatableRead => true,   // Lock for entire transaction
+            IsolationLevel::Serializable => true,     // Full serialization with locks
+        }
+    }
+
+    /// Check if a write operation requires escalated locking based on isolation level
+    pub fn requires_write_lock_escalation(&self, session_id: &str) -> bool {
+        let level = self.get_session_isolation_level(session_id);
+        match level {
+            IsolationLevel::ReadUncommitted => false, // No escalation needed
+            IsolationLevel::ReadCommitted => false,   // Standard write lock sufficient
+            IsolationLevel::RepeatableRead => true,   // Escalate to range lock
+            IsolationLevel::Serializable => true,     // Full serialization locks
+        }
     }
 
     pub fn check_and_cleanup_expired_locks(&mut self, timeout_secs: u64) -> usize {
@@ -584,6 +675,7 @@ pub struct ConnectionSession {
     pub connected_at: u64,
     pub last_activity: u64,
     pub idle_timeout_secs: u64,
+    pub isolation_level: IsolationLevel, // Current transaction isolation level for this session
 }
 
 impl ConnectionSession {
@@ -594,7 +686,8 @@ impl ConnectionSession {
             username: None,
             connected_at: now,
             last_activity: now,
-            idle_timeout_secs: 3600, // 1 hour default
+            idle_timeout_secs: 3600,                        // 1 hour default
+            isolation_level: IsolationLevel::ReadCommitted, // Default isolation level
         }
     }
 
@@ -609,6 +702,10 @@ impl ConnectionSession {
 
     pub fn set_user(&mut self, username: String) {
         self.username = Some(username);
+    }
+
+    pub fn set_isolation_level(&mut self, level: IsolationLevel) {
+        self.isolation_level = level;
     }
 }
 
@@ -731,12 +828,13 @@ impl DatabaseHealth {
 /// Durability configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DurabilityConfig {
-    pub fsync_on_write: bool,           // Ensure writes reach disk
-    pub wal_enabled: bool,              // Write-ahead logging
-    pub snapshot_interval_seconds: u64, // Auto-snapshot interval
-    pub backup_retention_count: usize,  // Keep N backups
-    pub compression_enabled: bool,      // Compress backups
-    pub lock_timeout_secs: u64,         // Lock acquisition timeout
+    pub fsync_on_write: bool,                    // Ensure writes reach disk
+    pub wal_enabled: bool,                       // Write-ahead logging
+    pub snapshot_interval_seconds: u64,          // Auto-snapshot interval
+    pub backup_retention_count: usize,           // Keep N backups
+    pub compression_enabled: bool,               // Compress backups
+    pub lock_timeout_secs: u64,                  // Lock acquisition timeout
+    pub default_isolation_level: IsolationLevel, // Default transaction isolation level
 }
 
 impl Default for DurabilityConfig {
@@ -748,6 +846,7 @@ impl Default for DurabilityConfig {
             backup_retention_count: 10,
             compression_enabled: false,
             lock_timeout_secs: 30, // 30 second default timeout
+            default_isolation_level: IsolationLevel::ReadCommitted, // Prevents dirty reads by default
         }
     }
 }
@@ -1058,6 +1157,200 @@ mod tests {
         assert!(
             risks_after.len() <= risks_before.len(),
             "Risk should decrease after unlocking"
+        );
+    }
+
+    // ============================================================
+    // Isolation Level Tests (8 tests total)
+    // ============================================================
+
+    #[test]
+    fn test_isolation_level_default() {
+        let level = IsolationLevel::default();
+        assert_eq!(level, IsolationLevel::ReadCommitted);
+        assert_eq!(level.as_u8(), 1);
+    }
+
+    #[test]
+    fn test_isolation_level_hierarchy() {
+        let levels = vec![
+            (IsolationLevel::ReadUncommitted, 0),
+            (IsolationLevel::ReadCommitted, 1),
+            (IsolationLevel::RepeatableRead, 2),
+            (IsolationLevel::Serializable, 3),
+        ];
+
+        for (level, expected_value) in levels {
+            assert_eq!(level.as_u8(), expected_value);
+        }
+    }
+
+    #[test]
+    fn test_isolation_level_names() {
+        assert_eq!(IsolationLevel::ReadUncommitted.name(), "READ UNCOMMITTED");
+        assert_eq!(IsolationLevel::ReadCommitted.name(), "READ COMMITTED");
+        assert_eq!(IsolationLevel::RepeatableRead.name(), "REPEATABLE READ");
+        assert_eq!(IsolationLevel::Serializable.name(), "SERIALIZABLE");
+    }
+
+    #[test]
+    fn test_connection_session_isolation_level() {
+        let mut session = ConnectionSession::new("sess_1".to_string());
+
+        // Default isolation level
+        assert_eq!(session.isolation_level, IsolationLevel::ReadCommitted);
+
+        // Change isolation level
+        session.set_isolation_level(IsolationLevel::RepeatableRead);
+        assert_eq!(session.isolation_level, IsolationLevel::RepeatableRead);
+
+        // Change again
+        session.set_isolation_level(IsolationLevel::Serializable);
+        assert_eq!(session.isolation_level, IsolationLevel::Serializable);
+    }
+
+    #[test]
+    fn test_durability_config_default_isolation() {
+        let config = DurabilityConfig::default();
+        assert_eq!(
+            config.default_isolation_level,
+            IsolationLevel::ReadCommitted
+        );
+    }
+
+    #[test]
+    fn test_row_lock_manager_isolation_level_management() {
+        let mut lock_manager = RowLockManager::new();
+
+        // Default isolation level for unknown session
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_a"),
+            IsolationLevel::ReadCommitted
+        );
+
+        // Set isolation level for session
+        lock_manager
+            .set_session_isolation_level("sess_a".to_string(), IsolationLevel::Serializable);
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_a"),
+            IsolationLevel::Serializable
+        );
+
+        // Different session has different level
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_b"),
+            IsolationLevel::ReadCommitted
+        );
+
+        // Clear isolation level
+        lock_manager.clear_session_isolation_level("sess_a");
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_a"),
+            IsolationLevel::ReadCommitted
+        );
+    }
+
+    #[test]
+    fn test_read_lock_requirements_by_isolation() {
+        let mut lock_manager = RowLockManager::new();
+
+        // READ UNCOMMITTED: no read locks
+        lock_manager
+            .set_session_isolation_level("sess_a".to_string(), IsolationLevel::ReadUncommitted);
+        assert!(!lock_manager.requires_read_lock("sess_a"));
+
+        // READ COMMITTED: read locks required
+        lock_manager
+            .set_session_isolation_level("sess_b".to_string(), IsolationLevel::ReadCommitted);
+        assert!(lock_manager.requires_read_lock("sess_b"));
+
+        // REPEATABLE READ: read locks required
+        lock_manager
+            .set_session_isolation_level("sess_c".to_string(), IsolationLevel::RepeatableRead);
+        assert!(lock_manager.requires_read_lock("sess_c"));
+
+        // SERIALIZABLE: read locks required
+        lock_manager
+            .set_session_isolation_level("sess_d".to_string(), IsolationLevel::Serializable);
+        assert!(lock_manager.requires_read_lock("sess_d"));
+    }
+
+    #[test]
+    fn test_write_lock_escalation_requirements() {
+        let mut lock_manager = RowLockManager::new();
+
+        // READ UNCOMMITTED: no escalation
+        lock_manager
+            .set_session_isolation_level("sess_a".to_string(), IsolationLevel::ReadUncommitted);
+        assert!(!lock_manager.requires_write_lock_escalation("sess_a"));
+
+        // READ COMMITTED: no escalation (standard write lock sufficient)
+        lock_manager
+            .set_session_isolation_level("sess_b".to_string(), IsolationLevel::ReadCommitted);
+        assert!(!lock_manager.requires_write_lock_escalation("sess_b"));
+
+        // REPEATABLE READ: escalation required
+        lock_manager
+            .set_session_isolation_level("sess_c".to_string(), IsolationLevel::RepeatableRead);
+        assert!(lock_manager.requires_write_lock_escalation("sess_c"));
+
+        // SERIALIZABLE: escalation required
+        lock_manager
+            .set_session_isolation_level("sess_d".to_string(), IsolationLevel::Serializable);
+        assert!(lock_manager.requires_write_lock_escalation("sess_d"));
+    }
+
+    #[test]
+    fn test_isolation_level_consistency_across_sessions() {
+        let mut lock_manager = RowLockManager::new();
+
+        // Set different isolation levels for multiple sessions
+        lock_manager
+            .set_session_isolation_level("sess_1".to_string(), IsolationLevel::ReadUncommitted);
+        lock_manager
+            .set_session_isolation_level("sess_2".to_string(), IsolationLevel::ReadCommitted);
+        lock_manager
+            .set_session_isolation_level("sess_3".to_string(), IsolationLevel::RepeatableRead);
+        lock_manager
+            .set_session_isolation_level("sess_4".to_string(), IsolationLevel::Serializable);
+
+        // Verify each session maintains its own level
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_1"),
+            IsolationLevel::ReadUncommitted
+        );
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_2"),
+            IsolationLevel::ReadCommitted
+        );
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_3"),
+            IsolationLevel::RepeatableRead
+        );
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_4"),
+            IsolationLevel::Serializable
+        );
+
+        // Verify new sessions still get default
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_new"),
+            IsolationLevel::ReadCommitted
+        );
+
+        // Clearing one doesn't affect others
+        lock_manager.clear_session_isolation_level("sess_2");
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_2"),
+            IsolationLevel::ReadCommitted
+        );
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_1"),
+            IsolationLevel::ReadUncommitted
+        );
+        assert_eq!(
+            lock_manager.get_session_isolation_level("sess_3"),
+            IsolationLevel::RepeatableRead
         );
     }
 }
