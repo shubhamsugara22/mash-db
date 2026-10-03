@@ -10,7 +10,7 @@ use crate::backup::{BackupManager, BackupMetadata};
 /// - Database lifecycle
 use crate::persistence::{
     AuditEntry, AuditLogger, ConnectionPool, ConnectionSession, DatabaseHealth, DatabaseMetadata,
-    DatabaseStatus, DurabilityConfig, RowLockInfo, RowLockManager, WriteAheadLog,
+    DatabaseStatus, DurabilityConfig, IsolationLevel, RowLockInfo, RowLockManager, WriteAheadLog,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -375,6 +375,32 @@ impl DatabaseManager {
 
         println!("Database checkpoint completed successfully");
         Ok(())
+    }
+
+    /// Set isolation level for a session
+    pub fn set_session_isolation_level(
+        &mut self,
+        session_id: &str,
+        level: IsolationLevel,
+    ) -> Result<(), String> {
+        self.row_locks
+            .set_session_isolation_level(session_id.to_string(), level);
+        Ok(())
+    }
+
+    /// Get isolation level for a session
+    pub fn get_session_isolation_level(&self, session_id: &str) -> IsolationLevel {
+        self.row_locks.get_session_isolation_level(session_id)
+    }
+
+    /// Check if session requires read locks for its isolation level
+    pub fn requires_read_lock_for_session(&self, session_id: &str) -> bool {
+        self.row_locks.requires_read_lock(session_id)
+    }
+
+    /// Check if session requires write lock escalation for its isolation level
+    pub fn requires_write_lock_escalation_for_session(&self, session_id: &str) -> bool {
+        self.row_locks.requires_write_lock_escalation(session_id)
     }
 
     /// Get database path
