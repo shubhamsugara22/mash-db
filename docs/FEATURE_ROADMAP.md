@@ -193,7 +193,11 @@
 - ✅ **Row-Level Locking**: Fine-grained locks on individual rows
 - ✅ **Lock Timeout Enforcement**: Configurable timeout (default 30s) to prevent indefinite blocking from stale locks; expired locks automatically cleaned up before new acquisitions
 - ✅ **Deadlock Detection**: Cycle detection in wait-for graph prevents circular lock dependencies; blocks deadlock-creating acquisitions early
-- **Isolation Levels**: READ COMMITTED, REPEATABLE READ, etc.
+- ✅ **Isolation Levels**: Per-session isolation level support with four SQL-standard levels:
+  - READ UNCOMMITTED (level 0): No read locks, fastest but least safe
+  - READ COMMITTED (level 1): Prevents dirty reads, default level
+  - REPEATABLE READ (level 2): Prevents dirty and non-repeatable reads with lock escalation
+  - SERIALIZABLE (level 3): Highest safety level with full write lock escalation
 - **Priority**: MEDIUM
 - **Estimated Effort**: 4-5 weeks
 
