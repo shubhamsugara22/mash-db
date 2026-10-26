@@ -103,7 +103,10 @@ pub struct MvccTransaction<K, V> {
     writes: HashMap<K, Option<V>>,
 }
 
-impl<K, V> MvccTransaction<K, V> {
+impl<K, V> MvccTransaction<K, V>
+where
+    K: Eq + std::hash::Hash,
+{
     pub fn snapshot_version(&self) -> u64 {
         self.snapshot_version
     }
@@ -990,6 +993,91 @@ fn uuid_stub() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_mvcc_snapshot_reads_keep_committed_value() {
+        let mut store = MvccStore::default();
+        let mut seed = store.begin();
+        seed.write("record", "initial".to_string());
+        store.commit(seed).unwrap();
+
+        let old_snapshot = store.begin();
+        let mut writer = store.begin();
+        writer.write("record", "updated".to_string());
+        store.commit(writer).unwrap();
+
+        assert_eq!(
+            store.read(&old_snapshot, &"record"),
+            Some("initial".to_string())
+        );
+        let new_snapshot = store.begin();
+        assert_eq!(
+            store.read(&new_snapshot, &"record"),
+            Some("updated".to_string())
+        );
+    }
+
+    #[test]
+    fn test_mvcc_uncommitted_writes_are_private() {
+        let mut store = MvccStore::default();
+        let mut writer = store.begin();
+        writer.write("record", "private".to_string());
+
+        let reader = store.begin();
+        assert_eq!(store.read(&reader, &"record"), None);
+        assert_eq!(store.read(&writer, &"record"), Some("private".to_string()));
+    }
+
+    #[test]
+    fn test_mvcc_rejects_concurrent_write_conflict() {
+        let mut store = MvccStore::default();
+        let mut first = store.begin();
+        let mut second = store.begin();
+        first.write("record", "first".to_string());
+        second.write("record", "second".to_string());
+
+        store.commit(first).unwrap();
+        assert!(matches!(
+            store.commit(second),
+            Err(MvccCommitError::WriteConflict { key: "record", .. })
+        ));
+    }
+
+    #[test]
+    fn test_mvcc_allows_commits_to_independent_keys() {
+        let mut store = MvccStore::default();
+        let mut first = store.begin();
+        let mut second = store.begin();
+        first.write("first", 1);
+        second.write("second", 2);
+
+        store.commit(first).unwrap();
+        store.commit(second).unwrap();
+
+        let reader = store.begin();
+        assert_eq!(store.read(&reader, &"first"), Some(1));
+        assert_eq!(store.read(&reader, &"second"), Some(2));
+    }
+
+    #[test]
+    fn test_mvcc_delete_is_a_versioned_tombstone() {
+        let mut store = MvccStore::default();
+        let mut seed = store.begin();
+        seed.write("record", "value".to_string());
+        store.commit(seed).unwrap();
+
+        let old_snapshot = store.begin();
+        let mut deleter = store.begin();
+        deleter.delete("record");
+        store.commit(deleter).unwrap();
+
+        assert_eq!(
+            store.read(&old_snapshot, &"record"),
+            Some("value".to_string())
+        );
+        let new_snapshot = store.begin();
+        assert_eq!(store.read(&new_snapshot, &"record"), None);
+    }
 
     #[test]
     fn test_write_ahead_log_creation() {
