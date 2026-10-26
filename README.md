@@ -100,14 +100,14 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
 - **Data Validation** - Column value length checks
 - **Persistence** - Save/load tables to/from JSON files
 - **Schema Registry** - Tracks column schemas for each table, persists to schemas.json
-- **Concurrency Control Components** - Row-level locks, lock timeouts, deadlock detection, and per-session isolation-level APIs (READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE)
+- **Concurrency Control Components** - Row-level locks, lock timeouts, deadlock detection, per-session isolation-level APIs, and an in-memory MVCC engine foundation
 - **Backward Compatibility** - Original (id, username, email) fixed schema still fully supported
 - **Multiple Table Support** - Different tables can have completely different schemas
 - **Automated Testing** - Run `cargo test` to execute the current unit and integration test suites
 
 ## Deployment and Operations
 
-See [Production Deployment and Testing](docs/PRODUCTION_DEPLOYMENT_AND_TESTING.md) for release builds, staging validation, rollout, backups, and rollback. See [Isolation Levels Implementation](docs/ISOLATION_LEVELS_IMPLEMENTATION.md) for the isolation-level API and design.
+See [Production Deployment and Testing](docs/PRODUCTION_DEPLOYMENT_AND_TESTING.md) for release builds, staging validation, rollout, backups, and rollback. See [Isolation Levels Implementation](docs/ISOLATION_LEVELS_IMPLEMENTATION.md) for the isolation-level API and design, and [MVCC Implementation](docs/MVCC_IMPLEMENTATION.md) for the current MVCC foundation and remaining integration work.
 
 **Deployment limitation:** Mash DB currently runs as a local interactive REPL, not as a network database service. Its concurrency-control components do not make the executable suitable for concurrent multi-user or multi-process production access. Review the deployment guide before using it with production data.
 

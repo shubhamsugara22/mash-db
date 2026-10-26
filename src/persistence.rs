@@ -1019,7 +1019,7 @@ mod tests {
 
     #[test]
     fn test_mvcc_uncommitted_writes_are_private() {
-        let mut store = MvccStore::default();
+        let store = MvccStore::default();
         let mut writer = store.begin();
         writer.write("record", "private".to_string());
 

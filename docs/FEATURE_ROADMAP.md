@@ -189,7 +189,7 @@
 - **Estimated Effort**: 3-4 weeks
 
 ### 11. Concurrency Control
-- **Multi-Version Concurrency Control (MVCC)**: Non-blocking reads
+- ✅ **MVCC Engine Foundation**: In-memory snapshot reads, private writes, tombstones, and write-write conflict detection; SQL transaction integration, persistence, and version cleanup remain planned
 - ✅ **Row-Level Locking**: Fine-grained locks on individual rows
 - ✅ **Lock Timeout Enforcement**: Configurable timeout (default 30s) to prevent indefinite blocking from stale locks; expired locks automatically cleaned up before new acquisitions
 - ✅ **Deadlock Detection**: Cycle detection in wait-for graph prevents circular lock dependencies; blocks deadlock-creating acquisitions early
