@@ -90,6 +90,128 @@ impl IsolationLevel {
     }
 }
 
+#[derive(Debug, Clone)]
+struct MvccVersion<V> {
+    version: u64,
+    value: Option<V>,
+}
+
+/// A transaction reads from a fixed snapshot and stages private writes.
+#[derive(Debug, Clone)]
+pub struct MvccTransaction<K, V> {
+    snapshot_version: u64,
+    writes: HashMap<K, Option<V>>,
+}
+
+impl<K, V> MvccTransaction<K, V> {
+    pub fn snapshot_version(&self) -> u64 {
+        self.snapshot_version
+    }
+
+    pub fn write(&mut self, key: K, value: V) {
+        self.writes.insert(key, Some(value));
+    }
+
+    pub fn delete(&mut self, key: K) {
+        self.writes.insert(key, None);
+    }
+}
+
+/// In-memory MVCC store with snapshot reads and snapshot-isolation write conflicts.
+/// This primitive is not yet wired into the REPL or persisted to disk.
+#[derive(Debug, Clone)]
+pub struct MvccStore<K, V> {
+    current_version: u64,
+    versions: HashMap<K, Vec<MvccVersion<V>>>,
+}
+
+impl<K, V> Default for MvccStore<K, V> {
+    fn default() -> Self {
+        Self {
+            current_version: 0,
+            versions: HashMap::new(),
+        }
+    }
+}
+
+impl<K, V> MvccStore<K, V>
+where
+    K: Eq + std::hash::Hash + Clone,
+    V: Clone,
+{
+    pub fn begin(&self) -> MvccTransaction<K, V> {
+        MvccTransaction {
+            snapshot_version: self.current_version,
+            writes: HashMap::new(),
+        }
+    }
+
+    pub fn read(&self, transaction: &MvccTransaction<K, V>, key: &K) -> Option<V> {
+        if let Some(value) = transaction.writes.get(key) {
+            return value.clone();
+        }
+
+        self.versions
+            .get(key)?
+            .iter()
+            .rev()
+            .find(|entry| entry.version <= transaction.snapshot_version)
+            .and_then(|entry| entry.value.clone())
+    }
+
+    pub fn commit(
+        &mut self,
+        transaction: MvccTransaction<K, V>,
+    ) -> Result<u64, MvccCommitError<K>> {
+        for key in transaction.writes.keys() {
+            let latest_version = self
+                .versions
+                .get(key)
+                .and_then(|entries| entries.last())
+                .map(|entry| entry.version)
+                .unwrap_or(0);
+            if latest_version > transaction.snapshot_version {
+                return Err(MvccCommitError::WriteConflict {
+                    key: key.clone(),
+                    snapshot_version: transaction.snapshot_version,
+                    latest_version,
+                });
+            }
+        }
+
+        if transaction.writes.is_empty() {
+            return Ok(self.current_version);
+        }
+
+        let commit_version = self
+            .current_version
+            .checked_add(1)
+            .ok_or(MvccCommitError::VersionOverflow)?;
+        for (key, value) in transaction.writes {
+            self.versions.entry(key).or_default().push(MvccVersion {
+                version: commit_version,
+                value,
+            });
+        }
+        self.current_version = commit_version;
+        Ok(commit_version)
+    }
+
+    pub fn current_version(&self) -> u64 {
+        self.current_version
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MvccCommitError<K> {
+    WriteConflict {
+        key: K,
+        snapshot_version: u64,
+        latest_version: u64,
+    },
+    VersionOverflow,
+}
+
 impl Default for IsolationLevel {
     fn default() -> Self {
         IsolationLevel::ReadCommitted // Sensible default: prevents dirty reads
