@@ -69,9 +69,9 @@ impl AuthCatalog {
     }
 
     pub fn verify_password(&self, username: &str, password: &str) -> bool {
-        let username = username.to_lowercase();
-        self.accounts
-            .get(&username)
+        normalize_identifier(username)
+            .ok()
+            .and_then(|username| self.accounts.get(&username))
             .and_then(|account| PasswordHash::new(&account.password_hash).ok())
             .map(|hash| {
                 Argon2::default()
@@ -207,6 +207,14 @@ mod tests {
         let account = catalog.accounts.get("alice").unwrap();
         assert!(!account.password_hash.contains("secret"));
         assert!(account.password_hash.starts_with("$argon2"));
+    }
+
+    #[test]
+    fn password_verification_normalizes_username_like_account_creation() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("Alice", "secret", "reader").unwrap();
+
+        assert!(catalog.verify_password("  ALICE  ", "secret"));
     }
 
     #[test]
