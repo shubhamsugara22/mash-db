@@ -519,6 +519,7 @@ enum Statement {
     },
     ShowTables,
     ShowIndexes,
+    ShowUsers,
 }
 
 fn print_prompt() {
@@ -1678,6 +1679,7 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::ShowStats { .. }
         | Statement::ShowTables
         | Statement::ShowIndexes
+        | Statement::ShowUsers
         | Statement::BeginTransaction
         | Statement::CommitTransaction
         | Statement::RollbackTransaction
@@ -1777,6 +1779,7 @@ fn audit_target(statement: &Statement) -> (&'static str, Option<String>) {
         Statement::Describe { table_name } => ("DESCRIBE", Some(table_name.to_lowercase())),
         Statement::ShowTables => ("SHOW TABLES", None),
         Statement::ShowIndexes => ("SHOW INDEXES", None),
+        Statement::ShowUsers => ("SHOW USERS", None),
         Statement::Select { from_table, .. }
         | Statement::SelectWhere { from_table, .. }
         | Statement::SelectWithCTE { from_table, .. }
@@ -1810,6 +1813,23 @@ fn collect_backup_files(tables: &HashMap<String, Table>) -> Vec<(String, Vec<u8>
         }
     }
     files
+}
+
+fn list_users_for_admin(session: &SessionState) -> Option<Vec<(String, String)>> {
+    let username = session.current_user.as_deref()?.trim().to_lowercase();
+    let account = session.catalog.accounts.get(&username)?;
+    if account.role != "admin" {
+        return None;
+    }
+
+    let mut users: Vec<(String, String)> = session
+        .catalog
+        .accounts
+        .values()
+        .map(|account| (account.username.clone(), account.role.clone()))
+        .collect();
+    users.sort_by(|left, right| left.0.cmp(&right.0));
+    Some(users)
 }
 
 fn execute_authorized_statement(
@@ -1859,6 +1879,31 @@ fn execute_authorized_statement(
                 return;
             }
         }
+    }
+
+    if let Statement::ShowUsers = &statement {
+        let users = list_users_for_admin(session);
+        if let Some(users) = &users {
+            if users.is_empty() {
+                println!("No users found.");
+            } else {
+                println!("Users:");
+                for (username, role) in users {
+                    println!("  {} ({})", username, role);
+                }
+            }
+        } else {
+            println!("Error: Administrator login required");
+        }
+        let _ = database_manager.log_audit(
+            audit_user,
+            session_id,
+            audit_operation,
+            audit_table.as_deref(),
+            users.is_some(),
+            users.is_none().then_some("administrator login required"),
+        );
+        return;
     }
 
     let write_target = persistence_write_target(&statement);
@@ -2381,6 +2426,8 @@ fn prepare_statement(input: &str) -> PrepareResult {
         PrepareResult::Success(Statement::ShowStats { table_name })
     } else if upper.starts_with("SHOW TABLES") {
         PrepareResult::Success(Statement::ShowTables)
+    } else if upper == "SHOW USERS" {
+        PrepareResult::Success(Statement::ShowUsers)
     } else if upper.starts_with("SHOW INDEXES") || upper.starts_with("SHOW INDEX") {
         PrepareResult::Success(Statement::ShowIndexes)
     } else if upper.starts_with("CREATE INDEX") {
@@ -4908,6 +4955,9 @@ fn execute_statement(
                     println!("  {}", name);
                 }
             }
+        }
+        Statement::ShowUsers => {
+            println!("Error: SHOW USERS must be authorized before execution");
         }
         Statement::ShowIndexes => {
             if indexes.is_empty() {
