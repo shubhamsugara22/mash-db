@@ -5727,6 +5727,40 @@ fn main() {
 mod tests {
     use super::*;
 
+    #[test]
+    fn show_users_statement_is_recognized() {
+        assert!(matches!(
+            prepare_statement("SHOW USERS"),
+            PrepareResult::Success(Statement::ShowUsers)
+        ));
+    }
+
+    #[test]
+    fn show_users_requires_admin_and_returns_sorted_safe_summaries() {
+        let mut catalog = auth::AuthCatalog::default();
+        catalog.create_account("zoe", "secret", "reader").unwrap();
+        catalog.create_account("admin", "secret", "admin").unwrap();
+        catalog.create_account("alice", "secret", "writer").unwrap();
+
+        let anonymous = SessionState::new(catalog.clone());
+        assert!(list_users_for_admin(&anonymous).is_none());
+
+        let mut regular_user = SessionState::new(catalog.clone());
+        regular_user.set_current_user("zoe".to_string());
+        assert!(list_users_for_admin(&regular_user).is_none());
+
+        let mut administrator = SessionState::new(catalog);
+        administrator.set_current_user("ADMIN".to_string());
+        assert_eq!(
+            list_users_for_admin(&administrator),
+            Some(vec![
+                ("admin".to_string(), "admin".to_string()),
+                ("alice".to_string(), "writer".to_string()),
+                ("zoe".to_string(), "reader".to_string()),
+            ])
+        );
+    }
+
     fn default_schema() -> Vec<String> {
         vec![
             "id".to_string(),
