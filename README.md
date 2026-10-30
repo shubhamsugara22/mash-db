@@ -101,6 +101,7 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
 - **Persistence** - Save/load tables to/from JSON files
 - **Schema Registry** - Tracks column schemas for each table, persists to schemas.json
 - **Admin User Listing** - `SHOW USERS` lists usernames and roles for authenticated administrators; password hashes are never displayed
+- **Grant Inspection** - `SHOW GRANTS` lists your own grants; admins can use `SHOW GRANTS FOR username` to inspect another account
 - **Concurrency Control Components** - Row-level locks, lock timeouts, deadlock detection, per-session isolation-level APIs, and an in-memory MVCC engine foundation
 - **Backward Compatibility** - Original (id, username, email) fixed schema still fully supported
 - **Multiple Table Support** - Different tables can have completely different schemas
@@ -428,6 +429,7 @@ Error: Index 'nonexistent' not found
 - [x] Dynamic Schema Support (custom table columns)
 - [x] SHOW TABLES command
 - [x] Admin-only SHOW USERS command
+- [x] SHOW GRANTS for the current user; admins may inspect another user's grants
 - [x] DESCRIBE / DESC table metadata commands
 - [x] TRUNCATE TABLE command
 - [x] Subqueries — IN subquery support
