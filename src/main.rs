@@ -7204,3 +7204,81 @@ mod tests {
         let _ = std::fs::remove_file(table_path);
     }
 }
+        let row_refs: Vec<&Row> = rows.iter().collect();
+        let agg = super::AggregateColumn::StddevSamp("value".to_string());
+        let res = super::compute_aggregate(&agg, &row_refs, &schema);
+        assert_eq!(res, "NULL");
+    }
+
+    #[test]
+    fn durable_insert_updates_wal_and_metadata() {
+        let persistence_path = "test_dispatch_persistence";
+        let table_path = "test_dispatch_users.json";
+        let _ = std::fs::remove_dir_all(persistence_path);
+        let _ = std::fs::remove_file(table_path);
+
+        let schema = default_schema();
+        let mut tables = HashMap::new();
+        tables.insert(
+            "users".to_string(),
+            Table::new(table_path.to_string(), schema.clone()),
+        );
+        let mut schemas = HashMap::new();
+        schemas.insert("users".to_string(), schema);
+        let mut views = HashMap::new();
+        let mut constraints = HashMap::new();
+        let mut indexes = HashMap::new();
+        let mut transaction = TransactionState {
+            active: false,
+            table_snapshots: HashMap::new(),
+            schema_snapshot: HashMap::new(),
+        };
+        let session = SessionState::new(auth::AuthCatalog::default());
+        let mut manager = DatabaseManager::new(
+            "test_dispatch",
+            persistence_path,
+            1,
+            DurabilityConfig::default(),
+        )
+        .unwrap();
+
+        execute_authorized_statement(
+            Statement::Insert {
+                table_name: Some("users".to_string()),
+                values: vec![
+                    "1".to_string(),
+                    "alice".to_string(),
+                    "alice@example.com".to_string(),
+                ],
+            },
+            &session,
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut transaction,
+            &mut manager,
+            "test-session",
+        );
+
+        assert_eq!(tables["users"].select_all().len(), 1);
+        let metadata: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(format!("{}/metadata.json", persistence_path)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(metadata["tables"]["users"]["row_count"], 1);
+        let wal = std::fs::read_to_string(format!("{}/wal.log", persistence_path)).unwrap();
+        assert_eq!(wal.lines().count(), 2);
+        let audit = std::fs::read_to_string(format!("{}/audit.log", persistence_path)).unwrap();
+        let audit_entry: serde_json::Value =
+            serde_json::from_str(audit.lines().next().unwrap()).unwrap();
+        assert_eq!(audit_entry["operation"], "INSERT");
+        assert_eq!(audit_entry["table_name"], "users");
+        assert_eq!(audit_entry["session_id"], "test-session");
+        assert_eq!(audit_entry["success"], true);
+
+        let _ = std::fs::remove_dir_all(persistence_path);
+        let _ = std::fs::remove_file(table_path);
+    }
+}
