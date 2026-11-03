@@ -520,6 +520,9 @@ enum Statement {
     ShowTables,
     ShowIndexes,
     ShowUsers,
+    ShowGrants {
+        username: Option<String>,
+    },
 }
 
 fn print_prompt() {
@@ -1680,6 +1683,7 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::ShowTables
         | Statement::ShowIndexes
         | Statement::ShowUsers
+        | Statement::ShowGrants { .. }
         | Statement::BeginTransaction
         | Statement::CommitTransaction
         | Statement::RollbackTransaction
@@ -1780,6 +1784,7 @@ fn audit_target(statement: &Statement) -> (&'static str, Option<String>) {
         Statement::ShowTables => ("SHOW TABLES", None),
         Statement::ShowIndexes => ("SHOW INDEXES", None),
         Statement::ShowUsers => ("SHOW USERS", None),
+        Statement::ShowGrants { .. } => ("SHOW GRANTS", None),
         Statement::Select { from_table, .. }
         | Statement::SelectWhere { from_table, .. }
         | Statement::SelectWithCTE { from_table, .. }
@@ -1830,6 +1835,42 @@ fn list_users_for_admin(session: &SessionState) -> Option<Vec<(String, String)>>
         .collect();
     users.sort_by(|left, right| left.0.cmp(&right.0));
     Some(users)
+}
+
+fn visible_grants_for_session(
+    session: &SessionState,
+    requested_username: Option<&str>,
+) -> Result<(String, Vec<(String, String)>), String> {
+    let current_username = session
+        .current_user
+        .as_deref()
+        .map(|username| username.trim().to_ascii_lowercase())
+        .filter(|username| !username.is_empty())
+        .ok_or_else(|| "Login required".to_string())?;
+    let current_account = session
+        .catalog
+        .accounts
+        .get(&current_username)
+        .ok_or_else(|| "Login required".to_string())?;
+
+    let target_username = match requested_username {
+        Some(username) if current_account.role == "admin" => username.trim().to_ascii_lowercase(),
+        Some(_) => return Err("Administrator login required to inspect another user".to_string()),
+        None => current_username,
+    };
+    if !session.catalog.accounts.contains_key(&target_username) {
+        return Err(format!("User '{}' does not exist", target_username));
+    }
+
+    let mut grants: Vec<(String, String)> = session
+        .catalog
+        .grants
+        .iter()
+        .filter(|grant| grant.username == target_username)
+        .map(|grant| (grant.privilege.clone(), grant.table_name.clone()))
+        .collect();
+    grants.sort();
+    Ok((target_username, grants))
 }
 
 fn execute_authorized_statement(
@@ -1902,6 +1943,31 @@ fn execute_authorized_statement(
             audit_table.as_deref(),
             users.is_some(),
             users.is_none().then_some("administrator login required"),
+        );
+        return;
+    }
+
+    if let Statement::ShowGrants { username } = &statement {
+        let result = visible_grants_for_session(session, username.as_deref());
+        match &result {
+            Ok((target_username, grants)) if grants.is_empty() => {
+                println!("No grants found for user '{}'.", target_username);
+            }
+            Ok((target_username, grants)) => {
+                println!("Grants for '{}':", target_username);
+                for (privilege, table_name) in grants {
+                    println!("  {} ON {}", privilege, table_name);
+                }
+            }
+            Err(error) => println!("Error: {}", error),
+        }
+        let _ = database_manager.log_audit(
+            audit_user,
+            session_id,
+            audit_operation,
+            audit_table.as_deref(),
+            result.is_ok(),
+            result.as_ref().err().map(String::as_str),
         );
         return;
     }
@@ -2428,6 +2494,17 @@ fn prepare_statement(input: &str) -> PrepareResult {
         PrepareResult::Success(Statement::ShowTables)
     } else if upper == "SHOW USERS" {
         PrepareResult::Success(Statement::ShowUsers)
+    } else if upper == "SHOW GRANTS" {
+        PrepareResult::Success(Statement::ShowGrants { username: None })
+    } else if upper.starts_with("SHOW GRANTS FOR ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 4 && parts[2].eq_ignore_ascii_case("FOR") {
+            PrepareResult::Success(Statement::ShowGrants {
+                username: Some(parts[3].to_string()),
+            })
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
     } else if upper.starts_with("SHOW INDEXES") || upper.starts_with("SHOW INDEX") {
         PrepareResult::Success(Statement::ShowIndexes)
     } else if upper.starts_with("CREATE INDEX") {
@@ -4958,6 +5035,9 @@ fn execute_statement(
         }
         Statement::ShowUsers => {
             println!("Error: SHOW USERS must be authorized before execution");
+        }
+        Statement::ShowGrants { .. } => {
+            println!("Error: SHOW GRANTS must be authorized before execution");
         }
         Statement::ShowIndexes => {
             if indexes.is_empty() {
