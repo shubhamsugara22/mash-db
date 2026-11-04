@@ -227,6 +227,17 @@ db > INSERT INTO products VALUES (2, 'SKU-001', 'Gadget')
 Error: UNIQUE constraint violation on column 'sku'
 ```
 
+### DEFAULT Column Values
+
+```sql
+-- Literal defaults (string, number, or bare identifier)
+db > CREATE TABLE orders (id INTEGER, status TEXT DEFAULT 'pending', qty INTEGER DEFAULT 1)
+-- Omitted trailing columns take their defaults on INSERT
+db > INSERT INTO orders (id) VALUES (1)
+```
+
+Defaults are saved to `defaults.json` and reloaded with the schema. Only literal values are supported.
+
 ## Examples - Advanced Usage
 
 ### ORDER BY on Aggregate Functions
@@ -442,6 +453,7 @@ Error: Index 'nonexistent' not found
 - [x] Date/Time functions (NOW, DATE, TIME, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB, WEEK, QUARTER, DATEDIFF, DATE_TRUNC)
 - [x] Views (CREATE VIEW, DROP VIEW) — Views with subquery substitution, support for aggregates, joins, nested views
 - [x] PRIMARY KEY and UNIQUE constraints
+- [x] DEFAULT column values (literal defaults applied on INSERT)
 - [ ] Full text search
 - [ ] Foreign key constraints
 - [ ] CREATE INDEX on arbitrary columns

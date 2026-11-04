@@ -4584,4 +4584,47 @@ mod tests {
         assert_eq!(primary_key, None);
         assert_eq!(unique_columns.len(), 0);
     }
+
+    #[test]
+    fn test_parse_create_table_with_defaults_literals() {
+        let (name, columns, pk, unique, defaults) = parse_create_table_with_defaults(
+            "CREATE TABLE items (id INTEGER, status TEXT DEFAULT 'active', qty INTEGER DEFAULT 5, kind TEXT DEFAULT other)",
+        )
+        .unwrap();
+        assert_eq!(name, "items");
+        assert_eq!(columns.len(), 4);
+        assert_eq!(pk, None);
+        assert!(unique.is_empty());
+        assert!(defaults.contains(&("status".to_string(), "active".to_string())));
+        assert!(defaults.contains(&("qty".to_string(), "5".to_string())));
+        assert!(defaults.contains(&("kind".to_string(), "other".to_string())));
+        assert_eq!(defaults.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_create_table_with_defaults_and_pk() {
+        let (_, _, pk, _, defaults) = parse_create_table_with_defaults(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER DEFAULT 1)",
+        )
+        .unwrap();
+        assert_eq!(pk, Some("id".to_string()));
+        assert_eq!(defaults, vec![("n".to_string(), "1".to_string())]);
+    }
+
+    #[test]
+    fn test_parse_create_table_default_missing_literal_errors() {
+        assert!(
+            parse_create_table_with_defaults("CREATE TABLE t (id INTEGER, n INTEGER DEFAULT)")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_parse_create_table_wrapper_ignores_defaults() {
+        let result = parse_create_table("CREATE TABLE t (id INTEGER, n INTEGER DEFAULT 2)");
+        assert!(result.is_ok());
+        let (name, columns, _, _) = result.unwrap();
+        assert_eq!(name, "t");
+        assert_eq!(columns.len(), 2);
+    }
 }

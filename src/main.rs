@@ -474,6 +474,7 @@ enum Statement {
         columns: Vec<String>,
         primary_key: Option<String>,
         unique_columns: Vec<String>,
+        column_defaults: Vec<(String, String)>,
     },
     AlterTableRename {
         table_name: String,
@@ -1879,7 +1880,7 @@ fn execute_authorized_statement(
     tables: &mut HashMap<String, Table>,
     schemas: &mut HashMap<String, Vec<String>>,
     views: &mut HashMap<String, String>,
-    constraints: &mut HashMap<String, (Option<String>, Vec<String>)>,
+    constraints: &mut HashMap<String, (Option<String>, Vec<String>, HashMap<String, String>)>,
     indexes: &mut HashMap<String, (String, String)>,
     tx: &mut TransactionState,
     database_manager: &mut DatabaseManager,
@@ -2401,13 +2402,14 @@ fn prepare_statement(input: &str) -> PrepareResult {
             PrepareResult::UnrecognizedStatement
         }
     } else if upper.starts_with("CREATE TABLE") {
-        match parser::parse_create_table(input) {
-            Ok((table_name, columns, primary_key, unique_columns)) => {
+        match parser::parse_create_table_with_defaults(input) {
+            Ok((table_name, columns, primary_key, unique_columns, column_defaults)) => {
                 PrepareResult::Success(Statement::CreateTable {
                     table_name,
                     columns,
                     primary_key,
                     unique_columns,
+                    column_defaults,
                 })
             }
             Err(_) => PrepareResult::UnrecognizedStatement,
@@ -3117,7 +3119,7 @@ fn execute_statement(
     tables: &mut HashMap<String, Table>,
     schemas: &mut HashMap<String, Vec<String>>,
     views: &mut HashMap<String, String>,
-    constraints: &mut HashMap<String, (Option<String>, Vec<String>)>,
+    constraints: &mut HashMap<String, (Option<String>, Vec<String>, HashMap<String, String>)>,
     indexes: &mut HashMap<String, (String, String)>, // index_name -> (table_name, column_name)
     tx: &mut TransactionState,
 ) {
@@ -3627,10 +3629,23 @@ fn execute_statement(
             let schema = table.schema().clone();
             let actual_table_name = table_name.as_deref().unwrap_or("users").to_lowercase();
 
-            match Row::from_values(&schema, values) {
+            // Fill trailing columns from DEFAULT values when fewer values are given
+            let mut padded_values: Vec<String> = values.clone();
+            if padded_values.len() < schema.len() {
+                if let Some((_, _, defaults)) = constraints.get(&actual_table_name) {
+                    for col in &schema[padded_values.len()..] {
+                        match defaults.get(col) {
+                            Some(v) => padded_values.push(v.clone()),
+                            None => break,
+                        }
+                    }
+                }
+            }
+
+            match Row::from_values(&schema, padded_values) {
                 Ok(row) => {
                     // Check constraints if they exist for this table
-                    if let Some((pk_opt, unique_cols)) = constraints.get(&actual_table_name) {
+                    if let Some((pk_opt, unique_cols, _)) = constraints.get(&actual_table_name) {
                         // Check PRIMARY KEY uniqueness
                         if let Some(pk_col) = pk_opt {
                             let new_pk_value = row.get_value(pk_col);
@@ -4783,6 +4798,7 @@ fn execute_statement(
             columns,
             primary_key,
             unique_columns,
+            column_defaults,
         } => {
             let table_name_lower = table_name.to_lowercase();
 
@@ -4827,14 +4843,16 @@ fn execute_statement(
 
             schemas.insert(table_name_lower.clone(), columns.clone());
 
-            // Store constraints
+            // Store constraints and column DEFAULT values
+            let defaults_map: HashMap<String, String> = column_defaults.iter().cloned().collect();
             constraints.insert(
                 table_name_lower.clone(),
-                (primary_key.clone(), unique_columns.clone()),
+                (primary_key.clone(), unique_columns.clone(), defaults_map),
             );
 
             if !tx.active {
                 save_schemas(schemas);
+                save_defaults(constraints);
             }
 
             println!(
@@ -4988,6 +5006,7 @@ fn execute_statement(
 
             if !tx.active {
                 save_schemas(schemas);
+                save_defaults(constraints);
             }
 
             println!("Table '{}' dropped", table_name);
@@ -5647,6 +5666,35 @@ fn save_schemas(schemas: &HashMap<String, Vec<String>>) {
     }
 }
 
+const DEFAULTS_FILE: &str = "defaults.json";
+
+// Persisted column DEFAULT values: table name -> column name -> literal value
+fn load_defaults() -> HashMap<String, HashMap<String, String>> {
+    if Path::new(DEFAULTS_FILE).exists() {
+        if let Ok(contents) = std::fs::read_to_string(DEFAULTS_FILE) {
+            if let Ok(defaults) =
+                serde_json::from_str::<HashMap<String, HashMap<String, String>>>(&contents)
+            {
+                return defaults;
+            }
+        }
+    }
+    HashMap::new()
+}
+
+fn save_defaults(
+    constraints: &HashMap<String, (Option<String>, Vec<String>, HashMap<String, String>)>,
+) {
+    let defaults: HashMap<String, HashMap<String, String>> = constraints
+        .iter()
+        .filter(|(_, (_, _, d))| !d.is_empty())
+        .map(|(table, (_, _, d))| (table.clone(), d.clone()))
+        .collect();
+    if let Ok(json) = serde_json::to_string_pretty(&defaults) {
+        let _ = std::fs::write(DEFAULTS_FILE, json);
+    }
+}
+
 fn main() {
     let mut database_manager =
         match DatabaseManager::new("mash_db", "data", 100, DurabilityConfig::default()) {
@@ -5679,8 +5727,13 @@ fn main() {
     // Initialize view registry: store view name -> SELECT query
     let mut views: HashMap<String, String> = HashMap::new();
 
-    // Initialize constraint registry: store table_name -> (primary_key, unique_columns)
-    let mut constraints: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
+    // Initialize constraint registry: store table_name -> (primary_key, unique_columns, column defaults)
+    let mut constraints: HashMap<String, (Option<String>, Vec<String>, HashMap<String, String>)> =
+        HashMap::new();
+    // Restore persisted column DEFAULT values
+    for (table, defaults) in load_defaults() {
+        constraints.insert(table, (None, Vec::new(), defaults));
+    }
 
     // Initialize index registry: store index_name -> (table_name, column_name)
     let mut indexes: HashMap<String, (String, String)> = HashMap::new();

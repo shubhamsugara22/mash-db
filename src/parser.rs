@@ -4919,13 +4919,25 @@ fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(Option<String>, String
 pub fn parse_create_table(
     input: &str,
 ) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
+    let (name, columns, pk, unique, _defaults) = parse_create_table_with_defaults(input)?;
+    Ok((name, columns, pk, unique))
+}
+
+// Syntax: CREATE TABLE table_name (column1 TEXT DEFAULT 'x', column2 INTEGER DEFAULT 0, ...)
+pub type CreateTableParts = (
+    String,
+    Vec<String>,
+    Option<String>,
+    Vec<String>,
+    Vec<(String, String)>,
+);
+
+pub fn parse_create_table_with_defaults(input: &str) -> Result<CreateTableParts, String> {
     let tokens = tokenize(input);
     parse_create_table_tokens(&tokens)
 }
 
-fn parse_create_table_tokens(
-    tokens: &[Token],
-) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
+fn parse_create_table_tokens(tokens: &[Token]) -> Result<CreateTableParts, String> {
     if tokens.len() < 5 {
         return Err("CREATE TABLE requires table name and columns".to_string());
     }
@@ -4956,6 +4968,7 @@ fn parse_create_table_tokens(
     let mut columns = Vec::new();
     let mut primary_key: Option<String> = None;
     let mut unique_columns: Vec<String> = Vec::new();
+    let mut column_defaults: Vec<(String, String)> = Vec::new();
 
     loop {
         if let Some(Token::Identifier(col)) = tokens.get(i) {
@@ -4966,6 +4979,26 @@ fn parse_create_table_tokens(
             // Skip data type if present (INTEGER, TEXT, etc.)
             if let Some(Token::Identifier(_)) = tokens.get(i) {
                 i += 1; // skip data type
+            }
+
+            // Optional DEFAULT <literal>
+            if let Some(Token::Identifier(word)) = tokens.get(i) {
+                if word.eq_ignore_ascii_case("DEFAULT") {
+                    i += 1;
+                    let default_value = match tokens.get(i) {
+                        Some(Token::Number(n)) => n.to_string(),
+                        Some(Token::String(s)) => s.clone(),
+                        Some(Token::Identifier(s)) => s.clone(),
+                        _ => {
+                            return Err(format!(
+                                "Expected literal value after DEFAULT for column '{}'",
+                                column_name
+                            ))
+                        }
+                    };
+                    i += 1;
+                    column_defaults.push((column_name.clone(), default_value));
+                }
             }
 
             // Check for PRIMARY KEY constraint
@@ -5006,7 +5039,13 @@ fn parse_create_table_tokens(
         return Err("CREATE TABLE requires at least one column".to_string());
     }
 
-    Ok((table_name, columns, primary_key, unique_columns))
+    Ok((
+        table_name,
+        columns,
+        primary_key,
+        unique_columns,
+        column_defaults,
+    ))
 }
 
 // Parse ALTER TABLE statement
