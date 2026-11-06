@@ -117,7 +117,7 @@
   - Supports all aggregate functions in conditions
   - Works with COUNT(DISTINCT) and string MIN/MAX
 - **Status**: ✅ COMPLETED
-- **Remaining**: ORDER BY on aggregate columns
+- ✅ **ORDER BY on aggregate columns**: Implemented
 - **Details**:
   - AggregateColumn enum with Count, Sum, Avg, Min, Max, CountDistinct variants
   - Comprehensive aggregate computation with HashSet for distinct counting
@@ -170,9 +170,9 @@
 - **PRIMARY KEY**: Enforce unique identifiers
 - **FOREIGN KEY**: Referential integrity
 - **UNIQUE**: Unique value constraints
-- **NOT NULL**: Required fields
+- ✅ **NOT NULL**: Required fields (INSERT and UPDATE reject empty and `NULL` values)
 - **CHECK**: Custom validation rules
-- **DEFAULT**: Default column values
+- ✅ **DEFAULT**: Default column values (literal defaults applied on INSERT)
 - **Priority**: MEDIUM
 - **Estimated Effort**: 2-3 weeks
 

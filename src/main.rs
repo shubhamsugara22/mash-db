@@ -475,6 +475,7 @@ enum Statement {
         primary_key: Option<String>,
         unique_columns: Vec<String>,
         column_defaults: Vec<(String, String)>,
+        not_null_columns: Vec<String>,
     },
     AlterTableRename {
         table_name: String,
@@ -1880,7 +1881,15 @@ fn execute_authorized_statement(
     tables: &mut HashMap<String, Table>,
     schemas: &mut HashMap<String, Vec<String>>,
     views: &mut HashMap<String, String>,
-    constraints: &mut HashMap<String, (Option<String>, Vec<String>, HashMap<String, String>)>,
+    constraints: &mut HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    >,
     indexes: &mut HashMap<String, (String, String)>,
     tx: &mut TransactionState,
     database_manager: &mut DatabaseManager,
@@ -2403,15 +2412,21 @@ fn prepare_statement(input: &str) -> PrepareResult {
         }
     } else if upper.starts_with("CREATE TABLE") {
         match parser::parse_create_table_with_defaults(input) {
-            Ok((table_name, columns, primary_key, unique_columns, column_defaults)) => {
-                PrepareResult::Success(Statement::CreateTable {
-                    table_name,
-                    columns,
-                    primary_key,
-                    unique_columns,
-                    column_defaults,
-                })
-            }
+            Ok((
+                table_name,
+                columns,
+                primary_key,
+                unique_columns,
+                column_defaults,
+                not_null_columns,
+            )) => PrepareResult::Success(Statement::CreateTable {
+                table_name,
+                columns,
+                primary_key,
+                unique_columns,
+                column_defaults,
+                not_null_columns,
+            }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
     } else if upper.starts_with("ALTER TABLE") {
@@ -3119,7 +3134,15 @@ fn execute_statement(
     tables: &mut HashMap<String, Table>,
     schemas: &mut HashMap<String, Vec<String>>,
     views: &mut HashMap<String, String>,
-    constraints: &mut HashMap<String, (Option<String>, Vec<String>, HashMap<String, String>)>,
+    constraints: &mut HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    >,
     indexes: &mut HashMap<String, (String, String)>, // index_name -> (table_name, column_name)
     tx: &mut TransactionState,
 ) {
@@ -3632,7 +3655,7 @@ fn execute_statement(
             // Fill trailing columns from DEFAULT values when fewer values are given
             let mut padded_values: Vec<String> = values.clone();
             if padded_values.len() < schema.len() {
-                if let Some((_, _, defaults)) = constraints.get(&actual_table_name) {
+                if let Some((_, _, defaults, _)) = constraints.get(&actual_table_name) {
                     for col in &schema[padded_values.len()..] {
                         match defaults.get(col) {
                             Some(v) => padded_values.push(v.clone()),
@@ -3642,10 +3665,27 @@ fn execute_statement(
                 }
             }
 
+            // Check NOT NULL constraints. INSERT cannot write a true NULL, so an
+            // empty value or the literal NULL is treated as a violation.
+            if let Some((_, _, _, not_null_cols)) = constraints.get(&actual_table_name) {
+                for col in not_null_cols {
+                    if let Some(idx) = schema.iter().position(|c| c == col) {
+                        let violated = match padded_values.get(idx) {
+                            Some(v) => v.is_empty() || v.eq_ignore_ascii_case("NULL"),
+                            None => true,
+                        };
+                        if violated {
+                            println!("Error: NOT NULL constraint violation on column '{}'", col);
+                            return;
+                        }
+                    }
+                }
+            }
+
             match Row::from_values(&schema, padded_values) {
                 Ok(row) => {
                     // Check constraints if they exist for this table
-                    if let Some((pk_opt, unique_cols, _)) = constraints.get(&actual_table_name) {
+                    if let Some((pk_opt, unique_cols, _, _)) = constraints.get(&actual_table_name) {
                         // Check PRIMARY KEY uniqueness
                         if let Some(pk_col) = pk_opt {
                             let new_pk_value = row.get_value(pk_col);
@@ -4722,6 +4762,21 @@ fn execute_statement(
             id,
             assignments,
         } => {
+            let constraint_key = table_name.as_deref().unwrap_or("users").to_lowercase();
+            // Reject assignments that would violate NOT NULL (empty value or literal NULL)
+            if let Some((_, _, _, not_null_cols)) = constraints.get(&constraint_key) {
+                for (column, value) in &assignments {
+                    if not_null_cols.iter().any(|c| c == column)
+                        && (value.is_empty() || value.eq_ignore_ascii_case("NULL"))
+                    {
+                        println!(
+                            "Error: NOT NULL constraint violation on column '{}'",
+                            column
+                        );
+                        return;
+                    }
+                }
+            }
             let table = match table_name {
                 Some(name) => load_table_by_name(&name, tables, schemas),
                 None => get_default_table(tables, schemas),
@@ -4799,6 +4854,7 @@ fn execute_statement(
             primary_key,
             unique_columns,
             column_defaults,
+            not_null_columns,
         } => {
             let table_name_lower = table_name.to_lowercase();
 
@@ -4843,16 +4899,22 @@ fn execute_statement(
 
             schemas.insert(table_name_lower.clone(), columns.clone());
 
-            // Store constraints and column DEFAULT values
+            // Store constraints, column DEFAULT values, and NOT NULL columns
             let defaults_map: HashMap<String, String> = column_defaults.iter().cloned().collect();
             constraints.insert(
                 table_name_lower.clone(),
-                (primary_key.clone(), unique_columns.clone(), defaults_map),
+                (
+                    primary_key.clone(),
+                    unique_columns.clone(),
+                    defaults_map,
+                    not_null_columns.clone(),
+                ),
             );
 
             if !tx.active {
                 save_schemas(schemas);
                 save_defaults(constraints);
+                save_not_null(constraints);
             }
 
             println!(
@@ -5007,6 +5069,7 @@ fn execute_statement(
             if !tx.active {
                 save_schemas(schemas);
                 save_defaults(constraints);
+                save_not_null(constraints);
             }
 
             println!("Table '{}' dropped", table_name);
@@ -5683,15 +5746,58 @@ fn load_defaults() -> HashMap<String, HashMap<String, String>> {
 }
 
 fn save_defaults(
-    constraints: &HashMap<String, (Option<String>, Vec<String>, HashMap<String, String>)>,
+    constraints: &HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    >,
 ) {
     let defaults: HashMap<String, HashMap<String, String>> = constraints
         .iter()
-        .filter(|(_, (_, _, d))| !d.is_empty())
-        .map(|(table, (_, _, d))| (table.clone(), d.clone()))
+        .filter(|(_, (_, _, d, _))| !d.is_empty())
+        .map(|(table, (_, _, d, _))| (table.clone(), d.clone()))
         .collect();
     if let Ok(json) = serde_json::to_string_pretty(&defaults) {
         let _ = std::fs::write(DEFAULTS_FILE, json);
+    }
+}
+
+const NOT_NULL_FILE: &str = "notnull.json";
+
+// Persisted NOT NULL columns: table name -> list of column names
+fn load_not_null() -> HashMap<String, Vec<String>> {
+    if Path::new(NOT_NULL_FILE).exists() {
+        if let Ok(contents) = std::fs::read_to_string(NOT_NULL_FILE) {
+            if let Ok(not_null) = serde_json::from_str::<HashMap<String, Vec<String>>>(&contents) {
+                return not_null;
+            }
+        }
+    }
+    HashMap::new()
+}
+
+fn save_not_null(
+    constraints: &HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    >,
+) {
+    let not_null: HashMap<String, Vec<String>> = constraints
+        .iter()
+        .filter(|(_, (_, _, _, n))| !n.is_empty())
+        .map(|(table, (_, _, _, n))| (table.clone(), n.clone()))
+        .collect();
+    if let Ok(json) = serde_json::to_string_pretty(&not_null) {
+        let _ = std::fs::write(NOT_NULL_FILE, json);
     }
 }
 
@@ -5727,12 +5833,26 @@ fn main() {
     // Initialize view registry: store view name -> SELECT query
     let mut views: HashMap<String, String> = HashMap::new();
 
-    // Initialize constraint registry: store table_name -> (primary_key, unique_columns, column defaults)
-    let mut constraints: HashMap<String, (Option<String>, Vec<String>, HashMap<String, String>)> =
-        HashMap::new();
+    // Initialize constraint registry: store table_name -> (primary_key, unique_columns, column defaults, not_null_columns)
+    let mut constraints: HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    > = HashMap::new();
     // Restore persisted column DEFAULT values
     for (table, defaults) in load_defaults() {
-        constraints.insert(table, (None, Vec::new(), defaults));
+        constraints.insert(table, (None, Vec::new(), defaults, Vec::new()));
+    }
+    // Restore persisted NOT NULL columns
+    for (table, not_null) in load_not_null() {
+        constraints
+            .entry(table)
+            .and_modify(|c| c.3 = not_null.clone())
+            .or_insert((None, Vec::new(), HashMap::new(), not_null));
     }
 
     // Initialize index registry: store index_name -> (table_name, column_name)
@@ -7396,91 +7516,160 @@ mod tests {
         let _ = std::fs::remove_dir_all(persistence_path);
         let _ = std::fs::remove_file(table_path);
     }
-}
-    #[test]
-    fn test_stddev_samp_all_nulls_returns_null() {
-        let schema = vec!["id".to_string(), "value".to_string()];
-        let rows = vec![
-            Row::from_values(&schema, vec!["1".to_string(), "NULL".to_string()]).unwrap(),
-            Row::from_values(&schema, vec!["2".to_string(), "".to_string()]).unwrap(),
-        ];
 
-        let row_refs: Vec<&Row> = rows.iter().collect();
-        let agg = super::AggregateColumn::StddevSamp("value".to_string());
-        let res = super::compute_aggregate(&agg, &row_refs, &schema);
-        assert_eq!(res, "NULL");
-    }
-
-    #[test]
-    fn durable_insert_updates_wal_and_metadata() {
-        let persistence_path = "test_dispatch_persistence";
-        let table_path = "test_dispatch_users.json";
-        let _ = std::fs::remove_dir_all(persistence_path);
-        let _ = std::fs::remove_file(table_path);
-
+    fn not_null_test_state(
+        table: &str,
+        defaults: HashMap<String, String>,
+        not_null: Vec<String>,
+    ) -> (
+        HashMap<String, Table>,
+        HashMap<String, Vec<String>>,
+        HashMap<
+            String,
+            (
+                Option<String>,
+                Vec<String>,
+                HashMap<String, String>,
+                Vec<String>,
+            ),
+        >,
+        TransactionState,
+    ) {
         let schema = default_schema();
         let mut tables = HashMap::new();
-        tables.insert(
-            "users".to_string(),
-            Table::new(table_path.to_string(), schema.clone()),
-        );
+        let mut table_obj = Table::new(format!("{}.json", table), schema.clone());
+        table_obj.clear();
+        tables.insert(table.to_string(), table_obj);
         let mut schemas = HashMap::new();
-        schemas.insert("users".to_string(), schema);
-        let mut views = HashMap::new();
+        schemas.insert(table.to_string(), schema);
         let mut constraints = HashMap::new();
-        let mut indexes = HashMap::new();
-        let mut transaction = TransactionState {
+        constraints.insert(table.to_string(), (None, Vec::new(), defaults, not_null));
+        let tx = TransactionState {
             active: false,
             table_snapshots: HashMap::new(),
             schema_snapshot: HashMap::new(),
         };
-        let session = SessionState::new(auth::AuthCatalog::default());
-        let mut manager = DatabaseManager::new(
-            "test_dispatch",
-            persistence_path,
-            1,
-            DurabilityConfig::default(),
-        )
-        .unwrap();
+        (tables, schemas, constraints, tx)
+    }
 
-        execute_authorized_statement(
-            Statement::Insert {
-                table_name: Some("users".to_string()),
-                values: vec![
-                    "1".to_string(),
-                    "alice".to_string(),
-                    "alice@example.com".to_string(),
-                ],
-            },
-            &session,
+    #[test]
+    fn not_null_insert_rejects_empty_and_null_values() {
+        let table = "nn_insert_test";
+        let _ = std::fs::remove_file(format!("{}.json", table));
+        let (mut tables, mut schemas, mut constraints, mut tx) =
+            not_null_test_state(table, HashMap::new(), vec!["username".to_string()]);
+        let mut views = HashMap::new();
+        let mut indexes = HashMap::new();
+
+        let insert = |vals: Vec<&str>| Statement::Insert {
+            table_name: Some(table.to_string()),
+            values: vals.into_iter().map(|s| s.to_string()).collect(),
+        };
+
+        execute_statement(
+            insert(vec!["1", "", "a@x.com"]),
             &mut tables,
             &mut schemas,
             &mut views,
             &mut constraints,
             &mut indexes,
-            &mut transaction,
-            &mut manager,
-            "test-session",
+            &mut tx,
         );
+        execute_statement(
+            insert(vec!["2", "NULL", "b@x.com"]),
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        assert_eq!(tables[table].select_all().len(), 0);
 
-        assert_eq!(tables["users"].select_all().len(), 1);
-        let metadata: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(format!("{}/metadata.json", persistence_path)).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(metadata["tables"]["users"]["row_count"], 1);
-        let wal = std::fs::read_to_string(format!("{}/wal.log", persistence_path)).unwrap();
-        assert_eq!(wal.lines().count(), 2);
-        let audit = std::fs::read_to_string(format!("{}/audit.log", persistence_path)).unwrap();
-        let audit_entry: serde_json::Value =
-            serde_json::from_str(audit.lines().next().unwrap()).unwrap();
-        assert_eq!(audit_entry["operation"], "INSERT");
-        assert_eq!(audit_entry["table_name"], "users");
-        assert_eq!(audit_entry["session_id"], "test-session");
-        assert_eq!(audit_entry["success"], true);
+        execute_statement(
+            insert(vec!["3", "carol", "c@x.com"]),
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        assert_eq!(tables[table].select_all().len(), 1);
 
-        let _ = std::fs::remove_dir_all(persistence_path);
-        let _ = std::fs::remove_file(table_path);
+        let _ = std::fs::remove_file(format!("{}.json", table));
     }
-}
+
+    #[test]
+    fn not_null_update_rejects_empty_value() {
+        let table = "nn_update_test";
+        let _ = std::fs::remove_file(format!("{}.json", table));
+        let (mut tables, mut schemas, mut constraints, mut tx) =
+            not_null_test_state(table, HashMap::new(), vec!["username".to_string()]);
+        let mut views = HashMap::new();
+        let mut indexes = HashMap::new();
+
+        execute_statement(
+            Statement::Insert {
+                table_name: Some(table.to_string()),
+                values: vec!["1".to_string(), "alice".to_string(), "a@x.com".to_string()],
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        execute_statement(
+            Statement::Update {
+                table_name: Some(table.to_string()),
+                id: 1,
+                assignments: vec![("username".to_string(), "".to_string())],
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        let rows = tables[table].select_all();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0]
+            .get_value("username")
+            .map_or(false, |v| v == "alice"));
+
+        let _ = std::fs::remove_file(format!("{}.json", table));
+    }
+
+    #[test]
+    fn default_padding_still_applies_with_not_null() {
+        let table = "nn_default_test";
+        let _ = std::fs::remove_file(format!("{}.json", table));
+        let mut defaults = HashMap::new();
+        defaults.insert("email".to_string(), "none".to_string());
+        let (mut tables, mut schemas, mut constraints, mut tx) =
+            not_null_test_state(table, defaults, vec!["username".to_string()]);
+        let mut views = HashMap::new();
+        let mut indexes = HashMap::new();
+
+        execute_statement(
+            Statement::Insert {
+                table_name: Some(table.to_string()),
+                values: vec!["1".to_string(), "dave".to_string()],
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        let rows = tables[table].select_all();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].get_value("email").map_or(false, |v| v == "none"));
+
+        let _ = std::fs::remove_file(format!("{}.json", table));
+    }
 }

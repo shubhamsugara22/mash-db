@@ -238,6 +238,18 @@ db > INSERT INTO orders VALUES (1)
 
 Defaults are saved to `defaults.json` and reloaded with the schema. Only literal values are supported.
 
+### NOT NULL Constraint
+
+```sql
+-- NOT NULL columns must receive a non-empty value
+db > CREATE TABLE users (id INTEGER, username TEXT NOT NULL, email TEXT)
+db > INSERT INTO users VALUES (1, 'alice', 'alice@example.com')   -- OK
+db > INSERT INTO users VALUES (2, '', 'bob@example.com')         -- Error: NOT NULL constraint violation
+db > UPDATE users SET username = 'NULL' WHERE id = 1             -- Error: NOT NULL constraint violation
+```
+
+INSERT values are strings, so an empty value or the text `NULL` (case-insensitive) is rejected, and a NOT NULL column that is omitted with no DEFAULT is rejected. Constraints are saved to `notnull.json` and reloaded with the schema.
+
 ## Examples - Advanced Usage
 
 ### ORDER BY on Aggregate Functions
@@ -454,6 +466,7 @@ Error: Index 'nonexistent' not found
 - [x] Views (CREATE VIEW, DROP VIEW) — Views with subquery substitution, support for aggregates, joins, nested views
 - [x] PRIMARY KEY and UNIQUE constraints
 - [x] DEFAULT column values (literal defaults applied on INSERT)
+- [x] NOT NULL constraint (enforced on INSERT and UPDATE)
 - [ ] Full text search
 - [ ] Foreign key constraints
 - [ ] CREATE INDEX on arbitrary columns

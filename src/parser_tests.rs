@@ -4587,7 +4587,7 @@ mod tests {
 
     #[test]
     fn test_parse_create_table_with_defaults_literals() {
-        let (name, columns, pk, unique, defaults) = parse_create_table_with_defaults(
+        let (name, columns, pk, unique, defaults, _not_null) = parse_create_table_with_defaults(
             "CREATE TABLE items (id INTEGER, status TEXT DEFAULT 'active', qty INTEGER DEFAULT 5, kind TEXT DEFAULT other)",
         )
         .unwrap();
@@ -4603,12 +4603,55 @@ mod tests {
 
     #[test]
     fn test_parse_create_table_with_defaults_and_pk() {
-        let (_, _, pk, _, defaults) = parse_create_table_with_defaults(
+        let (_, _, pk, _, defaults, _) = parse_create_table_with_defaults(
             "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER DEFAULT 1)",
         )
         .unwrap();
         assert_eq!(pk, Some("id".to_string()));
         assert_eq!(defaults, vec![("n".to_string(), "1".to_string())]);
+    }
+
+    #[test]
+    fn test_parse_create_table_not_null_alone() {
+        let (_, _, _, _, defaults, not_null) = parse_create_table_with_defaults(
+            "CREATE TABLE t (id INTEGER, name TEXT NOT NULL, note TEXT)",
+        )
+        .unwrap();
+        assert!(defaults.is_empty());
+        assert_eq!(not_null, vec!["name".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_create_table_not_null_with_default_either_order() {
+        let (_, _, _, _, defaults, not_null) = parse_create_table_with_defaults(
+            "CREATE TABLE t (a TEXT NOT NULL DEFAULT 'x', b TEXT DEFAULT 'y' NOT NULL)",
+        )
+        .unwrap();
+        assert_eq!(
+            defaults,
+            vec![
+                ("a".to_string(), "x".to_string()),
+                ("b".to_string(), "y".to_string())
+            ]
+        );
+        assert_eq!(not_null, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_create_table_not_null_with_primary_key() {
+        let (_, _, pk, _, _, not_null) = parse_create_table_with_defaults(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY NOT NULL, n TEXT)",
+        )
+        .unwrap();
+        assert_eq!(pk, Some("id".to_string()));
+        assert_eq!(not_null, vec!["id".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_create_table_not_null_deduplicated() {
+        let (_, _, _, _, _, not_null) =
+            parse_create_table_with_defaults("CREATE TABLE t (n TEXT NOT NULL NOT NULL)").unwrap();
+        assert_eq!(not_null, vec!["n".to_string()]);
     }
 
     #[test]

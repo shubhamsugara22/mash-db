@@ -4919,17 +4919,20 @@ fn parse_delete_where_tokens(tokens: &[Token]) -> Result<(Option<String>, String
 pub fn parse_create_table(
     input: &str,
 ) -> Result<(String, Vec<String>, Option<String>, Vec<String>), String> {
-    let (name, columns, pk, unique, _defaults) = parse_create_table_with_defaults(input)?;
+    let (name, columns, pk, unique, _defaults, _not_null) =
+        parse_create_table_with_defaults(input)?;
     Ok((name, columns, pk, unique))
 }
 
-// Syntax: CREATE TABLE table_name (column1 TEXT DEFAULT 'x', column2 INTEGER DEFAULT 0, ...)
+// Syntax: CREATE TABLE table_name (column1 TEXT DEFAULT 'x' NOT NULL, column2 INTEGER DEFAULT 0, ...)
+// Returns (table, columns, primary key, unique columns, column defaults, NOT NULL columns)
 pub type CreateTableParts = (
     String,
     Vec<String>,
     Option<String>,
     Vec<String>,
     Vec<(String, String)>,
+    Vec<String>,
 );
 
 pub fn parse_create_table_with_defaults(input: &str) -> Result<CreateTableParts, String> {
@@ -4969,6 +4972,7 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<CreateTableParts, Strin
     let mut primary_key: Option<String> = None;
     let mut unique_columns: Vec<String> = Vec::new();
     let mut column_defaults: Vec<(String, String)> = Vec::new();
+    let mut not_null_columns: Vec<String> = Vec::new();
 
     loop {
         if let Some(Token::Identifier(col)) = tokens.get(i) {
@@ -4981,44 +4985,64 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<CreateTableParts, Strin
                 i += 1; // skip data type
             }
 
-            // Optional DEFAULT <literal>
-            if let Some(Token::Identifier(word)) = tokens.get(i) {
-                if word.eq_ignore_ascii_case("DEFAULT") {
-                    i += 1;
-                    let default_value = match tokens.get(i) {
-                        Some(Token::Number(n)) => n.to_string(),
-                        Some(Token::String(s)) => s.clone(),
-                        Some(Token::Identifier(s)) => s.clone(),
-                        _ => {
-                            return Err(format!(
-                                "Expected literal value after DEFAULT for column '{}'",
-                                column_name
-                            ))
-                        }
-                    };
-                    i += 1;
-                    column_defaults.push((column_name.clone(), default_value));
-                }
-            }
-
-            // Check for PRIMARY KEY constraint
-            if tokens.get(i) == Some(&Token::Primary) {
-                i += 1;
-                if tokens.get(i) == Some(&Token::Key) {
-                    i += 1;
-                    if primary_key.is_some() {
-                        return Err("Cannot have multiple PRIMARY KEY columns".to_string());
+            // Column modifiers (DEFAULT, NOT NULL, PRIMARY KEY, UNIQUE) in any order
+            loop {
+                // DEFAULT <literal>
+                if let Some(Token::Identifier(word)) = tokens.get(i) {
+                    if word.eq_ignore_ascii_case("DEFAULT") {
+                        i += 1;
+                        let default_value = match tokens.get(i) {
+                            Some(Token::Number(n)) => n.to_string(),
+                            Some(Token::String(s)) => s.clone(),
+                            Some(Token::Identifier(s)) => s.clone(),
+                            _ => {
+                                return Err(format!(
+                                    "Expected literal value after DEFAULT for column '{}'",
+                                    column_name
+                                ))
+                            }
+                        };
+                        i += 1;
+                        column_defaults.retain(|(c, _)| c != &column_name);
+                        column_defaults.push((column_name.clone(), default_value));
+                        continue;
                     }
-                    primary_key = Some(column_name.clone());
-                } else {
-                    return Err("Expected KEY after PRIMARY".to_string());
                 }
-            }
 
-            // Check for UNIQUE constraint
-            if tokens.get(i) == Some(&Token::Unique) {
-                i += 1;
-                unique_columns.push(column_name);
+                // NOT NULL
+                if tokens.get(i) == Some(&Token::Not) && tokens.get(i + 1) == Some(&Token::Null) {
+                    i += 2;
+                    if !not_null_columns.contains(&column_name) {
+                        not_null_columns.push(column_name.clone());
+                    }
+                    continue;
+                }
+
+                // PRIMARY KEY
+                if tokens.get(i) == Some(&Token::Primary) {
+                    i += 1;
+                    if tokens.get(i) == Some(&Token::Key) {
+                        i += 1;
+                        if primary_key.is_some() {
+                            return Err("Cannot have multiple PRIMARY KEY columns".to_string());
+                        }
+                        primary_key = Some(column_name.clone());
+                        continue;
+                    } else {
+                        return Err("Expected KEY after PRIMARY".to_string());
+                    }
+                }
+
+                // UNIQUE
+                if tokens.get(i) == Some(&Token::Unique) {
+                    i += 1;
+                    if !unique_columns.contains(&column_name) {
+                        unique_columns.push(column_name.clone());
+                    }
+                    continue;
+                }
+
+                break;
             }
 
             // Check for comma or closing paren
@@ -5045,6 +5069,7 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<CreateTableParts, Strin
         primary_key,
         unique_columns,
         column_defaults,
+        not_null_columns,
     ))
 }
 
@@ -5411,21 +5436,6 @@ pub fn parse_drop_index(input: &str) -> Result<String, String> {
     }
     i += 1;
 
-    let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        let n = name.clone();
-        i += 1;
-        n
-    } else {
-        return Err("Expected index name after DROP INDEX".to_string());
-    };
-
-    // Should be end of statement
-    if i < tokens.len() {
-        return Err("Unexpected tokens after DROP INDEX statement".to_string());
-    }
-
-    Ok(index_name)
-}
     let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
         let n = name.clone();
         i += 1;
