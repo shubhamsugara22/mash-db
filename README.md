@@ -233,7 +233,7 @@ Error: UNIQUE constraint violation on column 'sku'
 -- Literal defaults (string, number, or bare identifier)
 db > CREATE TABLE orders (id INTEGER, status TEXT DEFAULT 'pending', qty INTEGER DEFAULT 1)
 -- Omitted trailing columns take their defaults on INSERT
-db > INSERT INTO orders (id) VALUES (1)
+db > INSERT INTO orders VALUES (1)
 ```
 
 Defaults are saved to `defaults.json` and reloaded with the schema. Only literal values are supported.
