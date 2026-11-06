@@ -5426,3 +5426,18 @@ pub fn parse_drop_index(input: &str) -> Result<String, String> {
 
     Ok(index_name)
 }
+    let index_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
+        let n = name.clone();
+        i += 1;
+        n
+    } else {
+        return Err("Expected index name after DROP INDEX".to_string());
+    };
+
+    // Should be end of statement
+    if i < tokens.len() {
+        return Err("Unexpected tokens after DROP INDEX statement".to_string());
+    }
+
+    Ok(index_name)
+}
