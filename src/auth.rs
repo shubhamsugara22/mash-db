@@ -117,6 +117,24 @@ impl AuthCatalog {
         Ok(())
     }
 
+    pub fn rename_account(&mut self, old: &str, new: &str) -> Result<(), String> {
+        let old = normalize_identifier(old)?;
+        let new = normalize_identifier(new)?;
+        if !self.accounts.contains_key(&old) {
+            return Err(format!("User '{}' does not exist", old));
+        }
+        if self.accounts.contains_key(&new) {
+            return Err(format!("User '{}' already exists", new));
+        }
+        let mut account = self.accounts.remove(&old).expect("checked above");
+        account.username = new.clone();
+        self.accounts.insert(new.clone(), account);
+        for grant in self.grants.iter_mut().filter(|grant| grant.username == old) {
+            grant.username = new.clone();
+        }
+        Ok(())
+    }
+
     pub fn grant(
         &mut self,
         username: &str,
@@ -273,5 +291,30 @@ mod tests {
         catalog.drop_account("alice").unwrap();
         assert!(!catalog.accounts.contains_key("alice"));
         assert!(catalog.grants.is_empty());
+    }
+
+    #[test]
+    fn account_can_be_renamed_with_grants_and_password() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("alice", "secret", "reader").unwrap();
+        catalog.grant("alice", "select", "products").unwrap();
+
+        catalog.rename_account("alice", "Bob").unwrap();
+        assert!(!catalog.accounts.contains_key("alice"));
+        assert_eq!(catalog.accounts.get("bob").unwrap().username, "bob");
+        assert!(catalog.verify_password("bob", "secret"));
+        assert!(catalog.has_grant("bob", "select", "products"));
+        assert!(!catalog.has_grant("alice", "select", "products"));
+    }
+
+    #[test]
+    fn rename_rejects_missing_or_existing_target() {
+        let mut catalog = AuthCatalog::default();
+        catalog.create_account("alice", "secret", "reader").unwrap();
+        catalog.create_account("bob", "secret", "reader").unwrap();
+
+        assert!(catalog.rename_account("carol", "dave").is_err());
+        assert!(catalog.rename_account("alice", "bob").is_err());
+        assert!(catalog.accounts.contains_key("alice"));
     }
 }
