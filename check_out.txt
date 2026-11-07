@@ -1,0 +1,446 @@
+﻿cargo : warning: unused import: `Hash`
+At line:1 char:262
++ ...  | ForEach-Object { $_.Line }; cargo check --all-targets 2>&1 | Out-F ...
++                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: unused import: `Hash`:St 
+   ring) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   --> src\backup.rs:226:25
+    |
+226 |         use std::hash::{Hash, Hasher};
+    |                         ^^^^
+    |
+    = note: `#[warn(unused_imports)]` on by default
+
+warning: variable does not need to be mutable
+    --> src\persistence.rs:1307:13
+     |
+1307 |         let mut lock_manager = RowLockManager::new();
+     |             ----^^^^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` on by default
+
+warning: method `get_backup` is never used
+   --> src\backup.rs:198:12
+    |
+ 50 | impl BackupManager {
+    | ------------------ method in this implementation
+...
+198 |     pub fn get_backup(&self, backup_id: &str) -> Option<BackupMetadata> {
+    |            ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: multiple methods are never used
+   --> src\db_manager.rs:245:12
+    |
+ 35 | impl DatabaseManager {
+    | -------------------- methods in this implementation
+...
+245 |     pub fn register_table(&mut self, table_name: &str, columns: 
+Vec<String>) {
+    |            ^^^^^^^^^^^^^^
+...
+294 |     pub fn restore_backup(&self, backup_id: &str, restore_path: &str) -> 
+Result<(), String> {
+    |            ^^^^^^^^^^^^^^
+...
+304 |     pub fn check_health(&mut self) -> DatabaseStatus {
+    |            ^^^^^^^^^^^^
+...
+311 |     pub fn get_health(&self) -> &DatabaseHealth {
+    |            ^^^^^^^^^^
+...
+316 |     pub fn cleanup_idle_connections(&mut self) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+331 |     pub fn get_active_sessions(&self) -> Vec<ConnectionSession> {
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+381 |     pub fn set_session_isolation_level(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+392 |     pub fn get_session_isolation_level(&self, session_id: &str) -> 
+IsolationLevel {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+397 |     pub fn requires_read_lock_for_session(&self, session_id: &str) -> 
+bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+402 |     pub fn requires_write_lock_escalation_for_session(&self, session_id: 
+&str) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+407 |     pub fn get_db_path(&self) -> &Path {
+    |            ^^^^^^^^^^^
+
+warning: method `snapshot_version` is never used
+   --> src\persistence.rs:110:12
+    |
+106 | / impl<K, V> MvccTransaction<K, V>
+107 | | where
+108 | |     K: Eq + std::hash::Hash,
+    | |____________________________- method in this implementation
+109 |   {
+110 |       pub fn snapshot_version(&self) -> u64 {
+    |              ^^^^^^^^^^^^^^^^
+
+warning: method `current_version` is never used
+   --> src\persistence.rs:203:12
+    |
+140 | / impl<K, V> MvccStore<K, V>
+141 | | where
+142 | |     K: Eq + std::hash::Hash + Clone,
+143 | |     V: Clone,
+    | |_____________- method in this implementation
+...
+203 |       pub fn current_version(&self) -> u64 {
+    |              ^^^^^^^^^^^^^^^
+
+warning: method `add_snapshot` is never used
+   --> src\persistence.rs:480:12
+    |
+433 | impl DatabaseMetadata {
+    | --------------------- method in this implementation
+...
+480 |     pub fn add_snapshot(&mut self, snapshot: DatabaseSnapshot) {
+    |            ^^^^^^^^^^^^
+
+warning: struct `DeadlockEvent` is never constructed
+   --> src\persistence.rs:513:12
+    |
+513 | pub struct DeadlockEvent {
+    |            ^^^^^^^^^^^^^
+
+warning: methods `cleanup_idle_sessions` and `get_all_sessions` are never used
+   --> src\persistence.rs:884:12
+    |
+844 | impl ConnectionPool {
+    | ------------------- methods in this implementation
+...
+884 |     pub fn cleanup_idle_sessions(&mut self) {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+901 |     pub fn get_all_sessions(&self) -> Vec<ConnectionSession> {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: function `parse_create_table` is never used
+    --> src\parser.rs:4919:8
+     |
+4919 | pub fn parse_create_table(
+     |        ^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` on by default
+
+warning: associated items `new`, `restore_backup`, `list_backups`, 
+`get_backup`, `restore_directory`, and `get_statistics` are never used
+   --> src\backup.rs:52:12
+    |
+ 50 | impl BackupManager {
+    | ------------------ associated items in this implementation
+ 51 |     /// Create a new backup manager
+ 52 |     pub fn new(backup_dir: &str, max_backups: usize) -> Result<Self, 
+String> {
+    |            ^^^
+...
+160 |     pub fn restore_backup(&self, backup_id: &str, restore_path: &str) -> 
+Result<(), String> {
+    |            ^^^^^^^^^^^^^^
+...
+193 |     pub fn list_backups(&self) -> Vec<BackupMetadata> {
+    |            ^^^^^^^^^^^^
+...
+198 |     pub fn get_backup(&self, backup_id: &str) -> Option<BackupMetadata> {
+    |            ^^^^^^^^^^
+...
+259 |     fn restore_directory(src: &Path, dst: &Path, compressed: bool) -> 
+Result<(), String> {
+    |        ^^^^^^^^^^^^^^^^^
+...
+350 |     pub fn get_statistics(&self) -> BackupStatistics {
+    |            ^^^^^^^^^^^^^^
+
+warning: struct `BackupStatistics` is never constructed
+   --> src\backup.rs:365:12
+    |
+365 | pub struct BackupStatistics {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: field `health` is never read
+  --> src\db_manager.rs:31:5
+   |
+21 | pub struct DatabaseManager {
+   |            --------------- field in this struct
+...
+31 |     health: DatabaseHealth,
+   |     ^^^^^^
+   |
+   = note: `DatabaseManager` has a derived impl for the trait `Debug`, but 
+this is intentionally ignored during dead code analysis
+
+warning: multiple methods are never used
+   --> src\db_manager.rs:117:12
+    |
+ 35 | impl DatabaseManager {
+    | -------------------- methods in this implementation
+...
+117 |     pub fn lock_row(
+    |            ^^^^^^^^
+...
+146 |     pub fn get_row_lock_owner(&self, table_name: &str, row_id: u32) -> 
+Option<String> {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+150 |     pub fn get_active_row_locks(&self) -> Vec<RowLockInfo> {
+    |            ^^^^^^^^^^^^^^^^^^^^
+...
+164 |     pub fn analyze_deadlock_risk(&self) -> Vec<(String, String)> {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+169 |     pub fn would_lock_create_deadlock(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+245 |     pub fn register_table(&mut self, table_name: &str, columns: 
+Vec<String>) {
+    |            ^^^^^^^^^^^^^^
+...
+294 |     pub fn restore_backup(&self, backup_id: &str, restore_path: &str) -> 
+Result<(), String> {
+    |            ^^^^^^^^^^^^^^
+...
+299 |     pub fn list_backups(&self) -> Vec<BackupMetadata> {
+    |            ^^^^^^^^^^^^
+...
+304 |     pub fn check_health(&mut self) -> DatabaseStatus {
+    |            ^^^^^^^^^^^^
+...
+311 |     pub fn get_health(&self) -> &DatabaseHealth {
+    |            ^^^^^^^^^^
+...
+316 |     pub fn cleanup_idle_connections(&mut self) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+331 |     pub fn get_active_sessions(&self) -> Vec<ConnectionSession> {
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+342 |     pub fn get_statistics(&self) -> DatabaseStatistics {
+    |            ^^^^^^^^^^^^^^
+...
+359 |     fn get_wal_size(&self) -> u64 {
+    |        ^^^^^^^^^^^^
+...
+381 |     pub fn set_session_isolation_level(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+392 |     pub fn get_session_isolation_level(&self, session_id: &str) -> 
+IsolationLevel {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+397 |     pub fn requires_read_lock_for_session(&self, session_id: &str) -> 
+bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+402 |     pub fn requires_write_lock_escalation_for_session(&self, session_id: 
+&str) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+407 |     pub fn get_db_path(&self) -> &Path {
+    |            ^^^^^^^^^^^
+...
+412 |     pub fn get_config(&self) -> &DurabilityConfig {
+    |            ^^^^^^^^^^
+
+warning: struct `DatabaseStatistics` is never constructed
+   --> src\db_manager.rs:418:12
+    |
+418 | pub struct DatabaseStatistics {
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: methods `as_u8` and `name` are never used
+  --> src\persistence.rs:73:12
+   |
+71 | impl IsolationLevel {
+   | ------------------- methods in this implementation
+72 |     /// Returns the numeric level (0-3) for comparison
+73 |     pub fn as_u8(&self) -> u8 {
+   |            ^^^^^
+...
+83 |     pub fn name(&self) -> &'static str {
+   |            ^^^^
+
+warning: struct `MvccVersion` is never constructed
+  --> src\persistence.rs:94:8
+   |
+94 | struct MvccVersion<V> {
+   |        ^^^^^^^^^^^
+
+warning: struct `MvccTransaction` is never constructed
+   --> src\persistence.rs:101:12
+    |
+101 | pub struct MvccTransaction<K, V> {
+    |            ^^^^^^^^^^^^^^^
+
+warning: methods `snapshot_version`, `write`, and `delete` are never used
+   --> src\persistence.rs:110:12
+    |
+106 | / impl<K, V> MvccTransaction<K, V>
+107 | | where
+108 | |     K: Eq + std::hash::Hash,
+    | |____________________________- methods in this implementation
+109 |   {
+110 |       pub fn snapshot_version(&self) -> u64 {
+    |              ^^^^^^^^^^^^^^^^
+...
+114 |       pub fn write(&mut self, key: K, value: V) {
+    |              ^^^^^
+...
+118 |       pub fn delete(&mut self, key: K) {
+    |              ^^^^^^
+
+warning: struct `MvccStore` is never constructed
+   --> src\persistence.rs:126:12
+    |
+126 | pub struct MvccStore<K, V> {
+    |            ^^^^^^^^^
+
+warning: methods `begin`, `read`, `commit`, and `current_version` are never 
+used
+   --> src\persistence.rs:145:12
+    |
+140 | / impl<K, V> MvccStore<K, V>
+141 | | where
+142 | |     K: Eq + std::hash::Hash + Clone,
+143 | |     V: Clone,
+    | |_____________- methods in this implementation
+144 |   {
+145 |       pub fn begin(&self) -> MvccTransaction<K, V> {
+    |              ^^^^^
+...
+152 |       pub fn read(&self, transaction: &MvccTransaction<K, V>, key: &K) 
+-> Option<V> {
+    |              ^^^^
+...
+165 |       pub fn commit(
+    |              ^^^^^^
+...
+203 |       pub fn current_version(&self) -> u64 {
+    |              ^^^^^^^^^^^^^^^
+
+warning: enum `MvccCommitError` is never used
+   --> src\persistence.rs:209:10
+    |
+209 | pub enum MvccCommitError<K> {
+    |          ^^^^^^^^^^^^^^^
+
+warning: method `get_recovery_entries` is never used
+   --> src\persistence.rs:390:12
+    |
+270 | impl WriteAheadLog {
+    | ------------------ method in this implementation
+...
+390 |     pub fn get_recovery_entries(&self) -> Vec<&LogEntry> {
+    |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: field `isolation_level_overrides` is never read
+   --> src\persistence.rs:501:5
+    |
+499 | pub struct RowLockManager {
+    |            -------------- field in this struct
+500 |     locks: HashMap<(String, u32), LockRecord>,
+501 |     isolation_level_overrides: HashMap<String, IsolationLevel>, // 
+Per-session isolation levels
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `RowLockManager` has a derived impl for the trait `Debug`, but 
+this is intentionally ignored during dead code analysis
+
+warning: struct `RowLockInfo` is never constructed
+   --> src\persistence.rs:505:12
+    |
+505 | pub struct RowLockInfo {
+    |            ^^^^^^^^^^^
+
+warning: multiple methods are never used
+   --> src\persistence.rs:535:12
+    |
+529 | impl RowLockManager {
+    | ------------------- methods in this implementation
+...
+535 |     pub fn set_session_isolation_level(&mut self, session_id: String, 
+level: IsolationLevel) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+540 |     pub fn get_session_isolation_level(&self, session_id: &str) -> 
+IsolationLevel {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+548 |     pub fn clear_session_isolation_level(&mut self, session_id: &str) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+553 |     pub fn requires_read_lock(&self, session_id: &str) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+564 |     pub fn requires_write_lock_escalation(&self, session_id: &str) -> 
+bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+663 |     pub fn get_lock_owner(&self, table_name: &str, row_id: u32) -> 
+Option<String> {
+    |            ^^^^^^^^^^^^^^
+...
+669 |     pub fn active_locks(&self) -> Vec<RowLockInfo> {
+    |            ^^^^^^^^^^^^
+...
+755 |     pub fn analyze_deadlock_risk(&self) -> Vec<(String, String)> {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `is_idle` and `set_isolation_level` are never used
+   --> src\persistence.rs:819:12
+    |
+806 | impl ConnectionSession {
+    | ---------------------- methods in this implementation
+...
+819 |     pub fn is_idle(&self) -> bool {
+    |            ^^^^^^^
+...
+832 |     pub fn set_isolation_level(&mut self, level: IsolationLevel) {
+    |            ^^^^^^^^^^^^^^^^^^^
+
+warning: methods `get_session`, `cleanup_idle_sessions`, 
+`get_active_sessions_count`, and `get_all_sessions` are never used
+   --> src\persistence.rs:876:12
+    |
+844 | impl ConnectionPool {
+    | ------------------- methods in this implementation
+...
+876 |     pub fn get_session(&self, session_id: &str) -> 
+Option<&ConnectionSession> {
+    |            ^^^^^^^^^^^
+...
+884 |     pub fn cleanup_idle_sessions(&mut self) {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+897 |     pub fn get_active_sessions_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+901 |     pub fn get_all_sessions(&self) -> Vec<ConnectionSession> {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: method `check_health` is never used
+   --> src\persistence.rs:936:12
+    |
+925 | impl DatabaseHealth {
+    | ------------------- method in this implementation
+...
+936 |     pub fn check_health(&mut self, active_connections: usize, wal_size: 
+u64) -> DatabaseStatus {
+    |            ^^^^^^^^^^^^
+
+warning: `Mash_db` (bin "Mash_db" test) generated 9 warnings (run `cargo fix 
+--bin "Mash_db" --tests` to apply 2 suggestions)
+warning: `Mash_db` (bin "Mash_db") generated 23 warnings (3 duplicates)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.68s

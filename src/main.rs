@@ -377,6 +377,10 @@ enum Statement {
     DropUser {
         username: String,
     },
+    RenameUser {
+        old_username: String,
+        new_username: String,
+    },
     Grant {
         username: String,
         privilege: String,
@@ -1570,6 +1574,35 @@ fn handle_session_statement(statement: &Statement, session: &mut SessionState) -
             }
             true
         }
+        Statement::RenameUser {
+            old_username,
+            new_username,
+        } => {
+            let is_admin = session
+                .current_user
+                .as_deref()
+                .map(|user| {
+                    session
+                        .catalog
+                        .accounts
+                        .get(user)
+                        .map(|account| account.role == "admin")
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !is_admin {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            match session.catalog.rename_account(old_username, new_username) {
+                Ok(()) => match session.catalog.save("auth.json") {
+                    Ok(()) => println!("User '{}' renamed to '{}'.", old_username, new_username),
+                    Err(error) => println!("Error saving authorization catalog: {}", error),
+                },
+                Err(error) => println!("Error: {}", error),
+            }
+            true
+        }
         Statement::Grant {
             username,
             privilege,
@@ -1694,6 +1727,7 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::CreateUser { .. }
         | Statement::AlterUser { .. }
         | Statement::DropUser { .. }
+        | Statement::RenameUser { .. }
         | Statement::Grant { .. }
         | Statement::Revoke { .. }
         | Statement::Union { .. } => None,
@@ -1737,6 +1771,7 @@ fn audit_target(statement: &Statement) -> (&'static str, Option<String>) {
         Statement::CreateUser { .. } => ("CREATE USER", None),
         Statement::AlterUser { .. } => ("ALTER USER", None),
         Statement::DropUser { .. } => ("DROP USER", None),
+        Statement::RenameUser { .. } => ("RENAME USER", None),
         Statement::Grant { table_name, .. } => ("GRANT", Some(table_name.to_lowercase())),
         Statement::Revoke { table_name, .. } => ("REVOKE", Some(table_name.to_lowercase())),
         Statement::Insert { table_name, .. } => (
@@ -2378,6 +2413,16 @@ fn prepare_statement(input: &str) -> PrepareResult {
         if parts.len() == 3 {
             PrepareResult::Success(Statement::DropUser {
                 username: parts[2].to_string(),
+            })
+        } else {
+            PrepareResult::UnrecognizedStatement
+        }
+    } else if upper.starts_with("RENAME USER ") {
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        if parts.len() == 5 && parts[3].eq_ignore_ascii_case("TO") {
+            PrepareResult::Success(Statement::RenameUser {
+                old_username: parts[2].to_string(),
+                new_username: parts[4].to_string(),
             })
         } else {
             PrepareResult::UnrecognizedStatement
@@ -3571,6 +3616,7 @@ fn execute_statement(
         | Statement::CreateUser { .. }
         | Statement::AlterUser { .. }
         | Statement::DropUser { .. }
+        | Statement::RenameUser { .. }
         | Statement::Grant { .. }
         | Statement::Revoke { .. } => {
             return;
@@ -6517,6 +6563,14 @@ mod tests {
         assert!(matches!(
             prepare_statement("DROP USER alice"),
             PrepareResult::Success(Statement::DropUser { .. })
+        ));
+        assert!(matches!(
+            prepare_statement("RENAME USER alice TO bob"),
+            PrepareResult::Success(Statement::RenameUser { .. })
+        ));
+        assert!(matches!(
+            prepare_statement("RENAME USER alice bob"),
+            PrepareResult::UnrecognizedStatement
         ));
         assert!(matches!(
             prepare_statement("CREATE USER alice"),

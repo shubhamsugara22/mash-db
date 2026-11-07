@@ -1,11 +1,13 @@
-﻿cargo : warning: unused import: `Hash`
+﻿cargo :     Blocking waiting for file lock on build directory
 At line:1 char:54
 + ... ation 'c:\Users\hp\OneDrive\Desktop\Mash_db'; cargo test 2>&1 | Out-F ...
 +                                                   ~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (warning: unused import: `Hash`:St 
-   ring) [], RemoteException
+    + CategoryInfo          : NotSpecified: (    Blocking wa...build directory 
+   :String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
+   Compiling Mash_db v0.1.0 (C:\Users\hp\OneDrive\Desktop\Mash_db)
+warning: unused import: `Hash`
    --> src\backup.rs:226:25
     |
 226 |         use std::hash::{Hash, Hasher};
@@ -23,128 +25,13 @@ warning: variable does not need to be mutable
      |
      = note: `#[warn(unused_mut)]` on by default
 
-warning: method `get_backup` is never used
-   --> src\backup.rs:198:12
-    |
- 50 | impl BackupManager {
-    | ------------------ method in this implementation
-...
-198 |     pub fn get_backup(&self, backup_id: &str) -> Option<BackupMetadata> {
-    |            ^^^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` on by default
-
-warning: multiple methods are never used
-   --> src\db_manager.rs:245:12
-    |
- 35 | impl DatabaseManager {
-    | -------------------- methods in this implementation
-...
-245 |     pub fn register_table(&mut self, table_name: &str, columns: 
-Vec<String>) {
-    |            ^^^^^^^^^^^^^^
-...
-294 |     pub fn restore_backup(&self, backup_id: &str, restore_path: &str) -> 
-Result<(), String> {
-    |            ^^^^^^^^^^^^^^
-...
-304 |     pub fn check_health(&mut self) -> DatabaseStatus {
-    |            ^^^^^^^^^^^^
-...
-311 |     pub fn get_health(&self) -> &DatabaseHealth {
-    |            ^^^^^^^^^^
-...
-316 |     pub fn cleanup_idle_connections(&mut self) {
-    |            ^^^^^^^^^^^^^^^^^^^^^^^^
-...
-331 |     pub fn get_active_sessions(&self) -> Vec<ConnectionSession> {
-    |            ^^^^^^^^^^^^^^^^^^^
-...
-381 |     pub fn set_session_isolation_level(
-    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-...
-392 |     pub fn get_session_isolation_level(&self, session_id: &str) -> 
-IsolationLevel {
-    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-...
-397 |     pub fn requires_read_lock_for_session(&self, session_id: &str) -> 
-bool {
-    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-...
-402 |     pub fn requires_write_lock_escalation_for_session(&self, session_id: 
-&str) -> bool {
-    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-...
-407 |     pub fn get_db_path(&self) -> &Path {
-    |            ^^^^^^^^^^^
-
-warning: method `snapshot_version` is never used
-   --> src\persistence.rs:110:12
-    |
-106 | / impl<K, V> MvccTransaction<K, V>
-107 | | where
-108 | |     K: Eq + std::hash::Hash,
-    | |____________________________- method in this implementation
-109 |   {
-110 |       pub fn snapshot_version(&self) -> u64 {
-    |              ^^^^^^^^^^^^^^^^
-
-warning: method `current_version` is never used
-   --> src\persistence.rs:203:12
-    |
-140 | / impl<K, V> MvccStore<K, V>
-141 | | where
-142 | |     K: Eq + std::hash::Hash + Clone,
-143 | |     V: Clone,
-    | |_____________- method in this implementation
-...
-203 |       pub fn current_version(&self) -> u64 {
-    |              ^^^^^^^^^^^^^^^
-
-warning: method `add_snapshot` is never used
-   --> src\persistence.rs:480:12
-    |
-433 | impl DatabaseMetadata {
-    | --------------------- method in this implementation
-...
-480 |     pub fn add_snapshot(&mut self, snapshot: DatabaseSnapshot) {
-    |            ^^^^^^^^^^^^
-
-warning: struct `DeadlockEvent` is never constructed
-   --> src\persistence.rs:513:12
-    |
-513 | pub struct DeadlockEvent {
-    |            ^^^^^^^^^^^^^
-
-warning: methods `cleanup_idle_sessions` and `get_all_sessions` are never used
-   --> src\persistence.rs:884:12
-    |
-844 | impl ConnectionPool {
-    | ------------------- methods in this implementation
-...
-884 |     pub fn cleanup_idle_sessions(&mut self) {
-    |            ^^^^^^^^^^^^^^^^^^^^^
-...
-901 |     pub fn get_all_sessions(&self) -> Vec<ConnectionSession> {
-    |            ^^^^^^^^^^^^^^^^
-
-warning: method `rename_account` is never used
-   --> src\auth.rs:120:12
-    |
- 27 | impl AuthCatalog {
-    | ---------------- method in this implementation
-...
-120 |     pub fn rename_account(&mut self, old: &str, new: &str) -> Result<(), 
-String> {
-    |            ^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` on by default
-
 warning: function `parse_create_table` is never used
     --> src\parser.rs:4919:8
      |
 4919 | pub fn parse_create_table(
      |        ^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` on by default
 
 warning: associated items `new`, `restore_backup`, `list_backups`, 
 `get_backup`, `restore_directory`, and `get_statistics` are never used
@@ -355,6 +242,15 @@ warning: method `get_recovery_entries` is never used
 390 |     pub fn get_recovery_entries(&self) -> Vec<&LogEntry> {
     |            ^^^^^^^^^^^^^^^^^^^^
 
+warning: method `add_snapshot` is never used
+   --> src\persistence.rs:480:12
+    |
+433 | impl DatabaseMetadata {
+    | --------------------- method in this implementation
+...
+480 |     pub fn add_snapshot(&mut self, snapshot: DatabaseSnapshot) {
+    |            ^^^^^^^^^^^^
+
 warning: field `isolation_level_overrides` is never read
    --> src\persistence.rs:501:5
     |
@@ -373,6 +269,12 @@ warning: struct `RowLockInfo` is never constructed
     |
 505 | pub struct RowLockInfo {
     |            ^^^^^^^^^^^
+
+warning: struct `DeadlockEvent` is never constructed
+   --> src\persistence.rs:513:12
+    |
+513 | pub struct DeadlockEvent {
+    |            ^^^^^^^^^^^^^
 
 warning: multiple methods are never used
    --> src\persistence.rs:535:12
@@ -450,58 +352,148 @@ warning: method `check_health` is never used
 u64) -> DatabaseStatus {
     |            ^^^^^^^^^^^^
 
-warning: `Mash_db` (bin "Mash_db" test) generated 9 warnings (run `cargo fix 
---bin "Mash_db" --tests` to apply 2 suggestions)
-warning: `Mash_db` (bin "Mash_db") generated 24 warnings (3 duplicates)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.17s
+warning: method `get_backup` is never used
+   --> src\backup.rs:198:12
+    |
+ 50 | impl BackupManager {
+    | ------------------ method in this implementation
+...
+198 |     pub fn get_backup(&self, backup_id: &str) -> Option<BackupMetadata> {
+    |            ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: multiple methods are never used
+   --> src\db_manager.rs:245:12
+    |
+ 35 | impl DatabaseManager {
+    | -------------------- methods in this implementation
+...
+245 |     pub fn register_table(&mut self, table_name: &str, columns: 
+Vec<String>) {
+    |            ^^^^^^^^^^^^^^
+...
+294 |     pub fn restore_backup(&self, backup_id: &str, restore_path: &str) -> 
+Result<(), String> {
+    |            ^^^^^^^^^^^^^^
+...
+304 |     pub fn check_health(&mut self) -> DatabaseStatus {
+    |            ^^^^^^^^^^^^
+...
+311 |     pub fn get_health(&self) -> &DatabaseHealth {
+    |            ^^^^^^^^^^
+...
+316 |     pub fn cleanup_idle_connections(&mut self) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+331 |     pub fn get_active_sessions(&self) -> Vec<ConnectionSession> {
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+381 |     pub fn set_session_isolation_level(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+392 |     pub fn get_session_isolation_level(&self, session_id: &str) -> 
+IsolationLevel {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+397 |     pub fn requires_read_lock_for_session(&self, session_id: &str) -> 
+bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+402 |     pub fn requires_write_lock_escalation_for_session(&self, session_id: 
+&str) -> bool {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+407 |     pub fn get_db_path(&self) -> &Path {
+    |            ^^^^^^^^^^^
+
+warning: method `snapshot_version` is never used
+   --> src\persistence.rs:110:12
+    |
+106 | / impl<K, V> MvccTransaction<K, V>
+107 | | where
+108 | |     K: Eq + std::hash::Hash,
+    | |____________________________- method in this implementation
+109 |   {
+110 |       pub fn snapshot_version(&self) -> u64 {
+    |              ^^^^^^^^^^^^^^^^
+
+warning: method `current_version` is never used
+   --> src\persistence.rs:203:12
+    |
+140 | / impl<K, V> MvccStore<K, V>
+141 | | where
+142 | |     K: Eq + std::hash::Hash + Clone,
+143 | |     V: Clone,
+    | |_____________- method in this implementation
+...
+203 |       pub fn current_version(&self) -> u64 {
+    |              ^^^^^^^^^^^^^^^
+
+warning: methods `cleanup_idle_sessions` and `get_all_sessions` are never used
+   --> src\persistence.rs:884:12
+    |
+844 | impl ConnectionPool {
+    | ------------------- methods in this implementation
+...
+884 |     pub fn cleanup_idle_sessions(&mut self) {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+...
+901 |     pub fn get_all_sessions(&self) -> Vec<ConnectionSession> {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: `Mash_db` (bin "Mash_db") generated 23 warnings (run `cargo fix --bin 
+"Mash_db"` to apply 1 suggestion)
+warning: `Mash_db` (bin "Mash_db" test) generated 9 warnings (3 duplicates) 
+(run `cargo fix --bin "Mash_db" --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 24s
      Running unittests src\main.rs 
 (target\debug\deps\Mash_db-11e3f45d64e97712.exe)
 
 running 468 tests
-test auth::tests::user_is_denied_when_privilege_is_missing ... ok
+test auth::tests::admin_has_all_grants ... ok
 test auth::tests::grants_can_be_added_checked_and_revoked ... ok
+test auth::tests::user_is_denied_when_privilege_is_missing ... ok
 test backup::tests::test_backup_manager_creation ... ok
 test backup::tests::test_backup_metadata_creation ... ok
-test auth::tests::admin_has_all_grants ... ok
 test backup::tests::test_backup_statistics ... ok
 test backup::tests::test_backup_restore_verifies_checksum ... ok
-test auth::tests::rename_rejects_missing_or_existing_target ... ok
 test db_manager::tests::test_analyze_deadlock_risk ... ok
 test backup::tests::test_compressed_backup_restores_original_files ... ok
-test auth::tests::password_verification_normalizes_username_like_account_creation ... ok
+test db_manager::tests::test_backup_if_due_runs_once_per_interval ... ok
 test db_manager::tests::test_close_connection_releases_row_locks ... ok
 test db_manager::tests::test_cleanup_expired_locks_integration ... ok
-test db_manager::tests::test_create_connection ... ok
 test db_manager::tests::test_database_manager_creation ... ok
 test db_manager::tests::test_database_statistics ... ok
-test db_manager::tests::test_deadlock_detection_same_session_no_deadlock ... ok
+test db_manager::tests::test_create_connection ... ok
+test auth::tests::password_verification_normalizes_username_like_account_creation ... ok
+test auth::tests::rename_rejects_missing_or_existing_target ... ok
 test db_manager::tests::test_lock_timeout_configuration_default ... ok
+test db_manager::tests::test_deadlock_detection_same_session_no_deadlock ... ok
 test db_manager::tests::test_lock_timeout_configuration_custom ... ok
-test db_manager::tests::test_statistics_include_active_row_lock_count ... ok
-test db_manager::tests::test_would_lock_create_deadlock ... ok
 test parser_tests::tests::debug_tokens_first_value ... ok
 test parser_tests::tests::test_create_index_multiple_tables ... ok
 test parser_tests::tests::test_cte_parsing_extracts_cte_name ... ok
 test parser_tests::tests::test_cte_parsing_extracts_cte_query ... ok
 test parser_tests::tests::test_cte_parsing_extracts_main_query ... ok
-test parser_tests::tests::test_cte_parsing_no_cte ... ok
 test parser_tests::tests::test_cte_parsing_nested_parentheses ... ok
-test parser_tests::tests::test_cte_parsing_with_complex_where ... ok
+test auth::tests::account_can_be_renamed_with_grants_and_password ... ok
+test parser_tests::tests::test_cte_parsing_no_cte ... ok
 test parser_tests::tests::test_cte_parsing_simple_with_clause ... ok
+test parser_tests::tests::test_cte_parsing_with_complex_where ... ok
 test parser_tests::tests::test_cte_roundtrip ... ok
 test parser_tests::tests::test_cte_structure ... ok
 test parser_tests::tests::test_cte_whitespace_handling ... ok
 test parser_tests::tests::test_cte_with_aggregates ... ok
-test parser_tests::tests::test_date_sub_with_date_string ... ok
 test parser_tests::tests::test_date_add_with_date_string ... ok
+test parser_tests::tests::test_date_sub_with_date_string ... ok
 test parser_tests::tests::test_date_trunc_day ... ok
 test parser_tests::tests::test_date_trunc_month ... ok
-test parser_tests::tests::test_date_trunc_year ... ok
 test parser_tests::tests::test_datediff_with_date_strings ... ok
+test parser_tests::tests::test_date_trunc_year ... ok
 test parser_tests::tests::test_datediff_with_unix_timestamps ... ok
 test parser_tests::tests::test_eval_col_abs_negative ... ok
 test parser_tests::tests::test_eval_col_abs_positive ... ok
-test parser_tests::tests::test_dense_rank_runtime ... ok
 test parser_tests::tests::test_eval_col_case_when_else_branch ... ok
 test parser_tests::tests::test_eval_col_case_when_match ... ok
 test parser_tests::tests::test_eval_col_case_when_no_match_no_else ... ok
@@ -538,10 +530,10 @@ test parser_tests::tests::test_eval_col_month_from_date_string ... ok
 test parser_tests::tests::test_eval_col_month_from_timestamp ... ok
 test parser_tests::tests::test_eval_col_now_returns_number ... ok
 test parser_tests::tests::test_eval_col_nullif_match_returns_null ... ok
-test parser_tests::tests::test_eval_col_position_found ... ok
 test parser_tests::tests::test_eval_col_nullif_no_match_returns_value ... ok
-test parser_tests::tests::test_eval_col_power_cube ... ok
+test parser_tests::tests::test_eval_col_position_found ... ok
 test parser_tests::tests::test_eval_col_position_not_found ... ok
+test parser_tests::tests::test_eval_col_power_cube ... ok
 test parser_tests::tests::test_eval_col_power_square ... ok
 test parser_tests::tests::test_eval_col_repeat_duplicates_string ... ok
 test parser_tests::tests::test_eval_col_repeat_zero_times ... ok
@@ -559,59 +551,59 @@ test parser_tests::tests::test_eval_col_sign_negative ... ok
 test parser_tests::tests::test_eval_col_sign_positive ... ok
 test parser_tests::tests::test_eval_col_sign_zero ... ok
 test parser_tests::tests::test_eval_col_sqrt_decimal ... ok
-test parser_tests::tests::test_eval_col_substr_from_start ... ok
 test parser_tests::tests::test_eval_col_sqrt_perfect_square ... ok
+test parser_tests::tests::test_eval_col_substr_from_start ... ok
 test parser_tests::tests::test_eval_col_substr_mid ... ok
 test parser_tests::tests::test_eval_col_substring_index_negative ... ok
 test parser_tests::tests::test_eval_col_substring_index_positive ... ok
 test parser_tests::tests::test_eval_col_time_from_datetime_string ... ok
 test parser_tests::tests::test_eval_col_time_from_timestamp ... ok
 test parser_tests::tests::test_eval_col_trim_no_whitespace_unchanged ... ok
-test parser_tests::tests::test_eval_col_year_from_date_string ... ok
 test parser_tests::tests::test_eval_col_trim_strips_whitespace ... ok
+test parser_tests::tests::test_eval_col_year_from_date_string ... ok
 test parser_tests::tests::test_eval_col_year_from_timestamp ... ok
+test parser_tests::tests::test_dense_rank_runtime ... ok
+test db_manager::tests::test_statistics_include_active_row_lock_count ... ok
+test parser_tests::tests::test_first_value_runtime ... ok
 test parser_tests::tests::test_hour_extraction_from_datetime_string ... ok
+test db_manager::tests::test_would_lock_create_deadlock ... ok
 test parser_tests::tests::test_hour_extraction_from_time_string ... ok
 test parser_tests::tests::test_hour_minute_second_from_unix_timestamp ... ok
-test parser_tests::tests::test_index_definition_structure ... ok
-test parser_tests::tests::test_first_value_runtime ... ok
 test parser_tests::tests::test_lag_runtime ... ok
-test db_manager::tests::test_backup_if_due_runs_once_per_interval ... ok
 test parser_tests::tests::test_lag_with_default_value ... ok
 test parser_tests::tests::test_lead_with_default_value ... ok
-test parser_tests::tests::test_lead_runtime ... ok
-test parser_tests::tests::test_lag_with_offset ... ok
 test parser_tests::tests::test_lead_with_offset ... ok
+test parser_tests::tests::test_index_definition_structure ... ok
 test parser_tests::tests::test_minute_extraction_from_time_string ... ok
 test parser_tests::tests::test_multiple_hour_minute_second_on_different_times ... ok
-test parser_tests::tests::test_parse_count_distinct_multiple ... ok
 test parser_tests::tests::test_parse_count_distinct_single ... ok
+test parser_tests::tests::test_parse_count_distinct_multiple ... ok
 test parser_tests::tests::test_parse_count_distinct_star_should_fail ... ok
+test parser_tests::tests::test_parse_count_distinct_with_group_by ... ok
 test parser_tests::tests::test_parse_create_index_basic ... ok
 test parser_tests::tests::test_parse_create_index_error_missing_column ... ok
-test parser_tests::tests::test_parse_count_distinct_with_group_by ... ok
+test parser_tests::tests::test_parse_create_index_error_missing_paren ... ok
 test parser_tests::tests::test_parse_create_index_error_missing_on ... ok
 test parser_tests::tests::test_parse_create_index_on_custom_column ... ok
-test parser_tests::tests::test_parse_create_index_error_missing_paren ... ok
-test parser_tests::tests::test_parse_create_index_on_orders_table ... ok
 test parser_tests::tests::test_parse_create_index_on_id ... ok
 test parser_tests::tests::test_parse_create_index_various_column_types ... ok
+test parser_tests::tests::test_parse_create_index_on_orders_table ... ok
 test parser_tests::tests::test_parse_create_index_with_underscores ... ok
-test parser_tests::tests::test_parse_create_table_no_constraints ... ok
 test parser_tests::tests::test_parse_create_table_default_missing_literal_errors ... ok
+test parser_tests::tests::test_parse_create_table_no_constraints ... ok
 test parser_tests::tests::test_parse_create_table_not_null_alone ... ok
-test parser_tests::tests::test_parse_create_table_not_null_with_primary_key ... ok
 test parser_tests::tests::test_parse_create_table_not_null_deduplicated ... ok
 test parser_tests::tests::test_parse_create_table_not_null_with_default_either_order ... ok
+test parser_tests::tests::test_parse_create_table_with_defaults_and_pk ... ok
+test parser_tests::tests::test_parse_create_table_not_null_with_primary_key ... ok
 test parser_tests::tests::test_parse_create_table_with_defaults_literals ... ok
 test parser_tests::tests::test_parse_create_table_with_multiple_unique ... ok
-test parser_tests::tests::test_parse_create_table_with_pk_and_unique ... ok
 test parser_tests::tests::test_parse_create_table_with_primary_key ... ok
-test parser_tests::tests::test_parse_create_table_with_defaults_and_pk ... ok
+test parser_tests::tests::test_parse_create_table_with_pk_and_unique ... ok
 test parser_tests::tests::test_parse_create_table_with_unique ... ok
 test parser_tests::tests::test_parse_create_table_wrapper_ignores_defaults ... ok
-test parser_tests::tests::test_parse_cte_complex_query ... ok
 test parser_tests::tests::test_parse_cte_name_extraction ... ok
+test parser_tests::tests::test_parse_cte_complex_query ... ok
 test parser_tests::tests::test_parse_cte_simple ... ok
 test parser_tests::tests::test_parse_cte_nested_parens ... ok
 test parser_tests::tests::test_parse_cte_without_with ... ok
@@ -619,23 +611,24 @@ test parser_tests::tests::test_parse_date_add_function ... ok
 test parser_tests::tests::test_parse_date_sub_function ... ok
 test parser_tests::tests::test_parse_date_trunc_function ... ok
 test parser_tests::tests::test_parse_datediff_function ... ok
-test parser_tests::tests::test_parse_delete_where ... ok
 test parser_tests::tests::test_parse_delete ... ok
+test parser_tests::tests::test_parse_delete_where ... ok
 test parser_tests::tests::test_parse_dense_rank_basic ... ok
 test parser_tests::tests::test_parse_drop_index_basic ... ok
 test parser_tests::tests::test_parse_drop_index_error_missing_name ... ok
 test parser_tests::tests::test_parse_first_value_basic ... ok
-test parser_tests::tests::test_parse_insert_full_format ... ok
 test parser_tests::tests::test_parse_hour_function ... ok
 test parser_tests::tests::test_parse_insert_full_format_with_unquoted_float ... ok
+test parser_tests::tests::test_parse_insert_full_format ... ok
 test parser_tests::tests::test_parse_insert_missing_values_keyword_is_error ... ok
-test parser_tests::tests::test_parse_insert_select_missing_into_fails ... ok
 test parser_tests::tests::test_parse_insert_select_basic ... ok
 test parser_tests::tests::test_parse_insert_select_missing_select_fails ... ok
+test parser_tests::tests::test_parse_insert_select_missing_into_fails ... ok
 test parser_tests::tests::test_parse_insert_select_specific_columns ... ok
 test parser_tests::tests::test_parse_insert_select_with_where ... ok
 test parser_tests::tests::test_parse_insert_simple_format ... ok
 test parser_tests::tests::test_parse_insert_with_scientific_notation ... ok
+test auth::tests::wildcard_grants_cover_all_tables_for_same_privilege ... ok
 test parser_tests::tests::test_parse_invalid_insert ... ok
 test parser_tests::tests::test_parse_invalid_select ... ok
 test parser_tests::tests::test_parse_lag_basic ... ok
@@ -643,178 +636,180 @@ test parser_tests::tests::test_parse_lag_with_default ... ok
 test parser_tests::tests::test_parse_lag_with_offset ... ok
 test parser_tests::tests::test_parse_lag_with_partition ... ok
 test parser_tests::tests::test_parse_lead_basic ... ok
-test parser_tests::tests::test_parse_lead_with_default ... ok
 test parser_tests::tests::test_parse_lead_with_offset ... ok
+test parser_tests::tests::test_parse_lead_with_default ... ok
 test parser_tests::tests::test_parse_lead_with_partition ... ok
-test parser_tests::tests::test_parse_minute_function ... ok
-test db_manager::tests::test_durability_config_enables_backup_compression ... ok
-test parser_tests::tests::test_parse_operators_all ... ok
 test parser_tests::tests::test_parse_quarter_function ... ok
-test parser_tests::tests::test_parse_row_number_basic ... ok
 test parser_tests::tests::test_parse_rank_basic ... ok
-test parser_tests::tests::test_parse_select_abs_basic ... ok
+test parser_tests::tests::test_parse_minute_function ... ok
+test parser_tests::tests::test_parse_operators_all ... ok
+test parser_tests::tests::test_parse_row_number_basic ... ok
 test parser_tests::tests::test_parse_select_approx_percentile_basic ... ok
+test parser_tests::tests::test_parse_select_abs_basic ... ok
 test parser_tests::tests::test_parse_second_function ... ok
 test parser_tests::tests::test_parse_select_case_when_basic ... ok
 test parser_tests::tests::test_parse_select_case_when_else ... ok
 test parser_tests::tests::test_parse_select_case_when_missing_end_fails ... ok
-test parser_tests::tests::test_parse_select_case_when_multiple_branches ... ok
 test parser_tests::tests::test_parse_select_case_when_with_other_cols ... ok
-test parser_tests::tests::test_parse_select_cast_basic ... ok
+test parser_tests::tests::test_parse_select_case_when_multiple_branches ... ok
 test parser_tests::tests::test_parse_select_ceil_basic ... ok
 test parser_tests::tests::test_parse_select_coalesce_basic ... ok
-test parser_tests::tests::test_parse_select_coalesce_numeric_default ... ok
-test parser_tests::tests::test_parse_select_columns_count_column ... ok
+test parser_tests::tests::test_parse_select_cast_basic ... ok
 test parser_tests::tests::test_parse_select_columns_avg ... ok
+test parser_tests::tests::test_parse_select_coalesce_numeric_default ... ok
 test parser_tests::tests::test_parse_select_columns_count_star ... ok
+test parser_tests::tests::test_parse_select_columns_count_column ... ok
+test parser_tests::tests::test_parse_select_columns_mixed ... ok
+test parser_tests::tests::test_parse_select_columns_regular ... ok
+test parser_tests::tests::test_parse_select_columns_star ... ok
 test parser_tests::tests::test_parse_select_columns_max ... ok
 test parser_tests::tests::test_parse_select_columns_min ... ok
-test parser_tests::tests::test_parse_select_columns_regular ... ok
-test parser_tests::tests::test_parse_select_columns_mixed ... ok
-test parser_tests::tests::test_parse_select_columns_star ... ok
 test parser_tests::tests::test_parse_select_columns_sum ... ok
 test parser_tests::tests::test_parse_select_concat_basic ... ok
-test parser_tests::tests::test_parse_select_corr_basic ... ok
 test parser_tests::tests::test_parse_select_concat_col_and_literal ... ok
-test parser_tests::tests::test_parse_select_date_function ... ok
+test parser_tests::tests::test_parse_select_corr_basic ... ok
 test parser_tests::tests::test_parse_select_day_function ... ok
+test parser_tests::tests::test_parse_select_date_function ... ok
 test parser_tests::tests::test_parse_select_distinct_columns ... ok
-test parser_tests::tests::test_parse_select_distinct_star ... ok
 test parser_tests::tests::test_parse_select_distinct_full_clause ... ok
 test parser_tests::tests::test_parse_select_distinct_with_where ... ok
+test parser_tests::tests::test_parse_select_distinct_star ... ok
 test parser_tests::tests::test_parse_select_double_dot_value_does_not_panic ... ok
 test parser_tests::tests::test_parse_select_floor_basic ... ok
 test parser_tests::tests::test_parse_select_full_clause ... ok
 test parser_tests::tests::test_parse_select_greatest_least_basic ... ok
-test parser_tests::tests::test_parse_select_group_by_single ... ok
-test parser_tests::tests::test_parse_select_group_by_with_order ... ok
 test parser_tests::tests::test_parse_select_group_by_multiple ... ok
+test parser_tests::tests::test_parse_select_group_by_with_order ... ok
+test parser_tests::tests::test_parse_select_group_by_single ... ok
+test parser_tests::tests::test_parse_select_initcap_basic ... ok
 test parser_tests::tests::test_parse_select_group_by_with_where ... ok
 test parser_tests::tests::test_parse_select_if_basic ... ok
 test parser_tests::tests::test_parse_select_instr_basic ... ok
-test parser_tests::tests::test_parse_select_initcap_basic ... ok
 test parser_tests::tests::test_parse_select_left_basic ... ok
-test parser_tests::tests::test_parse_select_limit_one ... ok
 test parser_tests::tests::test_parse_select_length_column ... ok
-test parser_tests::tests::test_parse_select_lower_column ... ok
-test parser_tests::tests::test_parse_select_median_basic ... ok
 test parser_tests::tests::test_parse_select_lpad_basic ... ok
+test parser_tests::tests::test_parse_select_limit_one ... ok
+test parser_tests::tests::test_parse_select_lower_column ... ok
 test parser_tests::tests::test_parse_select_mixed_regular_and_aggregate ... ok
+test parser_tests::tests::test_parse_select_median_basic ... ok
 test parser_tests::tests::test_parse_select_mod_basic ... ok
-test parser_tests::tests::test_parse_select_multiple_aggregates ... ok
 test parser_tests::tests::test_parse_select_mode_basic ... ok
 test parser_tests::tests::test_parse_select_month_function ... ok
-test parser_tests::tests::test_parse_select_multiple_date_functions ... ok
-test parser_tests::tests::test_parse_select_nullif_basic ... ok
 test parser_tests::tests::test_parse_select_now_basic ... ok
+test parser_tests::tests::test_parse_select_multiple_date_functions ... ok
+test parser_tests::tests::test_parse_select_multiple_aggregates ... ok
 test parser_tests::tests::test_parse_select_now_function ... ok
+test parser_tests::tests::test_parse_select_nullif_basic ... ok
 test parser_tests::tests::test_parse_select_percentile_cont_basic ... ok
+test parser_tests::tests::test_parse_select_percentile_disc_basic ... ok
 test parser_tests::tests::test_parse_select_position_basic ... ok
 test parser_tests::tests::test_parse_select_power_basic ... ok
-test parser_tests::tests::test_parse_select_percentile_disc_basic ... ok
 test parser_tests::tests::test_parse_select_repeat_basic ... ok
 test parser_tests::tests::test_parse_select_replace_basic ... ok
 test parser_tests::tests::test_parse_select_reverse_basic ... ok
 test parser_tests::tests::test_parse_select_right_basic ... ok
-test parser_tests::tests::test_parse_select_round_basic ... ok
 test parser_tests::tests::test_parse_select_rpad_basic ... ok
+test parser_tests::tests::test_parse_select_round_basic ... ok
 test parser_tests::tests::test_parse_select_sign_basic ... ok
-test parser_tests::tests::test_parse_select_sqrt_basic ... ok
 test parser_tests::tests::test_parse_select_stddev_alias_basic ... ok
+test parser_tests::tests::test_parse_select_sqrt_basic ... ok
 test parser_tests::tests::test_parse_select_stddev_pop_basic ... ok
-test parser_tests::tests::test_parse_select_string_agg_basic ... ok
 test parser_tests::tests::test_parse_select_stddev_samp_basic ... ok
-test parser_tests::tests::test_parse_select_substr_basic ... ok
 test parser_tests::tests::test_parse_select_substring_index_basic ... ok
-test parser_tests::tests::test_parse_select_trim_basic ... ok
+test parser_tests::tests::test_parse_select_substr_basic ... ok
+test parser_tests::tests::test_parse_select_string_agg_basic ... ok
 test parser_tests::tests::test_parse_select_time_function ... ok
+test parser_tests::tests::test_parse_select_trim_basic ... ok
 test parser_tests::tests::test_parse_select_upper_column ... ok
+test parser_tests::tests::test_parse_select_variance_basic ... ok
 test parser_tests::tests::test_parse_select_var_samp_basic ... ok
 test parser_tests::tests::test_parse_select_where_and ... ok
 test parser_tests::tests::test_parse_select_where_exists_subquery ... ok
-test parser_tests::tests::test_parse_select_variance_basic ... ok
-test parser_tests::tests::test_parse_select_where_lower_and_length ... ok
 test parser_tests::tests::test_parse_select_where_exists_with_and ... ok
 test parser_tests::tests::test_parse_select_where_mixed ... ok
-test parser_tests::tests::test_parse_select_where_not_in_multiple_conditions ... ok
 test parser_tests::tests::test_parse_select_where_not_exists_subquery ... ok
+test parser_tests::tests::test_parse_select_where_lower_and_length ... ok
 test parser_tests::tests::test_parse_select_where_not_in_list ... ok
+test parser_tests::tests::test_parse_select_where_or ... ok
+test parser_tests::tests::test_parse_select_where_not_in_multiple_conditions ... ok
+test parser_tests::tests::test_parse_select_where_simple ... ok
 test parser_tests::tests::test_parse_select_where_upper_condition ... ok
 test parser_tests::tests::test_parse_select_where_with_signed_number ... ok
-test parser_tests::tests::test_parse_select_where_simple ... ok
-test parser_tests::tests::test_parse_select_where_or ... ok
 test parser_tests::tests::test_parse_select_where_with_unsigned_leading_dot_literal ... ok
 test parser_tests::tests::test_parse_select_where_with_unquoted_float ... ok
-test parser_tests::tests::test_parse_select_with_aggregate_and_group_by ... ok
 test parser_tests::tests::test_parse_select_with_avg ... ok
-test parser_tests::tests::test_parse_select_with_count_star ... ok
-test parser_tests::tests::test_parse_select_with_date_add_column ... ok
-test parser_tests::tests::test_parse_select_with_count_column ... ok
+test parser_tests::tests::test_parse_select_with_aggregate_and_group_by ... ok
 test parser_tests::tests::test_parse_select_with_columns ... ok
+test parser_tests::tests::test_parse_select_with_count_star ... ok
+test parser_tests::tests::test_parse_select_with_count_column ... ok
+test parser_tests::tests::test_parse_select_with_date_add_column ... ok
 test parser_tests::tests::test_parse_select_with_date_sub_column ... ok
 test parser_tests::tests::test_parse_select_with_date_trunc_column ... ok
-test parser_tests::tests::test_parse_select_with_datediff_column ... ok
 test parser_tests::tests::test_parse_select_with_from_and_inner_join ... ok
+test parser_tests::tests::test_parse_select_with_datediff_column ... ok
 test parser_tests::tests::test_parse_select_with_having_and_limit ... ok
 test parser_tests::tests::test_parse_select_with_having_and_order_by ... ok
 test parser_tests::tests::test_parse_select_with_having_equality ... ok
 test parser_tests::tests::test_parse_select_with_having_multiple_conditions ... ok
-test parser_tests::tests::test_parse_select_with_hour_column ... ok
-test parser_tests::tests::test_parse_select_with_left_join ... ok
-test parser_tests::tests::test_parse_select_with_limit ... ok
-test parser_tests::tests::test_parse_select_with_having_simple ... ok
-test parser_tests::tests::test_parse_select_with_max ... ok
 test parser_tests::tests::test_parse_select_with_having_or_operator ... ok
+test parser_tests::tests::test_parse_select_with_having_simple ... ok
+test parser_tests::tests::test_parse_select_with_left_join ... ok
+test parser_tests::tests::test_parse_select_with_hour_column ... ok
+test parser_tests::tests::test_parse_select_with_min ... ok
+test parser_tests::tests::test_parse_select_with_limit ... ok
+test parser_tests::tests::test_parse_select_with_max ... ok
+test parser_tests::tests::test_parse_select_with_minute_column ... ok
 test parser_tests::tests::test_parse_select_with_offset ... ok
 test parser_tests::tests::test_parse_select_with_order_by_asc ... ok
-test parser_tests::tests::test_parse_select_with_minute_column ... ok
-test parser_tests::tests::test_parse_select_with_min ... ok
 test parser_tests::tests::test_parse_select_with_order_by_desc ... ok
 test parser_tests::tests::test_parse_select_with_quarter_column ... ok
-test parser_tests::tests::test_parse_select_with_week_column ... ok
-test parser_tests::tests::test_parse_select_year_function ... ok
-test parser_tests::tests::test_parse_update ... ok
-test parser_tests::tests::test_parse_select_with_sum ... ok
-test parser_tests::tests::test_parse_update_multi_column ... ok
 test parser_tests::tests::test_parse_select_with_second_column ... ok
+test parser_tests::tests::test_parse_select_with_sum ... ok
+test parser_tests::tests::test_parse_select_year_function ... ok
+test parser_tests::tests::test_parse_select_with_week_column ... ok
+test parser_tests::tests::test_parse_update ... ok
+test parser_tests::tests::test_parse_update_multi_column ... ok
 test parser_tests::tests::test_parse_update_numeric_value ... ok
 test parser_tests::tests::test_parse_week_function ... ok
-test parser_tests::tests::test_second_extraction_from_time_string ... ok
-test parser_tests::tests::test_row_number_runtime ... ok
 test parser_tests::tests::test_quarter_from_date_string ... ok
-test parser_tests::tests::test_select_date_runtime ... ok
+test parser_tests::tests::test_second_extraction_from_time_string ... ok
+test auth::tests::account_password_is_hashed_and_verifiable ... ok
 test parser_tests::tests::test_rank_runtime ... ok
+test parser_tests::tests::test_lead_runtime ... ok
+test parser_tests::tests::test_select_date_runtime ... ok
+test parser_tests::tests::test_row_number_runtime ... ok
+test parser_tests::tests::test_lag_with_offset ... ok
 test parser_tests::tests::test_select_now_runtime ... ok
-test parser_tests::tests::test_select_year_month_day_runtime ... ok
-test parser_tests::tests::test_tokenize_bare_minus_between_identifiers_is_dropped ... ok
 test parser_tests::tests::test_tokenize_bare_plus_between_identifiers_is_dropped ... ok
 test parser_tests::tests::test_tokenize_create_index_keywords ... ok
-test parser_tests::tests::test_tokenize_exists_keyword ... ok
+test parser_tests::tests::test_tokenize_bare_minus_between_identifiers_is_dropped ... ok
 test parser_tests::tests::test_tokenize_date_time_functions ... ok
 test parser_tests::tests::test_tokenize_double_dot_splits_into_two_string_tokens ... ok
+test parser_tests::tests::test_select_year_month_day_runtime ... ok
+test parser_tests::tests::test_tokenize_exponent_sign_without_digit_not_consumed ... ok
+test parser_tests::tests::test_tokenize_exists_keyword ... ok
 test parser_tests::tests::test_tokenize_having ... ok
 test parser_tests::tests::test_tokenize_incomplete_exponent_not_consumed ... ok
 test parser_tests::tests::test_tokenize_operators ... ok
 test parser_tests::tests::test_tokenize_primary_key ... ok
-test parser_tests::tests::test_tokenize_exponent_sign_without_digit_not_consumed ... ok
-test parser_tests::tests::test_tokenize_leading_dot_without_digit_is_dot_token ... ok
 test parser_tests::tests::test_tokenize_number_followed_by_incomplete_exponent_no_panic ... ok
+test parser_tests::tests::test_tokenize_leading_dot_without_digit_is_dot_token ... ok
 test parser_tests::tests::test_tokenize_scientific_and_signed_literals ... ok
+test parser_tests::tests::test_tokenize_sign_then_dot_no_digit_sign_dropped ... ok
 test parser_tests::tests::test_tokenize_simple_select ... ok
 test parser_tests::tests::test_tokenize_standalone_dot_stays_dot_token ... ok
-test parser_tests::tests::test_tokenize_sign_then_dot_no_digit_sign_dropped ... ok
-test parser_tests::tests::test_tokenize_union_keyword ... ok
 test parser_tests::tests::test_tokenize_unsigned_leading_dot_literal ... ok
 test parser_tests::tests::test_tokenize_upper_lower_length ... ok
-test persistence::tests::test_connection_pool_creation ... ok
 test parser_tests::tests::test_tokenize_unique ... ok
-test parser_tests::tests::test_week_from_date_string ... ok
+test parser_tests::tests::test_tokenize_union_keyword ... ok
 test parser_tests::tests::test_tokenize_with_keyword ... ok
-test persistence::tests::test_connection_session_idle_detection ... ok
-test persistence::tests::test_connection_pool_max_connections ... ok
-test persistence::tests::test_connection_session_isolation_level ... ok
+test parser_tests::tests::test_week_from_date_string ... ok
+test persistence::tests::test_connection_pool_creation ... ok
 test persistence::tests::test_database_health_status ... ok
+test persistence::tests::test_connection_pool_max_connections ... ok
 test persistence::tests::test_database_metadata_creation ... ok
+test persistence::tests::test_connection_session_idle_detection ... ok
+test persistence::tests::test_connection_session_isolation_level ... ok
 test persistence::tests::test_database_metadata_table_registration ... ok
 test persistence::tests::test_deadlock_detection_after_unlock ... ok
 test persistence::tests::test_deadlock_detection_basic ... ok
@@ -823,53 +818,51 @@ test persistence::tests::test_deadlock_detection_free_lock ... ok
 test persistence::tests::test_deadlock_detection_same_session_no_deadlock ... ok
 test persistence::tests::test_deadlock_risk_analysis ... ok
 test persistence::tests::test_durability_config_default_isolation ... ok
+test persistence::tests::test_isolation_level_consistency_across_sessions ... ok
+test persistence::tests::test_isolation_level_default ... ok
 test persistence::tests::test_isolation_level_hierarchy ... ok
 test persistence::tests::test_isolation_level_names ... ok
-test persistence::tests::test_isolation_level_default ... ok
-test persistence::tests::test_isolation_level_consistency_across_sessions ... ok
 test persistence::tests::test_mvcc_allows_commits_to_independent_keys ... ok
-test persistence::tests::test_mvcc_rejects_concurrent_write_conflict ... ok
 test persistence::tests::test_mvcc_delete_is_a_versioned_tombstone ... ok
+test persistence::tests::test_mvcc_rejects_concurrent_write_conflict ... ok
 test persistence::tests::test_mvcc_snapshot_reads_keep_committed_value ... ok
 test persistence::tests::test_mvcc_uncommitted_writes_are_private ... ok
+test persistence::tests::test_read_lock_requirements_by_isolation ... ok
 test persistence::tests::test_row_lock_manager_batch_lock_is_atomic ... ok
 test persistence::tests::test_row_lock_manager_cleanup_expired_locks ... ok
-test persistence::tests::test_row_lock_manager_releases_all_session_locks ... ok
-test persistence::tests::test_row_lock_manager_reports_sorted_active_locks ... ok
-test persistence::tests::test_read_lock_requirements_by_isolation ... ok
 test persistence::tests::test_row_lock_manager_isolation_level_management ... ok
 test persistence::tests::test_row_lock_manager_lock_and_release ... ok
+test persistence::tests::test_row_lock_manager_releases_all_session_locks ... ok
+test persistence::tests::test_row_lock_manager_reports_sorted_active_locks ... ok
 test persistence::tests::test_row_lock_manager_tracks_lock_acquisition_time ... ok
 test persistence::tests::test_write_lock_escalation_requirements ... ok
-test persistence::tests::test_write_ahead_log_creation ... ok
-test table::tests::delete_removes_existing_row ... ok
-test table::tests::delete_where_by_email ... ok
 test table::tests::delete_all_on_empty_table ... ok
+test table::tests::delete_where_by_email ... ok
 test table::tests::delete_all_removes_everything ... ok
-test table::tests::delete_where_by_id_removes_row ... ok
+test table::tests::delete_removes_existing_row ... ok
 test table::tests::delete_where_by_username ... ok
-test table::tests::insert_prevents_duplicate_id ... ok
+test table::tests::delete_where_by_id_removes_row ... ok
 test table::tests::delete_where_invalid_column_fails ... ok
 test table::tests::delete_where_no_matching_rows_returns_zero ... ok
+test persistence::tests::test_write_ahead_log_creation ... ok
+test table::tests::row_validation_rejects_long_username_and_email ... ok
 test table::tests::select_where_by_id ... ok
 test table::tests::select_where_by_email ... ok
-test table::tests::row_validation_rejects_long_username_and_email ... ok
+test table::tests::select_where_complex_and ... ok
+test db_manager::tests::test_durability_config_enables_backup_compression ... ok
+test table::tests::insert_prevents_duplicate_id ... ok
 test table::tests::select_where_by_username ... ok
 test table::tests::select_where_complex_or ... ok
-test table::tests::select_where_complex_mixed ... ok
 test table::tests::select_where_invalid_column_fails ... ok
 test table::tests::select_where_no_matches_returns_empty ... ok
-test table::tests::select_where_complex_and ... ok
-test table::tests::update_modifies_existing_row ... ok
+test table::tests::select_where_complex_mixed ... ok
 test tests::default_padding_still_applies_with_not_null ... ok
+test table::tests::update_modifies_existing_row ... ok
 test tests::not_null_insert_rejects_empty_and_null_values ... ok
 test tests::not_null_update_rejects_empty_value ... ok
-test auth::tests::wildcard_grants_cover_all_tables_for_same_privilege ... ok
-test auth::tests::account_can_be_renamed_with_grants_and_password ... ok
 test tests::show_grants_statements_are_recognized ... ok
 test tests::show_users_statement_is_recognized ... ok
 test tests::test_analyze_runs ... ok
-test tests::test_approx_percentile_large_sampled ... ok
 test tests::test_approx_percentile_small_exact ... ok
 test tests::test_corr_basic ... ok
 test tests::test_corr_single_value_returns_null ... ok
@@ -879,9 +872,9 @@ test tests::test_cte_executes_outer_query ... ok
 test tests::test_describe_table_parsing ... ok
 test tests::test_grant_revoke_parsing ... ok
 test tests::test_inner_join_basic ... ok
+test tests::test_approx_percentile_large_sampled ... ok
 test tests::test_inner_join_filters_correctly ... ok
 test tests::test_join_clause_parsing ... ok
-test tests::test_left_join_execution ... ok
 test tests::test_left_join_parsing ... ok
 test tests::test_login_and_logout_session_flow ... ok
 test tests::test_median_all_nulls_returns_null ... ok
@@ -892,7 +885,7 @@ test tests::test_mode_all_nulls_returns_null ... ok
 test tests::test_mode_basic ... ok
 test tests::test_mode_skips_null_values ... ok
 test tests::test_mode_with_tie ... ok
-test auth::tests::account_password_is_hashed_and_verifiable ... ok
+test tests::test_left_join_execution ... ok
 test tests::test_right_join_execution ... ok
 test tests::test_right_join_parsing ... ok
 test tests::test_select_with_from_clause ... ok
@@ -919,15 +912,15 @@ test tests::test_variance_all_nulls_returns_null ... ok
 test tests::test_variance_basic ... ok
 test tests::test_variance_single_value ... ok
 test tests::test_variance_skips_null_values ... ok
+test auth::tests::account_can_be_altered_and_dropped ... ok
 test persistence::tests::test_transaction_markers_are_durable ... ok
 test tests::durable_insert_updates_wal_and_metadata ... ok
-test auth::tests::account_can_be_altered_and_dropped ... ok
 test tests::show_grants_limits_users_to_own_grants ... ok
 test tests::show_grants_allows_admin_to_inspect_other_users ... ok
 test tests::test_permission_enforcement_end_to_end ... ok
 test tests::show_users_requires_admin_and_returns_sorted_safe_summaries ... ok
 
-test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.14s
+test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.24s
 
      Running tests\repl_numeric_literals.rs 
 (target\debug\deps\repl_numeric_literals-a9f144858deb2573.exe)
@@ -935,5 +928,5 @@ test result: ok. 468 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fi
 running 1 test
 test test_repl_numeric_literals_script ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.87s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.12s
 
