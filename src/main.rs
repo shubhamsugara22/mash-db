@@ -1850,7 +1850,13 @@ fn collect_backup_files(tables: &HashMap<String, Table>) -> Vec<(String, Vec<u8>
             files.push((filename, data));
         }
     }
-    for filename in ["schemas.json", "auth.json"] {
+    for filename in [
+        "schemas.json",
+        "defaults.json",
+        "notnull.json",
+        "metadata.json",
+        "auth.json",
+    ] {
         if let Ok(data) = std::fs::read(filename) {
             files.push((filename.to_string(), data));
         }
