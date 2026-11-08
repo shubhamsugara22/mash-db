@@ -148,9 +148,9 @@
   - Removes table from registry
   - Deletes corresponding .json file
   - Error handling for non-existent tables
-- [ ] **ALTER TABLE**: Modify table structure
-- [ ] **Table Metadata**: Store schema information in catalog
-- **Status**: ✅ PARTIALLY COMPLETED (CREATE/DROP implemented)
+- ✅ **ALTER TABLE**: RENAME TO, ADD COLUMN, DROP COLUMN
+- [x] **Table Metadata**: Store schema information in catalog (PRIMARY KEY and UNIQUE persisted in metadata.json)
+- **Status**: ✅ PARTIALLY COMPLETED (CREATE/DROP/ALTER implemented)
 - **Priority**: HIGH (prerequisite for enhanced multi-table operations)
 - **Estimated Effort**: 2-3 weeks for remaining features
 

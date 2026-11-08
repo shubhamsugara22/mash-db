@@ -1,6 +1,7 @@
 #![allow(unused_variables)]
 use db_manager::DatabaseManager;
 use persistence::DurabilityConfig;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
@@ -4961,6 +4962,7 @@ fn execute_statement(
                 save_schemas(schemas);
                 save_defaults(constraints);
                 save_not_null(constraints);
+                save_metadata(constraints);
             }
 
             println!(
@@ -5023,8 +5025,14 @@ fn execute_statement(
             if let Some(cols) = schemas.remove(&old_name) {
                 schemas.insert(new_name_lower.clone(), cols);
             }
+            if let Some(entry) = constraints.remove(&old_name) {
+                constraints.insert(new_name_lower.clone(), entry);
+            }
             if !tx.active {
                 save_schemas(schemas);
+                save_defaults(constraints);
+                save_not_null(constraints);
+                save_metadata(constraints);
             }
 
             println!("Table '{}' renamed to '{}'", table_name, new_name);
@@ -5116,6 +5124,7 @@ fn execute_statement(
                 save_schemas(schemas);
                 save_defaults(constraints);
                 save_not_null(constraints);
+                save_metadata(constraints);
             }
 
             println!("Table '{}' dropped", table_name);
@@ -5847,6 +5856,70 @@ fn save_not_null(
     }
 }
 
+const METADATA_FILE: &str = "metadata.json";
+
+// Persisted table catalog entry: PRIMARY KEY and UNIQUE columns for one table
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct TableMetadata {
+    primary_key: Option<String>,
+    unique_columns: Vec<String>,
+}
+
+// Build the persisted catalog from the constraint registry, skipping tables with no metadata
+fn metadata_snapshot(
+    constraints: &HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    >,
+) -> HashMap<String, TableMetadata> {
+    constraints
+        .iter()
+        .filter(|(_, (pk, unique, _, _))| pk.is_some() || !unique.is_empty())
+        .map(|(table, (pk, unique, _, _))| {
+            (
+                table.clone(),
+                TableMetadata {
+                    primary_key: pk.clone(),
+                    unique_columns: unique.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn load_metadata() -> HashMap<String, TableMetadata> {
+    if Path::new(METADATA_FILE).exists() {
+        if let Ok(contents) = std::fs::read_to_string(METADATA_FILE) {
+            if let Ok(metadata) = serde_json::from_str::<HashMap<String, TableMetadata>>(&contents)
+            {
+                return metadata;
+            }
+        }
+    }
+    HashMap::new()
+}
+
+fn save_metadata(
+    constraints: &HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    >,
+) {
+    if let Ok(json) = serde_json::to_string_pretty(&metadata_snapshot(constraints)) {
+        let _ = std::fs::write(METADATA_FILE, json);
+    }
+}
+
 fn main() {
     let mut database_manager =
         match DatabaseManager::new("mash_db", "data", 100, DurabilityConfig::default()) {
@@ -5899,6 +5972,21 @@ fn main() {
             .entry(table)
             .and_modify(|c| c.3 = not_null.clone())
             .or_insert((None, Vec::new(), HashMap::new(), not_null));
+    }
+    // Restore persisted PRIMARY KEY and UNIQUE columns
+    for (table, meta) in load_metadata() {
+        constraints
+            .entry(table)
+            .and_modify(|c| {
+                c.0 = meta.primary_key.clone();
+                c.1 = meta.unique_columns.clone();
+            })
+            .or_insert((
+                meta.primary_key,
+                meta.unique_columns,
+                HashMap::new(),
+                Vec::new(),
+            ));
     }
 
     // Initialize index registry: store index_name -> (table_name, column_name)
@@ -7604,6 +7692,31 @@ mod tests {
             schema_snapshot: HashMap::new(),
         };
         (tables, schemas, constraints, tx)
+    }
+
+    #[test]
+    fn table_metadata_snapshot_keeps_primary_key_and_unique() {
+        let mut constraints = HashMap::new();
+        constraints.insert(
+            "people".to_string(),
+            (
+                Some("id".to_string()),
+                vec!["email".to_string()],
+                HashMap::new(),
+                Vec::new(),
+            ),
+        );
+        constraints.insert(
+            "plain".to_string(),
+            (None, Vec::new(), HashMap::new(), Vec::new()),
+        );
+
+        let snapshot = metadata_snapshot(&constraints);
+        assert_eq!(snapshot.len(), 1);
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let restored: HashMap<String, TableMetadata> = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored["people"].primary_key.as_deref(), Some("id"));
+        assert_eq!(restored["people"].unique_columns, vec!["email".to_string()]);
     }
 
     #[test]
