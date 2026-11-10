@@ -1,8 +1,0 @@
-﻿cargo : error: no library targets found in package `Mash_db`
-At line:1 char:54
-+ ... sers\hp\OneDrive\Desktop\Mash_db'; cargo test --lib auth 2>&1 | Out-F ...
-+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (error: no libra...ckage `Mash_db` 
-   :String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
