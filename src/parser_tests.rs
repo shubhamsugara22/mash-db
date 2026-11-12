@@ -3810,7 +3810,7 @@ mod tests {
         let idx = result.unwrap();
         assert_eq!(idx.index_name, "idx_email");
         assert_eq!(idx.table_name, "users");
-        assert_eq!(idx.column_name, "email");
+        assert_eq!(idx.column_names, vec!["email"]);
     }
 
     #[test]
@@ -3820,7 +3820,7 @@ mod tests {
         let idx = result.unwrap();
         assert_eq!(idx.index_name, "idx_user_id");
         assert_eq!(idx.table_name, "users");
-        assert_eq!(idx.column_name, "id");
+        assert_eq!(idx.column_names, vec!["id"]);
     }
 
     #[test]
@@ -3830,7 +3830,7 @@ mod tests {
         let idx = result.unwrap();
         assert_eq!(idx.index_name, "idx_price");
         assert_eq!(idx.table_name, "products");
-        assert_eq!(idx.column_name, "price");
+        assert_eq!(idx.column_names, vec!["price"]);
     }
 
     #[test]
@@ -3868,7 +3868,37 @@ mod tests {
         assert!(result.is_ok());
         let idx = result.unwrap();
         assert_eq!(idx.table_name, "orders");
-        assert_eq!(idx.column_name, "customer_id");
+        assert_eq!(idx.column_names, vec!["customer_id"]);
+    }
+
+    #[test]
+    fn test_parse_create_index_composite() {
+        let result = parse_create_index("CREATE INDEX idx_user_email ON users (username, email)");
+        assert!(result.is_ok());
+        let idx = result.unwrap();
+        assert_eq!(idx.index_name, "idx_user_email");
+        assert_eq!(idx.table_name, "users");
+        assert_eq!(idx.column_names, vec!["username", "email"]);
+    }
+
+    #[test]
+    fn test_parse_create_index_composite_three_columns() {
+        let result = parse_create_index("CREATE INDEX idx_abc ON orders (a, b, c)");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().column_names, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_parse_create_index_error_trailing_comma() {
+        let result = parse_create_index("CREATE INDEX idx_x ON users (email, )");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_create_index_error_duplicate_column() {
+        let result = parse_create_index("CREATE INDEX idx_x ON users (email, email)");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Duplicate column"));
     }
 
     #[test]
@@ -3894,12 +3924,12 @@ mod tests {
         // Verify all fields are populated
         assert!(!idx.index_name.is_empty());
         assert!(!idx.table_name.is_empty());
-        assert!(!idx.column_name.is_empty());
+        assert!(!idx.column_names.is_empty());
 
         // Verify correct values
         assert_eq!(idx.index_name, "idx_status");
         assert_eq!(idx.table_name, "users");
-        assert_eq!(idx.column_name, "status");
+        assert_eq!(idx.column_names, vec!["status"]);
     }
 
     #[test]
@@ -3907,17 +3937,17 @@ mod tests {
         // Test on string column
         let result1 = parse_create_index("CREATE INDEX idx_name ON users (username)");
         assert!(result1.is_ok());
-        assert_eq!(result1.unwrap().column_name, "username");
+        assert_eq!(result1.unwrap().column_names, vec!["username"]);
 
         // Test on numeric column
         let result2 = parse_create_index("CREATE INDEX idx_qty ON inventory (quantity)");
         assert!(result2.is_ok());
-        assert_eq!(result2.unwrap().column_name, "quantity");
+        assert_eq!(result2.unwrap().column_names, vec!["quantity"]);
 
         // Test on date column
         let result3 = parse_create_index("CREATE INDEX idx_date ON orders (order_date)");
         assert!(result3.is_ok());
-        assert_eq!(result3.unwrap().column_name, "order_date");
+        assert_eq!(result3.unwrap().column_names, vec!["order_date"]);
     }
 
     #[test]
@@ -3936,7 +3966,7 @@ mod tests {
 
         // Verify they're different
         assert_ne!(idx1.table_name, idx2.table_name);
-        assert_ne!(idx1.column_name, idx2.column_name);
+        assert_ne!(idx1.column_names, idx2.column_names);
     }
 
     // ===== NEW DATE FUNCTIONS: HOUR, MINUTE, SECOND, DATE_ADD, DATE_SUB =====

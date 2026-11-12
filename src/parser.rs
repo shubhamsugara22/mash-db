@@ -5343,11 +5343,11 @@ pub fn parse_cte(input: &str) -> Result<(Option<CommonTableExpression>, String),
 pub struct IndexDefinition {
     pub index_name: String,
     pub table_name: String,
-    pub column_name: String,
+    pub column_names: Vec<String>,
 }
 
 /// Parse CREATE INDEX statement
-/// Syntax: CREATE INDEX index_name ON table_name (column_name)
+/// Syntax: CREATE INDEX index_name ON table_name (column_name [, column_name ...])
 pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
     let tokens = tokenize(input);
     let mut i = 0;
@@ -5393,14 +5393,26 @@ pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
     }
     i += 1;
 
-    // Get column name
-    let column_name = if let Some(Token::Identifier(name)) = tokens.get(i) {
-        let n = name.clone();
-        i += 1;
-        n
-    } else {
-        return Err("Expected column name inside parentheses".to_string());
-    };
+    // Get comma-separated column names
+    let mut column_names: Vec<String> = Vec::new();
+    loop {
+        if let Some(Token::Identifier(name)) = tokens.get(i) {
+            let n = name.clone();
+            i += 1;
+            if column_names.contains(&n) {
+                return Err(format!("Duplicate column '{}' in index", n));
+            }
+            column_names.push(n);
+        } else {
+            return Err("Expected column name inside parentheses".to_string());
+        }
+
+        if tokens.get(i) == Some(&Token::Comma) {
+            i += 1;
+        } else {
+            break;
+        }
+    }
 
     // Expect )
     if tokens.get(i) != Some(&Token::RParen) {
@@ -5416,7 +5428,7 @@ pub fn parse_create_index(input: &str) -> Result<IndexDefinition, String> {
     Ok(IndexDefinition {
         index_name,
         table_name,
-        column_name,
+        column_names,
     })
 }
 

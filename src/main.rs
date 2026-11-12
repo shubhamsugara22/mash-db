@@ -510,7 +510,7 @@ enum Statement {
     CreateIndex {
         index_name: String,
         table_name: String,
-        column_name: String,
+        column_names: Vec<String>,
     },
     DropIndex {
         index_name: String,
@@ -1932,7 +1932,7 @@ fn execute_authorized_statement(
             Vec<String>,
         ),
     >,
-    indexes: &mut HashMap<String, (String, String)>,
+    indexes: &mut HashMap<String, (String, Vec<String>)>,
     tx: &mut TransactionState,
     database_manager: &mut DatabaseManager,
     session_id: &str,
@@ -2581,7 +2581,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Ok(def) => PrepareResult::Success(Statement::CreateIndex {
                 index_name: def.index_name,
                 table_name: def.table_name,
-                column_name: def.column_name,
+                column_names: def.column_names,
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
@@ -3195,7 +3195,7 @@ fn execute_statement(
             Vec<String>,
         ),
     >,
-    indexes: &mut HashMap<String, (String, String)>, // index_name -> (table_name, column_name)
+    indexes: &mut HashMap<String, (String, Vec<String>)>, // index_name -> (table_name, column_names)
     tx: &mut TransactionState,
 ) {
     // Map a logical table name to a backing file path.
@@ -3242,15 +3242,16 @@ fn execute_statement(
     }
 
     // Check if an index exists for (table, column) and return the index name if found
+    // A composite index matches when the column is its leftmost column
     fn find_index_for<'a>(
         table_name: &str,
         column_name: &str,
-        indexes: &'a HashMap<String, (String, String)>,
+        indexes: &'a HashMap<String, (String, Vec<String>)>,
     ) -> Option<&'a str> {
         let tbl = table_name.to_lowercase();
         let col = column_name.to_lowercase();
-        for (idx_name, (t, c)) in indexes.iter() {
-            if t == &tbl && c == &col {
+        for (idx_name, (t, cols)) in indexes.iter() {
+            if t == &tbl && cols.first() == Some(&col) {
                 return Some(idx_name.as_str());
             }
         }
@@ -5186,11 +5187,12 @@ fn execute_statement(
             if indexes.is_empty() {
                 println!("No indexes defined.");
             } else {
-                let mut index_list: Vec<(&String, &(String, String))> = indexes.iter().collect();
+                let mut index_list: Vec<(&String, &(String, Vec<String>))> =
+                    indexes.iter().collect();
                 index_list.sort_by_key(|(name, _)| name.as_str());
                 println!("Indexes:");
-                for (idx_name, (tbl, col)) in index_list {
-                    println!("  {} ON {}({})", idx_name, tbl, col);
+                for (idx_name, (tbl, cols)) in index_list {
+                    println!("  {} ON {}({})", idx_name, tbl, cols.join(", "));
                 }
             }
         }
@@ -5214,11 +5216,12 @@ fn execute_statement(
         Statement::CreateIndex {
             index_name,
             table_name,
-            column_name,
+            column_names,
         } => {
             let index_name_lower = index_name.to_lowercase();
             let table_name_lower = table_name.to_lowercase();
-            let column_name_lower = column_name.to_lowercase();
+            let column_names_lower: Vec<String> =
+                column_names.iter().map(|c| c.to_lowercase()).collect();
 
             // Check index doesn't already exist
             if indexes.contains_key(&index_name_lower) {
@@ -5239,22 +5242,28 @@ fn execute_statement(
                 .cloned();
 
             if let Some(cols) = schema {
-                if !cols.contains(&column_name_lower) {
-                    println!(
-                        "Error: Column '{}' does not exist in table '{}'",
-                        column_name, table_name
-                    );
-                    return;
+                for (column_name, column_lower) in
+                    column_names.iter().zip(column_names_lower.iter())
+                {
+                    if !cols.contains(column_lower) {
+                        println!(
+                            "Error: Column '{}' does not exist in table '{}'",
+                            column_name, table_name
+                        );
+                        return;
+                    }
                 }
             }
 
             indexes.insert(
                 index_name_lower.clone(),
-                (table_name_lower.clone(), column_name_lower.clone()),
+                (table_name_lower.clone(), column_names_lower.clone()),
             );
             println!(
                 "Index '{}' created on {}({})",
-                index_name, table_name, column_name
+                index_name,
+                table_name,
+                column_names.join(", ")
             );
         }
         Statement::DropIndex { index_name } => {
@@ -5995,8 +6004,8 @@ fn main() {
             ));
     }
 
-    // Initialize index registry: store index_name -> (table_name, column_name)
-    let mut indexes: HashMap<String, (String, String)> = HashMap::new();
+    // Initialize index registry: store index_name -> (table_name, column_names)
+    let mut indexes: HashMap<String, (String, Vec<String>)> = HashMap::new();
 
     // Initialize authenticated session state.
     let mut session = SessionState::new(auth::AuthCatalog::load("auth.json"));
