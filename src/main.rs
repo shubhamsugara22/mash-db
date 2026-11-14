@@ -526,6 +526,7 @@ enum Statement {
     },
     ShowTables,
     ShowIndexes,
+    ShowIndexStats,
     ShowUsers,
     ShowGrants {
         username: Option<String>,
@@ -1718,6 +1719,7 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::ShowStats { .. }
         | Statement::ShowTables
         | Statement::ShowIndexes
+        | Statement::ShowIndexStats
         | Statement::ShowUsers
         | Statement::ShowGrants { .. }
         | Statement::BeginTransaction
@@ -1821,6 +1823,7 @@ fn audit_target(statement: &Statement) -> (&'static str, Option<String>) {
         Statement::Describe { table_name } => ("DESCRIBE", Some(table_name.to_lowercase())),
         Statement::ShowTables => ("SHOW TABLES", None),
         Statement::ShowIndexes => ("SHOW INDEXES", None),
+        Statement::ShowIndexStats => ("SHOW INDEX STATS", None),
         Statement::ShowUsers => ("SHOW USERS", None),
         Statement::ShowGrants { .. } => ("SHOW GRANTS", None),
         Statement::Select { from_table, .. }
@@ -1862,6 +1865,25 @@ fn collect_backup_files(tables: &HashMap<String, Table>) -> Vec<(String, Vec<u8>
         }
     }
     files
+}
+
+thread_local! {
+    // Per-session count of SELECTs that matched each index (not persisted).
+    static INDEX_USAGE: std::cell::RefCell<HashMap<String, u64>> = std::cell::RefCell::new(HashMap::new());
+}
+
+fn record_index_use(index_name: &str) {
+    INDEX_USAGE.with(|u| *u.borrow_mut().entry(index_name.to_string()).or_insert(0) += 1);
+}
+
+fn index_use_count(index_name: &str) -> u64 {
+    INDEX_USAGE.with(|u| u.borrow().get(index_name).copied().unwrap_or(0))
+}
+
+fn clear_index_use(index_name: &str) {
+    INDEX_USAGE.with(|u| {
+        u.borrow_mut().remove(index_name);
+    });
 }
 
 fn list_users_for_admin(session: &SessionState) -> Option<Vec<(String, String)>> {
@@ -2574,6 +2596,8 @@ fn prepare_statement(input: &str) -> PrepareResult {
         } else {
             PrepareResult::UnrecognizedStatement
         }
+    } else if upper.starts_with("SHOW INDEX STATS") {
+        PrepareResult::Success(Statement::ShowIndexStats)
     } else if upper.starts_with("SHOW INDEXES") || upper.starts_with("SHOW INDEX") {
         PrepareResult::Success(Statement::ShowIndexes)
     } else if upper.starts_with("CREATE INDEX") {
@@ -4513,7 +4537,7 @@ fn execute_statement(
                     let (col, op, _val) = &resolved_conditions[0];
                     if op == "=" {
                         if let Some(idx_name) = find_index_for(table_name, col, indexes) {
-                            let _ = idx_name; // index is found — filtered scan path
+                            record_index_use(idx_name);
                         }
                     }
                 }
@@ -5196,6 +5220,27 @@ fn execute_statement(
                 }
             }
         }
+        Statement::ShowIndexStats => {
+            if indexes.is_empty() {
+                println!("No indexes defined.");
+            } else {
+                let mut index_list: Vec<(&String, &(String, Vec<String>))> =
+                    indexes.iter().collect();
+                index_list.sort_by_key(|(name, _)| name.as_str());
+                println!("Index statistics (in-memory, this session):");
+                for (idx_name, (tbl, cols)) in index_list {
+                    let rows = load_table_by_name(tbl, tables, schemas).select_all().len();
+                    println!(
+                        "  {} ON {}({}) | uses: {} | rows: {}",
+                        idx_name,
+                        tbl,
+                        cols.join(", "),
+                        index_use_count(idx_name),
+                        rows
+                    );
+                }
+            }
+        }
         Statement::Describe { table_name } => {
             match schemas.get(&table_name).or_else(|| {
                 schemas
@@ -5255,6 +5300,7 @@ fn execute_statement(
                 }
             }
 
+            clear_index_use(&index_name_lower);
             indexes.insert(
                 index_name_lower.clone(),
                 (table_name_lower.clone(), column_names_lower.clone()),
