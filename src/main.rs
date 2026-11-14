@@ -6184,6 +6184,30 @@ mod tests {
     }
 
     #[test]
+    fn show_index_stats_statement_is_recognized() {
+        assert!(matches!(
+            prepare_statement("SHOW INDEX STATS"),
+            PrepareResult::Success(Statement::ShowIndexStats)
+        ));
+        assert!(matches!(
+            prepare_statement("SHOW INDEXES"),
+            PrepareResult::Success(Statement::ShowIndexes)
+        ));
+    }
+
+    #[test]
+    fn index_usage_counter_records_and_clears() {
+        let name = "stats_test_idx_usage";
+        clear_index_use(name);
+        assert_eq!(index_use_count(name), 0);
+        record_index_use(name);
+        record_index_use(name);
+        assert_eq!(index_use_count(name), 2);
+        clear_index_use(name);
+        assert_eq!(index_use_count(name), 0);
+    }
+
+    #[test]
     fn show_users_requires_admin_and_returns_sorted_safe_summaries() {
         let mut catalog = auth::AuthCatalog::default();
         catalog.create_account("zoe", "secret", "reader").unwrap();
