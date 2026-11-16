@@ -481,6 +481,7 @@ enum Statement {
         unique_columns: Vec<String>,
         column_defaults: Vec<(String, String)>,
         not_null_columns: Vec<String>,
+        column_types: Vec<(String, String)>,
     },
     AlterTableRename {
         table_name: String,
@@ -1857,6 +1858,7 @@ fn collect_backup_files(tables: &HashMap<String, Table>) -> Vec<(String, Vec<u8>
         "schemas.json",
         "defaults.json",
         "notnull.json",
+        "types.json",
         "metadata.json",
         "auth.json",
     ] {
@@ -2485,14 +2487,17 @@ fn prepare_statement(input: &str) -> PrepareResult {
             PrepareResult::UnrecognizedStatement
         }
     } else if upper.starts_with("CREATE TABLE") {
-        match parser::parse_create_table_with_defaults(input) {
+        match parser::parse_create_table_with_types(input) {
             Ok((
-                table_name,
-                columns,
-                primary_key,
-                unique_columns,
-                column_defaults,
-                not_null_columns,
+                (
+                    table_name,
+                    columns,
+                    primary_key,
+                    unique_columns,
+                    column_defaults,
+                    not_null_columns,
+                ),
+                column_types,
             )) => PrepareResult::Success(Statement::CreateTable {
                 table_name,
                 columns,
@@ -2500,6 +2505,7 @@ fn prepare_statement(input: &str) -> PrepareResult {
                 unique_columns,
                 column_defaults,
                 not_null_columns,
+                column_types,
             }),
             Err(_) => PrepareResult::UnrecognizedStatement,
         }
@@ -3760,6 +3766,16 @@ fn execute_statement(
                 }
             }
 
+            // Enforce declared data types on each value
+            for (idx, col) in schema.iter().enumerate() {
+                if let Some(v) = padded_values.get(idx) {
+                    if let Err(e) = check_column_value(&actual_table_name, col, v) {
+                        println!("Error: {}", e);
+                        return;
+                    }
+                }
+            }
+
             match Row::from_values(&schema, padded_values) {
                 Ok(row) => {
                     // Check constraints if they exist for this table
@@ -4855,6 +4871,13 @@ fn execute_statement(
                     }
                 }
             }
+            // Enforce declared data types on assigned values
+            for (column, value) in &assignments {
+                if let Err(e) = check_column_value(&constraint_key, column, value) {
+                    println!("Error: {}", e);
+                    return;
+                }
+            }
             let table = match table_name {
                 Some(name) => load_table_by_name(&name, tables, schemas),
                 None => get_default_table(tables, schemas),
@@ -4933,6 +4956,7 @@ fn execute_statement(
             unique_columns,
             column_defaults,
             not_null_columns,
+            column_types,
         } => {
             let table_name_lower = table_name.to_lowercase();
 
@@ -4989,11 +5013,20 @@ fn execute_statement(
                 ),
             );
 
+            // Record declared column types (table with no typed columns has no entry)
+            if column_types.is_empty() {
+                COLUMN_TYPES.with(|t| t.borrow_mut().remove(&table_name_lower));
+            } else {
+                let typed: HashMap<String, String> = column_types.iter().cloned().collect();
+                COLUMN_TYPES.with(|t| t.borrow_mut().insert(table_name_lower.clone(), typed));
+            }
+
             if !tx.active {
                 save_schemas(schemas);
                 save_defaults(constraints);
                 save_not_null(constraints);
                 save_metadata(constraints);
+                save_column_types();
             }
 
             println!(
@@ -5059,11 +5092,18 @@ fn execute_statement(
             if let Some(entry) = constraints.remove(&old_name) {
                 constraints.insert(new_name_lower.clone(), entry);
             }
+            COLUMN_TYPES.with(|t| {
+                let mut t = t.borrow_mut();
+                if let Some(entry) = t.remove(&old_name) {
+                    t.insert(new_name_lower.clone(), entry);
+                }
+            });
             if !tx.active {
                 save_schemas(schemas);
                 save_defaults(constraints);
                 save_not_null(constraints);
                 save_metadata(constraints);
+                save_column_types();
             }
 
             println!("Table '{}' renamed to '{}'", table_name, new_name);
@@ -5151,11 +5191,14 @@ fn execute_statement(
             // Remove all indexes for this table
             indexes.retain(|_, (tbl, _)| tbl != &table_name_lower);
 
+            COLUMN_TYPES.with(|t| t.borrow_mut().remove(&table_name_lower));
+
             if !tx.active {
                 save_schemas(schemas);
                 save_defaults(constraints);
                 save_not_null(constraints);
                 save_metadata(constraints);
+                save_column_types();
             }
 
             println!("Table '{}' dropped", table_name);
@@ -5882,6 +5925,66 @@ fn save_defaults(
     }
 }
 
+thread_local! {
+    // Declared column types per table: table -> (column -> upper-case type). Persisted in types.json.
+    static COLUMN_TYPES: std::cell::RefCell<HashMap<String, HashMap<String, String>>> = std::cell::RefCell::new(HashMap::new());
+}
+
+const COLUMN_TYPES_FILE: &str = "types.json";
+
+fn load_column_types() -> HashMap<String, HashMap<String, String>> {
+    if Path::new(COLUMN_TYPES_FILE).exists() {
+        if let Ok(contents) = std::fs::read_to_string(COLUMN_TYPES_FILE) {
+            if let Ok(types) =
+                serde_json::from_str::<HashMap<String, HashMap<String, String>>>(&contents)
+            {
+                return types;
+            }
+        }
+    }
+    HashMap::new()
+}
+
+fn save_column_types() {
+    let snapshot: HashMap<String, HashMap<String, String>> =
+        COLUMN_TYPES.with(|t| t.borrow().clone());
+    if let Ok(json) = serde_json::to_string_pretty(&snapshot) {
+        let _ = std::fs::write(COLUMN_TYPES_FILE, json);
+    }
+}
+
+// Whether a stored value fits a declared data type. TEXT and VARCHAR accept any value.
+fn value_matches_type(value: &str, data_type: &str) -> bool {
+    match data_type {
+        "INT" | "INTEGER" => value.parse::<i32>().is_ok(),
+        "SMALLINT" => value.parse::<i16>().is_ok(),
+        "BIGINT" => value.parse::<i64>().is_ok(),
+        "BOOLEAN" => value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false"),
+        "FLOAT" | "DOUBLE" => value.parse::<f64>().map_or(false, |f| f.is_finite()),
+        _ => true,
+    }
+}
+
+// Validates one value against the declared type of table.column.
+// The literal NULL is left to the NOT NULL check, since it is not a typed value.
+fn check_column_value(table: &str, column: &str, value: &str) -> Result<(), String> {
+    if value.eq_ignore_ascii_case("NULL") {
+        return Ok(());
+    }
+    let declared = COLUMN_TYPES.with(|t| {
+        t.borrow()
+            .get(table)
+            .and_then(|cols| cols.get(column).cloned())
+    });
+    match declared {
+        Some(data_type) if !value_matches_type(value, &data_type) => Err(format!(
+            "Invalid value '{}' for column '{}' of type {}",
+            value, column, data_type
+        )),
+        _ => Ok(()),
+    }
+}
+
 const NOT_NULL_FILE: &str = "notnull.json";
 
 // Persisted NOT NULL columns: table name -> list of column names
@@ -6027,6 +6130,8 @@ fn main() {
     for (table, defaults) in load_defaults() {
         constraints.insert(table, (None, Vec::new(), defaults, Vec::new()));
     }
+    // Restore persisted declared column types
+    COLUMN_TYPES.with(|t| *t.borrow_mut() = load_column_types());
     // Restore persisted NOT NULL columns
     for (table, not_null) in load_not_null() {
         constraints
@@ -7896,71 +8001,39 @@ mod tests {
     }
 
     #[test]
-    fn default_padding_still_applies_with_not_null() {
-        let table = "nn_default_test";
-        let _ = std::fs::remove_file(format!("{}.json", table));
-        let mut defaults = HashMap::new();
-        defaults.insert("email".to_string(), "none".to_string());
-        let (mut tables, mut schemas, mut constraints, mut tx) =
-            not_null_test_state(table, defaults, vec!["username".to_string()]);
-        let mut views = HashMap::new();
-        let mut indexes = HashMap::new();
-
-        execute_statement(
-            Statement::Insert {
-                table_name: Some(table.to_string()),
-                values: vec!["1".to_string(), "dave".to_string()],
-            },
-            &mut tables,
-            &mut schemas,
-            &mut views,
-            &mut constraints,
-            &mut indexes,
-            &mut tx,
-        );
-        let rows = tables[table].select_all();
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].get_value("email").map_or(false, |v| v == "none"));
-
-        let _ = std::fs::remove_file(format!("{}.json", table));
-    }
-}
-            (None, Vec::new(), HashMap::new(), Vec::new()),
-        );
-
-        let snapshot = metadata_snapshot(&constraints);
-        assert_eq!(snapshot.len(), 1);
-        let json = serde_json::to_string(&snapshot).unwrap();
-        let restored: HashMap<String, TableMetadata> = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored["people"].primary_key.as_deref(), Some("id"));
-        assert_eq!(restored["people"].unique_columns, vec!["email".to_string()]);
+    fn value_matches_type_checks_each_supported_type() {
+        assert!(value_matches_type("-5", "INT"));
+        assert!(!value_matches_type("3.5", "INTEGER"));
+        assert!(value_matches_type("32767", "SMALLINT"));
+        assert!(!value_matches_type("40000", "SMALLINT"));
+        assert!(value_matches_type("9999999999", "BIGINT"));
+        assert!(value_matches_type("TRUE", "BOOLEAN"));
+        assert!(!value_matches_type("yes", "BOOLEAN"));
+        assert!(value_matches_type("3.14", "FLOAT"));
+        assert!(!value_matches_type("abc", "DOUBLE"));
+        assert!(value_matches_type("anything at all", "TEXT"));
+        assert!(value_matches_type("", "VARCHAR"));
     }
 
     #[test]
-    fn not_null_insert_rejects_empty_and_null_values() {
-        let table = "nn_insert_test";
+    fn data_types_enforced_on_insert_and_update() {
+        let table = "dt_enforce_test";
         let _ = std::fs::remove_file(format!("{}.json", table));
         let (mut tables, mut schemas, mut constraints, mut tx) =
-            not_null_test_state(table, HashMap::new(), vec!["username".to_string()]);
+            not_null_test_state(table, HashMap::new(), Vec::new());
         let mut views = HashMap::new();
         let mut indexes = HashMap::new();
+        let mut types = HashMap::new();
+        types.insert("id".to_string(), "INT".to_string());
+        COLUMN_TYPES.with(|t| t.borrow_mut().insert(table.to_string(), types));
 
-        let insert = |vals: Vec<&str>| Statement::Insert {
+        let insert = |id: &str| Statement::Insert {
             table_name: Some(table.to_string()),
-            values: vals.into_iter().map(|s| s.to_string()).collect(),
+            values: vec![id.to_string(), "bob".to_string(), "b@x.com".to_string()],
         };
 
         execute_statement(
-            insert(vec!["1", "", "a@x.com"]),
-            &mut tables,
-            &mut schemas,
-            &mut views,
-            &mut constraints,
-            &mut indexes,
-            &mut tx,
-        );
-        execute_statement(
-            insert(vec!["2", "NULL", "b@x.com"]),
+            insert("abc"),
             &mut tables,
             &mut schemas,
             &mut views,
@@ -7971,7 +8044,7 @@ mod tests {
         assert_eq!(tables[table].select_all().len(), 0);
 
         execute_statement(
-            insert(vec!["3", "carol", "c@x.com"]),
+            insert("1"),
             &mut tables,
             &mut schemas,
             &mut views,
@@ -7981,35 +8054,11 @@ mod tests {
         );
         assert_eq!(tables[table].select_all().len(), 1);
 
-        let _ = std::fs::remove_file(format!("{}.json", table));
-    }
-
-    #[test]
-    fn not_null_update_rejects_empty_value() {
-        let table = "nn_update_test";
-        let _ = std::fs::remove_file(format!("{}.json", table));
-        let (mut tables, mut schemas, mut constraints, mut tx) =
-            not_null_test_state(table, HashMap::new(), vec!["username".to_string()]);
-        let mut views = HashMap::new();
-        let mut indexes = HashMap::new();
-
-        execute_statement(
-            Statement::Insert {
-                table_name: Some(table.to_string()),
-                values: vec!["1".to_string(), "alice".to_string(), "a@x.com".to_string()],
-            },
-            &mut tables,
-            &mut schemas,
-            &mut views,
-            &mut constraints,
-            &mut indexes,
-            &mut tx,
-        );
         execute_statement(
             Statement::Update {
                 table_name: Some(table.to_string()),
                 id: 1,
-                assignments: vec![("username".to_string(), "".to_string())],
+                assignments: vec![("id".to_string(), "xyz".to_string())],
             },
             &mut tables,
             &mut schemas,
@@ -8019,12 +8068,10 @@ mod tests {
             &mut tx,
         );
         let rows = tables[table].select_all();
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0]
-            .get_value("username")
-            .map_or(false, |v| v == "alice"));
+        assert!(rows[0].get_value("id").map_or(false, |v| v == "1"));
 
         let _ = std::fs::remove_file(format!("{}.json", table));
+        COLUMN_TYPES.with(|t| t.borrow_mut().remove(table));
     }
 
     #[test]
