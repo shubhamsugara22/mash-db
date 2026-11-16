@@ -4937,10 +4937,25 @@ pub type CreateTableParts = (
 
 pub fn parse_create_table_with_defaults(input: &str) -> Result<CreateTableParts, String> {
     let tokens = tokenize(input);
+    parse_create_table_tokens(&tokens).map(|(parts, _)| parts)
+}
+
+// Same as parse_create_table_with_defaults, plus (column, data type) pairs for each typed column
+pub fn parse_create_table_with_types(
+    input: &str,
+) -> Result<(CreateTableParts, Vec<(String, String)>), String> {
+    let tokens = tokenize(input);
     parse_create_table_tokens(&tokens)
 }
 
-fn parse_create_table_tokens(tokens: &[Token]) -> Result<CreateTableParts, String> {
+// Data types accepted in CREATE TABLE column definitions
+const SUPPORTED_DATA_TYPES: &[&str] = &[
+    "INT", "INTEGER", "SMALLINT", "BIGINT", "TEXT", "VARCHAR", "BOOLEAN", "FLOAT", "DOUBLE",
+];
+
+fn parse_create_table_tokens(
+    tokens: &[Token],
+) -> Result<(CreateTableParts, Vec<(String, String)>), String> {
     if tokens.len() < 5 {
         return Err("CREATE TABLE requires table name and columns".to_string());
     }
@@ -4973,6 +4988,7 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<CreateTableParts, Strin
     let mut unique_columns: Vec<String> = Vec::new();
     let mut column_defaults: Vec<(String, String)> = Vec::new();
     let mut not_null_columns: Vec<String> = Vec::new();
+    let mut column_types: Vec<(String, String)> = Vec::new();
 
     loop {
         if let Some(Token::Identifier(col)) = tokens.get(i) {
@@ -4980,9 +4996,19 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<CreateTableParts, Strin
             columns.push(column_name.clone());
             i += 1;
 
-            // Skip data type if present (INTEGER, TEXT, etc.)
-            if let Some(Token::Identifier(_)) = tokens.get(i) {
-                i += 1; // skip data type
+            // Optional data type (INTEGER, TEXT, etc.); DEFAULT is a modifier, not a type
+            if let Some(Token::Identifier(data_type)) = tokens.get(i) {
+                if !data_type.eq_ignore_ascii_case("DEFAULT") {
+                    let upper = data_type.to_uppercase();
+                    if !SUPPORTED_DATA_TYPES.contains(&upper.as_str()) {
+                        return Err(format!(
+                            "Unsupported data type '{}' for column '{}'",
+                            data_type, column_name
+                        ));
+                    }
+                    column_types.push((column_name.clone(), upper));
+                    i += 1;
+                }
             }
 
             // Column modifiers (DEFAULT, NOT NULL, PRIMARY KEY, UNIQUE) in any order
@@ -5064,12 +5090,15 @@ fn parse_create_table_tokens(tokens: &[Token]) -> Result<CreateTableParts, Strin
     }
 
     Ok((
-        table_name,
-        columns,
-        primary_key,
-        unique_columns,
-        column_defaults,
-        not_null_columns,
+        (
+            table_name,
+            columns,
+            primary_key,
+            unique_columns,
+            column_defaults,
+            not_null_columns,
+        ),
+        column_types,
     ))
 }
 

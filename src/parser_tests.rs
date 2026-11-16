@@ -4701,3 +4701,29 @@ mod tests {
         assert_eq!(columns.len(), 2);
     }
 }
+    }
+
+    #[test]
+    fn test_parse_create_table_not_null_deduplicated() {
+        let (_, _, _, _, _, not_null) =
+            parse_create_table_with_defaults("CREATE TABLE t (n TEXT NOT NULL NOT NULL)").unwrap();
+        assert_eq!(not_null, vec!["n".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_create_table_default_missing_literal_errors() {
+        assert!(
+            parse_create_table_with_defaults("CREATE TABLE t (id INTEGER, n INTEGER DEFAULT)")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_parse_create_table_wrapper_ignores_defaults() {
+        let result = parse_create_table("CREATE TABLE t (id INTEGER, n INTEGER DEFAULT 2)");
+        assert!(result.is_ok());
+        let (name, columns, _, _) = result.unwrap();
+        assert_eq!(name, "t");
+        assert_eq!(columns.len(), 2);
+    }
+}

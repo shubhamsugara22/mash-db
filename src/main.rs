@@ -7925,3 +7925,135 @@ mod tests {
         let _ = std::fs::remove_file(format!("{}.json", table));
     }
 }
+            (None, Vec::new(), HashMap::new(), Vec::new()),
+        );
+
+        let snapshot = metadata_snapshot(&constraints);
+        assert_eq!(snapshot.len(), 1);
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let restored: HashMap<String, TableMetadata> = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored["people"].primary_key.as_deref(), Some("id"));
+        assert_eq!(restored["people"].unique_columns, vec!["email".to_string()]);
+    }
+
+    #[test]
+    fn not_null_insert_rejects_empty_and_null_values() {
+        let table = "nn_insert_test";
+        let _ = std::fs::remove_file(format!("{}.json", table));
+        let (mut tables, mut schemas, mut constraints, mut tx) =
+            not_null_test_state(table, HashMap::new(), vec!["username".to_string()]);
+        let mut views = HashMap::new();
+        let mut indexes = HashMap::new();
+
+        let insert = |vals: Vec<&str>| Statement::Insert {
+            table_name: Some(table.to_string()),
+            values: vals.into_iter().map(|s| s.to_string()).collect(),
+        };
+
+        execute_statement(
+            insert(vec!["1", "", "a@x.com"]),
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        execute_statement(
+            insert(vec!["2", "NULL", "b@x.com"]),
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        assert_eq!(tables[table].select_all().len(), 0);
+
+        execute_statement(
+            insert(vec!["3", "carol", "c@x.com"]),
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        assert_eq!(tables[table].select_all().len(), 1);
+
+        let _ = std::fs::remove_file(format!("{}.json", table));
+    }
+
+    #[test]
+    fn not_null_update_rejects_empty_value() {
+        let table = "nn_update_test";
+        let _ = std::fs::remove_file(format!("{}.json", table));
+        let (mut tables, mut schemas, mut constraints, mut tx) =
+            not_null_test_state(table, HashMap::new(), vec!["username".to_string()]);
+        let mut views = HashMap::new();
+        let mut indexes = HashMap::new();
+
+        execute_statement(
+            Statement::Insert {
+                table_name: Some(table.to_string()),
+                values: vec!["1".to_string(), "alice".to_string(), "a@x.com".to_string()],
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        execute_statement(
+            Statement::Update {
+                table_name: Some(table.to_string()),
+                id: 1,
+                assignments: vec![("username".to_string(), "".to_string())],
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        let rows = tables[table].select_all();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0]
+            .get_value("username")
+            .map_or(false, |v| v == "alice"));
+
+        let _ = std::fs::remove_file(format!("{}.json", table));
+    }
+
+    #[test]
+    fn default_padding_still_applies_with_not_null() {
+        let table = "nn_default_test";
+        let _ = std::fs::remove_file(format!("{}.json", table));
+        let mut defaults = HashMap::new();
+        defaults.insert("email".to_string(), "none".to_string());
+        let (mut tables, mut schemas, mut constraints, mut tx) =
+            not_null_test_state(table, defaults, vec!["username".to_string()]);
+        let mut views = HashMap::new();
+        let mut indexes = HashMap::new();
+
+        execute_statement(
+            Statement::Insert {
+                table_name: Some(table.to_string()),
+                values: vec!["1".to_string(), "dave".to_string()],
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx,
+        );
+        let rows = tables[table].select_all();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].get_value("email").map_or(false, |v| v == "none"));
+
+        let _ = std::fs::remove_file(format!("{}.json", table));
+    }
+}
