@@ -501,6 +501,12 @@ enum Statement {
     TruncateTable {
         table_name: String,
     },
+    Export {
+        path: String,
+    },
+    Import {
+        path: String,
+    },
     CreateView {
         view_name: String,
         select_query: String,
@@ -1468,6 +1474,26 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
 
 fn handle_session_statement(statement: &Statement, session: &mut SessionState) -> bool {
     match statement {
+        Statement::Export { .. } | Statement::Import { .. } => {
+            let is_admin = session
+                .current_user
+                .as_deref()
+                .map(|user| {
+                    session
+                        .catalog
+                        .accounts
+                        .get(user)
+                        .map(|account| account.role == "admin")
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !is_admin {
+                println!("Error: Administrator login required");
+                return true;
+            }
+            // Handled by execute_statement; continue normal dispatch.
+            false
+        }
         Statement::Login { username, password } => {
             eprintln!("DEBUG handle_session: Login - username: {}", username);
             if session.catalog.verify_password(username, password) {
@@ -1734,7 +1760,9 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::RenameUser { .. }
         | Statement::Grant { .. }
         | Statement::Revoke { .. }
-        | Statement::Union { .. } => None,
+        | Statement::Union { .. }
+        | Statement::Export { .. }
+        | Statement::Import { .. } => None,
     }
 }
 
@@ -1812,6 +1840,8 @@ fn audit_target(statement: &Statement) -> (&'static str, Option<String>) {
         }
         Statement::CreateView { view_name, .. } => ("CREATE VIEW", Some(view_name.to_lowercase())),
         Statement::DropView { view_name } => ("DROP VIEW", Some(view_name.to_lowercase())),
+        Statement::Export { .. } => ("EXPORT", None),
+        Statement::Import { .. } => ("IMPORT", None),
         Statement::CreateIndex { table_name, .. } => {
             ("CREATE INDEX", Some(table_name.to_lowercase()))
         }
@@ -2218,6 +2248,37 @@ fn split_on_union(input: &str) -> Option<(String, String, bool)> {
     None
 }
 
+// Quote a value for the SQL dump. The parser has no escape sequences, so pick a quote char absent from the value.
+fn dump_literal(value: &str) -> Result<String, String> {
+    if value.contains('\n') || value.contains('\r') {
+        return Err(format!("value contains a newline and cannot be exported: {:?}", value));
+    }
+    if value.parse::<i64>().map(|n| n.to_string() == value).unwrap_or(false) {
+        return Ok(value.to_string());
+    }
+    if !value.contains('\'') {
+        return Ok(format!("'{}'", value));
+    }
+    if !value.contains('"') {
+        return Ok(format!("\"{}\"", value));
+    }
+    Err(format!("value contains both quote characters and cannot be exported: {}", value))
+}
+
+// Extract the file path after a keyword of the given length, with optional quotes.
+fn parse_file_arg(input: &str, keyword_len: usize) -> Option<String> {
+    let rest = input.trim().get(keyword_len..)?.trim();
+    let quoted = rest.len() >= 2
+        && ((rest.starts_with('\'') && rest.ends_with('\''))
+            || (rest.starts_with('"') && rest.ends_with('"')));
+    let path = if quoted { &rest[1..rest.len() - 1] } else { rest };
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
 fn prepare_statement(input: &str) -> PrepareResult {
     let upper = input.to_uppercase();
 
@@ -2237,6 +2298,16 @@ fn prepare_statement(input: &str) -> PrepareResult {
         PrepareResult::Success(Statement::Logout)
     } else if upper == "COMMIT" || upper == "COMMIT TRANSACTION" {
         PrepareResult::Success(Statement::CommitTransaction)
+    } else if upper.starts_with("EXPORT ") {
+        match parse_file_arg(input, 6) {
+            Some(path) => PrepareResult::Success(Statement::Export { path }),
+            None => PrepareResult::UnrecognizedStatement,
+        }
+    } else if upper.starts_with("IMPORT ") {
+        match parse_file_arg(input, 6) {
+            Some(path) => PrepareResult::Success(Statement::Import { path }),
+            None => PrepareResult::UnrecognizedStatement,
+        }
     } else if upper == "ROLLBACK" || upper == "ROLLBACK TRANSACTION" {
         PrepareResult::Success(Statement::RollbackTransaction)
     } else if upper.starts_with("INSERT") {
@@ -5220,6 +5291,113 @@ fn execute_statement(
                     println!("Error: Invalid SELECT query for view: {}", e);
                 }
             }
+        }
+        Statement::Export { path } => {
+            let mut names: Vec<String> = tables.keys().cloned().collect();
+            names.sort();
+            let mut out = String::new();
+            let mut row_count = 0usize;
+            for name in &names {
+                let table = match tables.get(name) {
+                    Some(table) => table,
+                    None => continue,
+                };
+                let columns: Vec<String> = table.schema().clone();
+                let (pk, uniques, defaults, not_nulls) = match constraints.get(name) {
+                    Some(c) => c.clone(),
+                    None => (None, Vec::new(), HashMap::new(), Vec::new()),
+                };
+                let types = COLUMN_TYPES
+                    .with(|t| t.borrow().get(name).cloned())
+                    .unwrap_or_default();
+                let mut defs = Vec::new();
+                for col in &columns {
+                    let mut def = col.clone();
+                    if let Some(ty) = types.get(col) {
+                        def.push_str(&format!(" {}", ty));
+                    }
+                    if let Some(value) = defaults.get(col) {
+                        match dump_literal(value) {
+                            Ok(lit) => def.push_str(&format!(" DEFAULT {}", lit)),
+                            Err(e) => {
+                                println!("Error: {}", e);
+                                return;
+                            }
+                        }
+                    }
+                    if not_nulls.contains(col) {
+                        def.push_str(" NOT NULL");
+                    }
+                    if pk.as_ref() == Some(col) {
+                        def.push_str(" PRIMARY KEY");
+                    }
+                    if uniques.contains(col) {
+                        def.push_str(" UNIQUE");
+                    }
+                    defs.push(def);
+                }
+                out.push_str(&format!("CREATE TABLE {} ({})\n", name, defs.join(", ")));
+                for row in table.select_all() {
+                    let mut vals = Vec::new();
+                    for col in &columns {
+                        match row.get_value(col) {
+                            Some(v) if v == "NULL" => vals.push("NULL".to_string()),
+                            Some(v) => match dump_literal(&v) {
+                                Ok(lit) => vals.push(lit),
+                                Err(e) => {
+                                    println!("Error: {}", e);
+                                    return;
+                                }
+                            },
+                            None => vals.push("NULL".to_string()),
+                        }
+                    }
+                    out.push_str(&format!("INSERT INTO {} VALUES ({})\n", name, vals.join(", ")));
+                    row_count += 1;
+                }
+            }
+            match std::fs::write(&path, out) {
+                Ok(()) => println!("Exported {} tables, {} rows to '{}'", names.len(), row_count, path),
+                Err(e) => println!("Error: could not write '{}': {}", path, e),
+            }
+        }
+        Statement::Import { path } => {
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    println!("Error: could not read '{}': {}", path, e);
+                    return;
+                }
+            };
+            let mut executed = 0usize;
+            let mut skipped = 0usize;
+            for (idx, line) in content.lines().enumerate() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with("--") {
+                    continue;
+                }
+                match prepare_statement(line) {
+                    PrepareResult::Success(stmt) => {
+                        if matches!(stmt, Statement::Export { .. } | Statement::Import { .. }) {
+                            println!("Error: line {}: EXPORT and IMPORT cannot be nested", idx + 1);
+                            return;
+                        }
+                        if let Statement::CreateTable { table_name, .. } = &stmt {
+                            if tables.contains_key(&table_name.to_lowercase()) {
+                                skipped += 1;
+                                continue;
+                            }
+                        }
+                        execute_statement(stmt, tables, schemas, views, constraints, indexes, tx);
+                        executed += 1;
+                    }
+                    _ => {
+                        println!("Error: line {}: could not parse statement", idx + 1);
+                        return;
+                    }
+                }
+            }
+            println!("Imported {} statements from '{}' ({} existing tables skipped)", executed, path, skipped);
         }
         Statement::DropView { view_name } => {
             let view_name_lower = view_name.to_lowercase();

@@ -154,15 +154,16 @@
 - **Priority**: HIGH (prerequisite for enhanced multi-table operations)
 - **Estimated Effort**: 2-3 weeks for remaining features
 
-### 8. Data Types
-- **Type System**:
-  - INT, BIGINT, SMALLINT
-  - VARCHAR, TEXT
-  - BOOLEAN
-  - DATE, TIMESTAMP
-  - FLOAT, DOUBLE
-- **Type Validation**: Enforce types on insert/update
-- **Type Conversion**: Automatic casting where safe
+### 8. Data Types ✅ PARTIALLY COMPLETED
+- ✅ **Type System**:
+  - ✅ INT, INTEGER, BIGINT, SMALLINT
+  - ✅ VARCHAR, TEXT
+  - ✅ BOOLEAN
+  - ✅ FLOAT, DOUBLE
+  - DATE, TIMESTAMP (planned)
+- ✅ **Type Validation**: Enforced on INSERT and UPDATE; declared types persisted in types.json; unsupported types rejected at CREATE
+- **Type Conversion**: Automatic casting where safe (planned)
+- **Deferred**: DATE/TIMESTAMP, casting, typing for ALTER ADD COLUMN, rollback not restoring types
 - **Priority**: HIGH
 - **Estimated Effort**: 2-3 weeks
 
