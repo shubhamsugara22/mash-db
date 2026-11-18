@@ -2251,9 +2251,16 @@ fn split_on_union(input: &str) -> Option<(String, String, bool)> {
 // Quote a value for the SQL dump. The parser has no escape sequences, so pick a quote char absent from the value.
 fn dump_literal(value: &str) -> Result<String, String> {
     if value.contains('\n') || value.contains('\r') {
-        return Err(format!("value contains a newline and cannot be exported: {:?}", value));
+        return Err(format!(
+            "value contains a newline and cannot be exported: {:?}",
+            value
+        ));
     }
-    if value.parse::<i64>().map(|n| n.to_string() == value).unwrap_or(false) {
+    if value
+        .parse::<i64>()
+        .map(|n| n.to_string() == value)
+        .unwrap_or(false)
+    {
         return Ok(value.to_string());
     }
     if !value.contains('\'') {
@@ -2262,7 +2269,10 @@ fn dump_literal(value: &str) -> Result<String, String> {
     if !value.contains('"') {
         return Ok(format!("\"{}\"", value));
     }
-    Err(format!("value contains both quote characters and cannot be exported: {}", value))
+    Err(format!(
+        "value contains both quote characters and cannot be exported: {}",
+        value
+    ))
 }
 
 // Extract the file path after a keyword of the given length, with optional quotes.
@@ -2271,7 +2281,11 @@ fn parse_file_arg(input: &str, keyword_len: usize) -> Option<String> {
     let quoted = rest.len() >= 2
         && ((rest.starts_with('\'') && rest.ends_with('\''))
             || (rest.starts_with('"') && rest.ends_with('"')));
-    let path = if quoted { &rest[1..rest.len() - 1] } else { rest };
+    let path = if quoted {
+        &rest[1..rest.len() - 1]
+    } else {
+        rest
+    };
     if path.is_empty() {
         None
     } else {
@@ -5352,12 +5366,21 @@ fn execute_statement(
                             None => vals.push("NULL".to_string()),
                         }
                     }
-                    out.push_str(&format!("INSERT INTO {} VALUES ({})\n", name, vals.join(", ")));
+                    out.push_str(&format!(
+                        "INSERT INTO {} VALUES ({})\n",
+                        name,
+                        vals.join(", ")
+                    ));
                     row_count += 1;
                 }
             }
             match std::fs::write(&path, out) {
-                Ok(()) => println!("Exported {} tables, {} rows to '{}'", names.len(), row_count, path),
+                Ok(()) => println!(
+                    "Exported {} tables, {} rows to '{}'",
+                    names.len(),
+                    row_count,
+                    path
+                ),
                 Err(e) => println!("Error: could not write '{}': {}", path, e),
             }
         }
@@ -5379,7 +5402,10 @@ fn execute_statement(
                 match prepare_statement(line) {
                     PrepareResult::Success(stmt) => {
                         if matches!(stmt, Statement::Export { .. } | Statement::Import { .. }) {
-                            println!("Error: line {}: EXPORT and IMPORT cannot be nested", idx + 1);
+                            println!(
+                                "Error: line {}: EXPORT and IMPORT cannot be nested",
+                                idx + 1
+                            );
                             return;
                         }
                         if let Statement::CreateTable { table_name, .. } = &stmt {
@@ -5397,7 +5423,10 @@ fn execute_statement(
                     }
                 }
             }
-            println!("Imported {} statements from '{}' ({} existing tables skipped)", executed, path, skipped);
+            println!(
+                "Imported {} statements from '{}' ({} existing tables skipped)",
+                executed, path, skipped
+            );
         }
         Statement::DropView { view_name } => {
             let view_name_lower = view_name.to_lowercase();
@@ -6457,6 +6486,75 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn export_and_import_statements_are_recognized() {
+        assert!(matches!(
+            prepare_statement("EXPORT 'backup.sql'"),
+            PrepareResult::Success(Statement::Export { path }) if path == "backup.sql"
+        ));
+        assert!(matches!(
+            prepare_statement("IMPORT backup.sql"),
+            PrepareResult::Success(Statement::Import { path }) if path == "backup.sql"
+        ));
+        assert!(matches!(
+            prepare_statement("EXPORT"),
+            PrepareResult::UnrecognizedStatement
+        ));
+        assert!(matches!(
+            prepare_statement("IMPORT ''"),
+            PrepareResult::UnrecognizedStatement
+        ));
+    }
+
+    #[test]
+    fn export_statement_writes_schema_and_rows() {
+        let schema = vec!["id".to_string(), "name".to_string()];
+        let mut table = Table::new("export_test_tbl.json".to_string(), schema.clone());
+        table
+            .insert(Row::from_values(&schema, vec!["1".to_string(), "alice".to_string()]).unwrap())
+            .unwrap();
+        table
+            .insert(
+                Row::from_values(&schema, vec!["2".to_string(), "bob smith".to_string()]).unwrap(),
+            )
+            .unwrap();
+
+        let mut tables: std::collections::HashMap<String, Table> =
+            std::collections::HashMap::new();
+        tables.insert("export_test_tbl".to_string(), table);
+        let mut schemas: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        schemas.insert("export_test_tbl".to_string(), schema);
+        let mut tx_state = TransactionState {
+            active: false,
+            table_snapshots: std::collections::HashMap::new(),
+            schema_snapshot: std::collections::HashMap::new(),
+        };
+        let mut views = std::collections::HashMap::new();
+        let mut constraints = std::collections::HashMap::new();
+        let mut indexes = std::collections::HashMap::new();
+
+        let path = std::env::temp_dir().join("mash_db_export_test.sql");
+        let path_str = path.to_string_lossy().to_string();
+        let _ = super::execute_statement(
+            Statement::Export {
+                path: path_str.clone(),
+            },
+            &mut tables,
+            &mut schemas,
+            &mut views,
+            &mut constraints,
+            &mut indexes,
+            &mut tx_state,
+        );
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(contents.contains("CREATE TABLE export_test_tbl"));
+        assert!(contents.contains("alice"));
+        assert!(contents.contains("bob smith"));
+    }
 
     #[test]
     fn show_users_statement_is_recognized() {
