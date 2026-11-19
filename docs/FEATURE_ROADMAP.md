@@ -243,7 +243,7 @@
 ### 16. Backup & Restore
 - **Hot Backup**: Backup without downtime
 - **Point-in-Time Recovery**: Restore to specific timestamp
-- **Export/Import**: SQL dump and restore
+- ✅ **Export/Import**: SQL dump and restore
 - ✅ **Backup Compression**: Optional gzip compression controlled by durability configuration
 - **Priority**: HIGH
 - **Estimated Effort**: 2-3 weeks
