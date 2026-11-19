@@ -507,6 +507,9 @@ enum Statement {
     Import {
         path: String,
     },
+    Restore {
+        timestamp: u64,
+    },
     CreateView {
         view_name: String,
         select_query: String,
@@ -1474,7 +1477,7 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
 
 fn handle_session_statement(statement: &Statement, session: &mut SessionState) -> bool {
     match statement {
-        Statement::Export { .. } | Statement::Import { .. } => {
+        Statement::Export { .. } | Statement::Import { .. } | Statement::Restore { .. } => {
             let is_admin = session
                 .current_user
                 .as_deref()
@@ -1762,7 +1765,8 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::Revoke { .. }
         | Statement::Union { .. }
         | Statement::Export { .. }
-        | Statement::Import { .. } => None,
+        | Statement::Import { .. }
+        | Statement::Restore { .. } => None,
     }
 }
 
@@ -1842,6 +1846,7 @@ fn audit_target(statement: &Statement) -> (&'static str, Option<String>) {
         Statement::DropView { view_name } => ("DROP VIEW", Some(view_name.to_lowercase())),
         Statement::Export { .. } => ("EXPORT", None),
         Statement::Import { .. } => ("IMPORT", None),
+        Statement::Restore { .. } => ("RESTORE", None),
         Statement::CreateIndex { table_name, .. } => {
             ("CREATE INDEX", Some(table_name.to_lowercase()))
         }
@@ -2049,6 +2054,34 @@ fn execute_authorized_statement(
             audit_table.as_deref(),
             users.is_some(),
             users.is_none().then_some("administrator login required"),
+        );
+        return;
+    }
+
+    if let Statement::Restore { timestamp } = &statement {
+        let result = restore_database_to(
+            *timestamp,
+            session,
+            tables,
+            schemas,
+            constraints,
+            tx,
+            database_manager,
+        );
+        match &result {
+            Ok(backup_id) => println!(
+                "Database restored from backup '{}' (target time {})",
+                backup_id, timestamp
+            ),
+            Err(error) => println!("Error: {}", error),
+        }
+        let _ = database_manager.log_audit(
+            audit_user,
+            session_id,
+            audit_operation,
+            audit_table.as_deref(),
+            result.is_ok(),
+            result.as_ref().err().map(String::as_str),
         );
         return;
     }
@@ -2276,6 +2309,69 @@ fn dump_literal(value: &str) -> Result<String, String> {
 }
 
 // Extract the file path after a keyword of the given length, with optional quotes.
+fn parse_restore_target(input: &str) -> Option<u64> {
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    match parts.as_slice() {
+        [command, to, timestamp]
+            if command.eq_ignore_ascii_case("RESTORE") && to.eq_ignore_ascii_case("TO") =>
+        {
+            timestamp.parse().ok()
+        }
+        _ => None,
+    }
+}
+
+fn restore_database_to(
+    timestamp: u64,
+    session: &SessionState,
+    tables: &mut HashMap<String, Table>,
+    schemas: &mut HashMap<String, Vec<String>>,
+    constraints: &mut HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    >,
+    tx: &TransactionState,
+    database_manager: &mut DatabaseManager,
+) -> Result<String, String> {
+    if list_users_for_admin(session).is_none() {
+        return Err("Administrator login required".to_string());
+    }
+    if tx.active {
+        return Err("RESTORE cannot run inside an active transaction".to_string());
+    }
+    let backup = database_manager
+        .full_backup_at_or_before(timestamp)
+        .ok_or_else(|| format!("No full backup exists at or before {}", timestamp))?;
+
+    // Safety snapshot of the current state before any file is overwritten.
+    let current_files = collect_backup_files(tables);
+    let safety_refs: Vec<(&str, Vec<u8>)> = current_files
+        .iter()
+        .map(|(filename, data)| (filename.as_str(), data.clone()))
+        .collect();
+    database_manager.backup_full(safety_refs)?;
+
+    database_manager.restore_backup(&backup.backup_id, ".")?;
+
+    // Reload in-memory state from the restored files.
+    *schemas = load_schemas();
+    tables.clear();
+    for (name, schema) in schemas.iter() {
+        tables.insert(
+            name.clone(),
+            Table::new(backup_file_for(name), schema.clone()),
+        );
+    }
+    COLUMN_TYPES.with(|t| *t.borrow_mut() = load_column_types());
+    *constraints = load_constraints();
+    Ok(backup.backup_id)
+}
+
 fn parse_file_arg(input: &str, keyword_len: usize) -> Option<String> {
     let rest = input.trim().get(keyword_len..)?.trim();
     let quoted = rest.len() >= 2
@@ -2320,6 +2416,11 @@ fn prepare_statement(input: &str) -> PrepareResult {
     } else if upper.starts_with("IMPORT ") {
         match parse_file_arg(input, 6) {
             Some(path) => PrepareResult::Success(Statement::Import { path }),
+            None => PrepareResult::UnrecognizedStatement,
+        }
+    } else if upper.starts_with("RESTORE ") {
+        match parse_restore_target(input) {
+            Some(timestamp) => PrepareResult::Success(Statement::Restore { timestamp }),
             None => PrepareResult::UnrecognizedStatement,
         }
     } else if upper == "ROLLBACK" || upper == "ROLLBACK TRANSACTION" {
@@ -5401,9 +5502,14 @@ fn execute_statement(
                 }
                 match prepare_statement(line) {
                     PrepareResult::Success(stmt) => {
-                        if matches!(stmt, Statement::Export { .. } | Statement::Import { .. }) {
+                        if matches!(
+                            stmt,
+                            Statement::Export { .. }
+                                | Statement::Import { .. }
+                                | Statement::Restore { .. }
+                        ) {
                             println!(
-                                "Error: line {}: EXPORT and IMPORT cannot be nested",
+                                "Error: line {}: EXPORT, IMPORT and RESTORE cannot be nested",
                                 idx + 1
                             );
                             return;
@@ -5456,6 +5562,9 @@ fn execute_statement(
         }
         Statement::ShowGrants { .. } => {
             println!("Error: SHOW GRANTS must be authorized before execution");
+        }
+        Statement::Restore { .. } => {
+            println!("Error: RESTORE must be authorized before execution");
         }
         Statement::ShowIndexes => {
             if indexes.is_empty() {
@@ -6291,6 +6400,53 @@ fn save_metadata(
     }
 }
 
+fn load_constraints() -> HashMap<
+    String,
+    (
+        Option<String>,
+        Vec<String>,
+        HashMap<String, String>,
+        Vec<String>,
+    ),
+> {
+    let mut constraints: HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
+        ),
+    > = HashMap::new();
+    // Restore persisted column DEFAULT values
+    for (table, defaults) in load_defaults() {
+        constraints.insert(table, (None, Vec::new(), defaults, Vec::new()));
+    }
+    // Restore persisted NOT NULL columns
+    for (table, not_null) in load_not_null() {
+        constraints
+            .entry(table)
+            .and_modify(|c| c.3 = not_null.clone())
+            .or_insert((None, Vec::new(), HashMap::new(), not_null));
+    }
+    // Restore persisted PRIMARY KEY and UNIQUE columns
+    for (table, meta) in load_metadata() {
+        constraints
+            .entry(table)
+            .and_modify(|c| {
+                c.0 = meta.primary_key.clone();
+                c.1 = meta.unique_columns.clone();
+            })
+            .or_insert((
+                meta.primary_key,
+                meta.unique_columns,
+                HashMap::new(),
+                Vec::new(),
+            ));
+    }
+    constraints
+}
+
 fn main() {
     let mut database_manager =
         match DatabaseManager::new("mash_db", "data", 100, DurabilityConfig::default()) {
@@ -6324,43 +6480,9 @@ fn main() {
     let mut views: HashMap<String, String> = HashMap::new();
 
     // Initialize constraint registry: store table_name -> (primary_key, unique_columns, column defaults, not_null_columns)
-    let mut constraints: HashMap<
-        String,
-        (
-            Option<String>,
-            Vec<String>,
-            HashMap<String, String>,
-            Vec<String>,
-        ),
-    > = HashMap::new();
-    // Restore persisted column DEFAULT values
-    for (table, defaults) in load_defaults() {
-        constraints.insert(table, (None, Vec::new(), defaults, Vec::new()));
-    }
     // Restore persisted declared column types
     COLUMN_TYPES.with(|t| *t.borrow_mut() = load_column_types());
-    // Restore persisted NOT NULL columns
-    for (table, not_null) in load_not_null() {
-        constraints
-            .entry(table)
-            .and_modify(|c| c.3 = not_null.clone())
-            .or_insert((None, Vec::new(), HashMap::new(), not_null));
-    }
-    // Restore persisted PRIMARY KEY and UNIQUE columns
-    for (table, meta) in load_metadata() {
-        constraints
-            .entry(table)
-            .and_modify(|c| {
-                c.0 = meta.primary_key.clone();
-                c.1 = meta.unique_columns.clone();
-            })
-            .or_insert((
-                meta.primary_key,
-                meta.unique_columns,
-                HashMap::new(),
-                Vec::new(),
-            ));
-    }
+    let mut constraints = load_constraints();
 
     // Initialize index registry: store index_name -> (table_name, column_names)
     let mut indexes: HashMap<String, (String, Vec<String>)> = HashMap::new();
@@ -6508,6 +6630,32 @@ mod tests {
     }
 
     #[test]
+    fn restore_to_statement_is_recognized() {
+        assert!(matches!(
+            prepare_statement("RESTORE TO 1700000000"),
+            PrepareResult::Success(Statement::Restore {
+                timestamp: 1700000000
+            })
+        ));
+        assert!(matches!(
+            prepare_statement("restore to 42"),
+            PrepareResult::Success(Statement::Restore { timestamp: 42 })
+        ));
+        assert!(matches!(
+            prepare_statement("RESTORE TO"),
+            PrepareResult::UnrecognizedStatement
+        ));
+        assert!(matches!(
+            prepare_statement("RESTORE TO yesterday"),
+            PrepareResult::UnrecognizedStatement
+        ));
+        assert!(matches!(
+            prepare_statement("RESTORE 42"),
+            PrepareResult::UnrecognizedStatement
+        ));
+    }
+
+    #[test]
     fn export_statement_writes_schema_and_rows() {
         let schema = vec!["id".to_string(), "name".to_string()];
         let mut table = Table::new("export_test_tbl.json".to_string(), schema.clone());
@@ -6520,8 +6668,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut tables: std::collections::HashMap<String, Table> =
-            std::collections::HashMap::new();
+        let mut tables: std::collections::HashMap<String, Table> = std::collections::HashMap::new();
         tables.insert("export_test_tbl".to_string(), table);
         let mut schemas: std::collections::HashMap<String, Vec<String>> =
             std::collections::HashMap::new();

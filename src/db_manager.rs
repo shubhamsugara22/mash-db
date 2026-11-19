@@ -290,6 +290,11 @@ impl DatabaseManager {
         Ok(Some(backup))
     }
 
+    /// Newest full backup taken at or before `target` (unix seconds)
+    pub fn full_backup_at_or_before(&self, target: u64) -> Option<BackupMetadata> {
+        self.backup_manager.full_backup_at_or_before(target)
+    }
+
     /// Restore database from backup
     pub fn restore_backup(&self, backup_id: &str, restore_path: &str) -> Result<(), String> {
         self.backup_manager.restore_backup(backup_id, restore_path)

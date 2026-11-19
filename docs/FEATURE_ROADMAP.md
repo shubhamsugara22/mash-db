@@ -242,7 +242,7 @@
 
 ### 16. Backup & Restore
 - **Hot Backup**: Backup without downtime
-- **Point-in-Time Recovery**: Restore to specific timestamp
+- ✅ **Point-in-Time Recovery**: `RESTORE TO <unix_seconds>` (admin only) restores the newest full snapshot taken at or before the target. Snapshot-based, not log-based (the WAL has no row payloads). Limitations: session catalog not reloaded, views and indexes not persisted, WAL behavior after restore unverified, safety-backup cleanup can remove the target backup (restore then fails before any file changes), restore refused when no accounts exist. Backup timestamps have second resolution.
 - ✅ **Export/Import**: SQL dump and restore
 - ✅ **Backup Compression**: Optional gzip compression controlled by durability configuration
 - **Priority**: HIGH

@@ -156,6 +156,15 @@ impl BackupManager {
         Ok(backup_metadata)
     }
 
+    /// Newest full backup taken at or before `target` (unix seconds)
+    pub fn full_backup_at_or_before(&self, target: u64) -> Option<BackupMetadata> {
+        self.backups
+            .iter()
+            .filter(|b| b.backup_type == BackupType::Full && b.timestamp <= target)
+            .max_by_key(|b| b.timestamp)
+            .cloned()
+    }
+
     /// Restore database from a backup
     pub fn restore_backup(&self, backup_id: &str, restore_path: &str) -> Result<(), String> {
         // Find backup
@@ -387,6 +396,49 @@ fn uuid_stub() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_backup_at_or_before_picks_newest_full_within_target() {
+        fn meta(id: &str, backup_type: BackupType, timestamp: u64) -> BackupMetadata {
+            BackupMetadata {
+                backup_id: id.to_string(),
+                backup_type,
+                timestamp,
+                database_name: "test_db".to_string(),
+                size_bytes: 0,
+                tables_backed_up: 0,
+                row_count: 0,
+                compressed: false,
+                checksum: String::new(),
+            }
+        }
+
+        let manager = BackupManager {
+            backup_directory: PathBuf::from("unused_pitr_dir"),
+            backups: vec![
+                meta("full_100", BackupType::Full, 100),
+                meta("full_200", BackupType::Full, 200),
+                meta("incr_150", BackupType::Incremental, 150),
+                meta("full_300", BackupType::Full, 300),
+            ],
+            max_backups: 10,
+            compression_enabled: false,
+        };
+
+        assert_eq!(
+            manager.full_backup_at_or_before(250).unwrap().backup_id,
+            "full_200"
+        );
+        assert_eq!(
+            manager.full_backup_at_or_before(300).unwrap().backup_id,
+            "full_300"
+        );
+        assert_eq!(
+            manager.full_backup_at_or_before(100).unwrap().backup_id,
+            "full_100"
+        );
+        assert!(manager.full_backup_at_or_before(99).is_none());
+    }
 
     #[test]
     fn test_backup_manager_creation() {
