@@ -510,6 +510,7 @@ enum Statement {
     Restore {
         timestamp: u64,
     },
+    Backup,
     CreateView {
         view_name: String,
         select_query: String,
@@ -1477,7 +1478,10 @@ fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
 
 fn handle_session_statement(statement: &Statement, session: &mut SessionState) -> bool {
     match statement {
-        Statement::Export { .. } | Statement::Import { .. } | Statement::Restore { .. } => {
+        Statement::Export { .. }
+        | Statement::Import { .. }
+        | Statement::Restore { .. }
+        | Statement::Backup => {
             let is_admin = session
                 .current_user
                 .as_deref()
@@ -1766,7 +1770,8 @@ fn statement_permission(statement: &Statement) -> Option<(&'static str, String)>
         | Statement::Union { .. }
         | Statement::Export { .. }
         | Statement::Import { .. }
-        | Statement::Restore { .. } => None,
+        | Statement::Restore { .. }
+        | Statement::Backup => None,
     }
 }
 
@@ -1847,6 +1852,7 @@ fn audit_target(statement: &Statement) -> (&'static str, Option<String>) {
         Statement::Export { .. } => ("EXPORT", None),
         Statement::Import { .. } => ("IMPORT", None),
         Statement::Restore { .. } => ("RESTORE", None),
+        Statement::Backup => ("BACKUP", None),
         Statement::CreateIndex { table_name, .. } => {
             ("CREATE INDEX", Some(table_name.to_lowercase()))
         }
@@ -2054,6 +2060,23 @@ fn execute_authorized_statement(
             audit_table.as_deref(),
             users.is_some(),
             users.is_none().then_some("administrator login required"),
+        );
+        return;
+    }
+
+    if let Statement::Backup = &statement {
+        let result = backup_database_now(session, tables, tx, database_manager);
+        match &result {
+            Ok(backup_id) => println!("Backup created: {}", backup_id),
+            Err(error) => println!("Error: {}", error),
+        }
+        let _ = database_manager.log_audit(
+            audit_user,
+            session_id,
+            audit_operation,
+            audit_table.as_deref(),
+            result.is_ok(),
+            result.as_ref().err().map(String::as_str),
         );
         return;
     }
@@ -2308,6 +2331,29 @@ fn dump_literal(value: &str) -> Result<String, String> {
     ))
 }
 
+/// Snapshot the current on-disk table files as a full backup (admin only, no active transaction).
+fn backup_database_now(
+    session: &SessionState,
+    tables: &HashMap<String, Table>,
+    tx: &TransactionState,
+    database_manager: &mut DatabaseManager,
+) -> Result<String, String> {
+    if list_users_for_admin(session).is_none() {
+        return Err("Administrator login required".to_string());
+    }
+    if tx.active {
+        return Err("BACKUP cannot run inside an active transaction".to_string());
+    }
+    let files = collect_backup_files(tables);
+    let file_refs: Vec<(&str, Vec<u8>)> = files
+        .iter()
+        .map(|(filename, data)| (filename.as_str(), data.clone()))
+        .collect();
+    database_manager
+        .backup_full(file_refs)
+        .map(|backup| backup.backup_id)
+}
+
 // Extract the file path after a keyword of the given length, with optional quotes.
 fn parse_restore_target(input: &str) -> Option<u64> {
     let parts: Vec<&str> = input.split_whitespace().collect();
@@ -2423,6 +2469,8 @@ fn prepare_statement(input: &str) -> PrepareResult {
             Some(timestamp) => PrepareResult::Success(Statement::Restore { timestamp }),
             None => PrepareResult::UnrecognizedStatement,
         }
+    } else if upper == "BACKUP" {
+        PrepareResult::Success(Statement::Backup)
     } else if upper == "ROLLBACK" || upper == "ROLLBACK TRANSACTION" {
         PrepareResult::Success(Statement::RollbackTransaction)
     } else if upper.starts_with("INSERT") {
@@ -5566,6 +5614,9 @@ fn execute_statement(
         Statement::Restore { .. } => {
             println!("Error: RESTORE must be authorized before execution");
         }
+        Statement::Backup => {
+            println!("Error: BACKUP must be authorized before execution");
+        }
         Statement::ShowIndexes => {
             if indexes.is_empty() {
                 println!("No indexes defined.");
@@ -6626,6 +6677,18 @@ mod tests {
         assert!(matches!(
             prepare_statement("IMPORT ''"),
             PrepareResult::UnrecognizedStatement
+        ));
+    }
+
+    #[test]
+    fn backup_statement_is_recognized() {
+        assert!(matches!(
+            prepare_statement("BACKUP"),
+            PrepareResult::Success(Statement::Backup)
+        ));
+        assert!(matches!(
+            prepare_statement("backup"),
+            PrepareResult::Success(Statement::Backup)
         ));
     }
 
