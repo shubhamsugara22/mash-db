@@ -241,7 +241,7 @@
 ## Planned Features - Phase 6 (Ecosystem)
 
 ### 16. Backup & Restore
-- **Hot Backup**: Backup without downtime
+- ✅ **Hot Backup**: `BACKUP` (admin only) snapshots the table files while the REPL keeps running. Limitations: single-process REPL only, snapshot taken at a statement boundary, refused inside an active transaction, no multi-process locking.
 - ✅ **Point-in-Time Recovery**: `RESTORE TO <unix_seconds>` (admin only) restores the newest full snapshot taken at or before the target. Snapshot-based, not log-based (the WAL has no row payloads). Limitations: session catalog not reloaded, views and indexes not persisted, WAL behavior after restore unverified, safety-backup cleanup can remove the target backup (restore then fails before any file changes), restore refused when no accounts exist. Backup timestamps have second resolution.
 - ✅ **Export/Import**: SQL dump and restore
 - ✅ **Backup Compression**: Optional gzip compression controlled by durability configuration
