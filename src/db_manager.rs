@@ -241,6 +241,32 @@ impl DatabaseManager {
         Ok(())
     }
 
+    /// Log a table's file contents before the open transaction changes it
+    pub fn log_table_image(
+        &mut self,
+        tx_id: &str,
+        table_name: &str,
+        before: Option<String>,
+    ) -> Result<(), String> {
+        if self.config.wal_enabled {
+            self.wal.log_table_image(tx_id, table_name, before)?;
+        }
+        Ok(())
+    }
+
+    /// Log the schema file contents before the open transaction starts
+    pub fn log_schema_image(&mut self, tx_id: &str, before: Option<String>) -> Result<(), String> {
+        if self.config.wal_enabled {
+            self.wal.log_schema_image(tx_id, before)?;
+        }
+        Ok(())
+    }
+
+    /// True if the open transaction already logged an image of the table
+    pub fn table_imaged_in_tx(&self, table_name: &str) -> bool {
+        self.config.wal_enabled && self.wal.table_imaged_since_begin(table_name)
+    }
+
     /// Register a table in metadata
     pub fn register_table(&mut self, table_name: &str, columns: Vec<String>) {
         self.metadata.register_table(table_name, columns);

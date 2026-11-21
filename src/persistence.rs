@@ -45,6 +45,19 @@ pub enum LogEntry {
         tx_id: String,
         timestamp: u64,
     },
+    // Table file contents before the transaction's first change (None = file absent)
+    TableImage {
+        tx_id: String,
+        table_name: String,
+        before: Option<String>,
+        timestamp: u64,
+    },
+    // Schema file contents before the transaction started
+    SchemaImage {
+        tx_id: String,
+        before: Option<String>,
+        timestamp: u64,
+    },
 }
 
 /// Transaction Isolation Levels
@@ -342,6 +355,46 @@ impl WriteAheadLog {
 
         self.append_entry(&entry)?;
         Ok(())
+    }
+
+    /// Log a table's file contents before the open transaction changes it
+    pub fn log_table_image(
+        &mut self,
+        tx_id: &str,
+        table_name: &str,
+        before: Option<String>,
+    ) -> Result<(), String> {
+        let entry = LogEntry::TableImage {
+            tx_id: tx_id.to_string(),
+            table_name: table_name.to_string(),
+            before,
+            timestamp: current_timestamp(),
+        };
+        self.append_entry(&entry)
+    }
+
+    /// Log the schema file contents before the open transaction starts
+    pub fn log_schema_image(&mut self, tx_id: &str, before: Option<String>) -> Result<(), String> {
+        let entry = LogEntry::SchemaImage {
+            tx_id: tx_id.to_string(),
+            before,
+            timestamp: current_timestamp(),
+        };
+        self.append_entry(&entry)
+    }
+
+    /// True if the current transaction (since its last TransactionBegin) already imaged the table
+    pub fn table_imaged_since_begin(&self, table_name: &str) -> bool {
+        for entry in self.entries.iter().rev() {
+            match entry {
+                LogEntry::TableImage {
+                    table_name: name, ..
+                } if name == table_name => return true,
+                LogEntry::TransactionBegin { .. } => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     fn append_entry(&mut self, entry: &LogEntry) -> Result<(), String> {

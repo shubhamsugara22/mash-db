@@ -1,6 +1,6 @@
 #![allow(unused_variables)]
 use db_manager::DatabaseManager;
-use persistence::DurabilityConfig;
+use persistence::{DurabilityConfig, LogEntry, WriteAheadLog};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -2196,10 +2196,30 @@ fn execute_authorized_statement(
                 println!("Error writing transaction WAL entry: {}", error);
                 return;
             }
+            let schema_before = std::fs::read_to_string(SCHEMA_FILE).ok();
+            if let Err(error) = database_manager.log_schema_image(session_id, schema_before) {
+                println!("Error writing transaction WAL entry: {}", error);
+                return;
+            }
         }
         _ => {}
     }
     if let Some((operation, table_name)) = &write_target {
+        if transaction_was_active && !database_manager.table_imaged_in_tx(table_name) {
+            let before = std::fs::read_to_string(table_file_for(table_name)).ok();
+            if let Err(error) = database_manager.log_table_image(session_id, table_name, before) {
+                println!("Error writing durability log: {}", error);
+                let _ = database_manager.log_audit(
+                    audit_user,
+                    session_id,
+                    audit_operation,
+                    audit_table.as_deref(),
+                    false,
+                    Some("WAL write failed"),
+                );
+                return;
+            }
+        }
         if let Err(error) = database_manager.log_write_before(table_name, operation) {
             println!("Error writing durability log: {}", error);
             let _ = database_manager.log_audit(
@@ -3462,17 +3482,6 @@ fn execute_statement(
     indexes: &mut HashMap<String, (String, Vec<String>)>, // index_name -> (table_name, column_names)
     tx: &mut TransactionState,
 ) {
-    // Map a logical table name to a backing file path.
-    fn table_file_for(name: &str) -> String {
-        match name.to_lowercase().as_str() {
-            // Default primary table
-            "users" => "data.json".to_string(),
-            // Example secondary tables
-            "orders" => "orders.json".to_string(),
-            other => format!("{}.json", other),
-        }
-    }
-
     fn get_schema_for(name: &str, schemas: &HashMap<String, Vec<String>>) -> Vec<String> {
         let name_lower = name.to_lowercase();
         schemas.get(&name_lower).cloned().unwrap_or_else(|| {
@@ -6238,6 +6247,75 @@ fn apply_distinct(rows: Vec<&Row>, distinct: bool) -> Vec<&Row> {
 
 const SCHEMA_FILE: &str = "schemas.json";
 
+// Map a logical table name to a backing file path.
+fn table_file_for(name: &str) -> String {
+    match name.to_lowercase().as_str() {
+        // Default primary table
+        "users" => "data.json".to_string(),
+        // Example secondary tables
+        "orders" => "orders.json".to_string(),
+        other => format!("{}.json", other),
+    }
+}
+
+fn restore_file(path: &str, contents: Option<&str>) -> Result<(), String> {
+    match contents {
+        Some(text) => {
+            std::fs::write(path, text).map_err(|e| format!("Failed to restore {}: {}", path, e))
+        }
+        None => match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("Failed to remove {}: {}", path, e)),
+        },
+    }
+}
+
+/// Undo the writes of a transaction that has no commit or rollback marker in the WAL.
+/// Returns the number of table files restored.
+fn recover_unfinished_transactions(
+    entries: &[&LogEntry],
+    table_path: &dyn Fn(&str) -> String,
+    schema_path: &str,
+) -> Result<usize, String> {
+    // (table images in first-seen order, schema image if logged)
+    let mut open: Option<(Vec<(String, Option<String>)>, Option<Option<String>>)> = None;
+    for entry in entries {
+        match entry {
+            LogEntry::TransactionBegin { .. } => open = Some((Vec::new(), None)),
+            LogEntry::TableImage {
+                table_name, before, ..
+            } => {
+                if let Some((tables, _)) = open.as_mut() {
+                    if !tables.iter().any(|(name, _)| name == table_name) {
+                        tables.push((table_name.clone(), before.clone()));
+                    }
+                }
+            }
+            LogEntry::SchemaImage { before, .. } => {
+                if let Some((_, schema)) = open.as_mut() {
+                    *schema = Some(before.clone());
+                }
+            }
+            LogEntry::TransactionCommit { .. } | LogEntry::TransactionRollback { .. } => {
+                open = None
+            }
+            _ => {}
+        }
+    }
+
+    let Some((tables, schema)) = open else {
+        return Ok(0);
+    };
+    for (name, before) in &tables {
+        restore_file(&table_path(name), before.as_deref())?;
+    }
+    if let Some(before) = schema {
+        restore_file(schema_path, before.as_deref())?;
+    }
+    Ok(tables.len())
+}
+
 fn load_schemas() -> HashMap<String, Vec<String>> {
     if Path::new(SCHEMA_FILE).exists() {
         if let Ok(contents) = std::fs::read_to_string(SCHEMA_FILE) {
@@ -6499,6 +6577,35 @@ fn load_constraints() -> HashMap<
 }
 
 fn main() {
+    // Undo any transaction left open by a previous run before tables are loaded
+    let recovery = match WriteAheadLog::new("data") {
+        Ok(mut wal) => {
+            let result = recover_unfinished_transactions(
+                &wal.get_recovery_entries(),
+                &table_file_for,
+                SCHEMA_FILE,
+            );
+            if result.is_ok() {
+                if let Err(error) = wal.clear_log() {
+                    eprintln!("Failed to clear WAL after recovery: {}", error);
+                }
+            }
+            result
+        }
+        Err(error) => Err(error),
+    };
+    match recovery {
+        Ok(0) => {}
+        Ok(count) => println!(
+            "Crash recovery: rolled back {} table file(s) from an unfinished transaction.",
+            count
+        ),
+        Err(error) => {
+            eprintln!("Crash recovery failed: {}", error);
+            return;
+        }
+    }
+
     let mut database_manager =
         match DatabaseManager::new("mash_db", "data", 100, DurabilityConfig::default()) {
             Ok(manager) => manager,
@@ -6650,7 +6757,10 @@ fn main() {
         }
     }
 
-    if let Err(error) = database_manager.checkpoint() {
+    if tx_state.active {
+        // Keep the WAL images so the next start rolls the open transaction back
+        eprintln!("Transaction still open at exit; its changes will be rolled back on next start.");
+    } else if let Err(error) = database_manager.checkpoint() {
         eprintln!("Error completing database checkpoint: {}", error);
     }
     let _ = database_manager.close_connection(&session_id);
@@ -6659,6 +6769,76 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unfinished_transaction_is_rolled_back_on_recovery() {
+        let dir = "test_tx_recovery_unfinished";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let table_path = |name: &str| format!("{}/{}.json", dir, name);
+        let schema_path = format!("{}/schemas.json", dir);
+        std::fs::write(table_path("users"), "committed").unwrap();
+        std::fs::write(&schema_path, "{\"users\":[]}").unwrap();
+
+        let mut wal = WriteAheadLog::new(dir).unwrap();
+        wal.log_transaction_begin("s1").unwrap();
+        wal.log_schema_image("s1", Some("{\"users\":[]}".to_string()))
+            .unwrap();
+        wal.log_table_image("s1", "users", Some("committed".to_string()))
+            .unwrap();
+        assert!(wal.table_imaged_since_begin("users"));
+        assert!(!wal.table_imaged_since_begin("orders"));
+        std::fs::write(table_path("users"), "uncommitted").unwrap();
+        wal.log_table_image("s1", "orders", None).unwrap();
+        std::fs::write(table_path("orders"), "new").unwrap();
+        std::fs::write(&schema_path, "{}").unwrap();
+        drop(wal);
+
+        let wal = WriteAheadLog::new(dir).unwrap();
+        let entries = wal.get_recovery_entries();
+        let restored =
+            recover_unfinished_transactions(&entries, &table_path, &schema_path).unwrap();
+        assert_eq!(restored, 2);
+        assert_eq!(
+            std::fs::read_to_string(table_path("users")).unwrap(),
+            "committed"
+        );
+        assert!(!Path::new(&table_path("orders")).exists());
+        assert_eq!(
+            std::fs::read_to_string(&schema_path).unwrap(),
+            "{\"users\":[]}"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn committed_transaction_is_not_rolled_back_on_recovery() {
+        let dir = "test_tx_recovery_committed";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let table_path = |name: &str| format!("{}/{}.json", dir, name);
+        let schema_path = format!("{}/schemas.json", dir);
+        std::fs::write(table_path("users"), "after commit").unwrap();
+
+        let mut wal = WriteAheadLog::new(dir).unwrap();
+        wal.log_transaction_begin("s1").unwrap();
+        wal.log_schema_image("s1", None).unwrap();
+        wal.log_table_image("s1", "users", Some("before".to_string()))
+            .unwrap();
+        wal.log_transaction_commit("s1").unwrap();
+        drop(wal);
+
+        let wal = WriteAheadLog::new(dir).unwrap();
+        let entries = wal.get_recovery_entries();
+        let restored =
+            recover_unfinished_transactions(&entries, &table_path, &schema_path).unwrap();
+        assert_eq!(restored, 0);
+        assert_eq!(
+            std::fs::read_to_string(table_path("users")).unwrap(),
+            "after commit"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn export_and_import_statements_are_recognized() {
