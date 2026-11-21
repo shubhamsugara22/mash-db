@@ -61,6 +61,8 @@
 - **ACID Compliance**: Atomic, Consistent, Isolated, Durable operations
 - **BEGIN/COMMIT/ROLLBACK**: Transaction control
 - **Write-Ahead Logging (WAL)**: Crash recovery
+  - ✅ **Slice A: WAL crash recovery**: Inside a transaction, the table file and schema file are imaged in the WAL before their first change. On startup, a transaction with no commit or rollback marker is undone from those images. Exit with an open transaction skips the checkpoint, so the next start rolls it back. Limitations: undo is per table file, not per row; autocommit writes are not covered; metadata files (defaults, notnull, types, constraints, indexes) are not covered; a crash between COMMIT's table saves and the commit marker undoes a committed transaction.
+  - Remaining: isolation/atomicity of inline saves, metadata coverage, per-row images
 - **Priority**: HIGH
 - **Estimated Effort**: 3-4 weeks
 
