@@ -46,6 +46,7 @@ use table::{Row, Table};
 mod backup;
 mod db_manager;
 mod persistence;
+mod server;
 // Struct to represent a joined row with data from both tables
 #[derive(Debug, Clone)]
 struct JoinedRow {
@@ -6800,6 +6801,14 @@ impl Engine {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("serve") {
+        server::run();
+        return;
+    }
+    run_repl();
+}
+
+fn run_repl() {
     let mut engine = match Engine::open() {
         Ok(engine) => engine,
         Err(error) => {
