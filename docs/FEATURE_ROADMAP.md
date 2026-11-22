@@ -51,9 +51,9 @@
 ## Planned Features - Phase 1 (Core Enhancements)
 
 ### 1. Advanced Indexing
-- **Composite Indexes**: Index on multiple columns (e.g., username + email)
-- **Index Statistics**: Track index usage and performance
-- **Index Optimization**: Automatic index rebalancing
+- ✅ **Composite Indexes**: Index on multiple columns; a composite index matches a predicate on its leftmost column
+- ✅ **Index Statistics**: `SHOW INDEX STATS` reports per-session index usage (not persisted)
+- **Index Optimization**: Automatic index rebalancing (planned)
 - **Priority**: HIGH
 - **Estimated Effort**: 2-3 weeks
 
@@ -95,12 +95,10 @@
 ## Planned Features - Phase 2 (Advanced Queries)
 
 ### 4. JOIN Operations
-- **INNER JOIN**: Match rows from multiple tables
-- **LEFT/RIGHT JOIN**: Include non-matching rows
-- **CROSS JOIN**: Cartesian product
+- ✅ **INNER JOIN**: Match rows from multiple tables
+- ✅ **LEFT/RIGHT JOIN**: Include non-matching rows
+- **CROSS JOIN**: Cartesian product (planned, not found in the parser)
 - **Priority**: MEDIUM
-- **Estimated Effort**: 3-4 weeks
-- **Note**: Requires multi-table support first
 
 ### 5. Aggregate Functions ✅ COMPLETED
 - ✅ **COUNT()**: Count rows
@@ -129,9 +127,8 @@
   - MIN/MAX extended to support string columns with lexicographic comparison
 
 ### 6. Subqueries
-- **Nested SELECT**: Queries within queries
-- **IN/NOT IN**: Check value in subquery results
-- **EXISTS**: Check if subquery returns results
+- ✅ **IN / NOT IN** and **EXISTS / NOT EXISTS** predicates in WHERE (correlated subqueries not verified)
+- **Nested SELECT** in other positions: planned
 - **Priority**: LOW
 - **Estimated Effort**: 2-3 weeks
 
@@ -218,16 +215,16 @@
 
 ### 13. Full-Text Search
 - **Text Indexing**: Inverted index for text search
-- **LIKE Operator**: Pattern matching
+- ✅ **LIKE Operator**: Pattern matching with `%` and `_` (implemented)
 - **MATCH/AGAINST**: Full-text search queries
 - **Stemming/Tokenization**: Advanced text processing
 - **Priority**: LOW
 - **Estimated Effort**: 3-4 weeks
 
 ### 14. Views
-- **CREATE VIEW**: Virtual tables
-- **Materialized Views**: Cached query results
-- **View Updates**: Update base tables through views
+- ✅ **CREATE VIEW / DROP VIEW**: Virtual tables, including nested views
+- **Materialized Views**: Cached query results (planned)
+- **View Updates**: Update base tables through views (planned)
 - **Priority**: LOW
 - **Estimated Effort**: 2-3 weeks
 

@@ -105,7 +105,9 @@ SELECT name FROM products WHERE price > '15' ORDER BY name
 - **Concurrency Control Components** - Row-level locks, lock timeouts, deadlock detection, per-session isolation-level APIs, and an in-memory MVCC engine foundation
 - **Backward Compatibility** - Original (id, username, email) fixed schema still fully supported
 - **Multiple Table Support** - Different tables can have completely different schemas
-- **Automated Testing** - Run `cargo test` to execute the current unit and integration test suites
+- **Backup and Restore** - `BACKUP` (admin only, not allowed inside a transaction) creates a full snapshot of the data and metadata files. `RESTORE TO <unix_seconds>` restores the newest full snapshot at or before the target time, after first creating a safety backup. Restore is snapshot-based, not log-based.
+- **Crash Recovery** - WAL replay runs at startup before the REPL starts.
+- **Automated Testing** - Run `cargo test` to execute the current unit and integration test suites. See [Testing How-To](docs/TESTING_HOW_TO.md) for compile checks, test filters, and a REPL smoke test.
 
 ## Deployment and Operations
 
