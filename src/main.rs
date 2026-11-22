@@ -1,4 +1,32 @@
 #![allow(unused_variables)]
+
+// All `println!` output in this crate is routed through `emit`. When a capture
+// is active (see `Engine::execute_line`) the text is collected into a String
+// instead of being written to stdout, so the same executor can serve both the
+// REPL and programmatic callers such as an HTTP server.
+thread_local! {
+    static CAPTURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+fn emit(text: String) {
+    CAPTURE.with(|capture| match capture.borrow_mut().as_mut() {
+        Some(buffer) => {
+            buffer.push_str(&text);
+            buffer.push('\n');
+        }
+        None => ::std::println!("{}", text),
+    });
+}
+
+macro_rules! println {
+    () => {
+        $crate::emit(String::new())
+    };
+    ($($arg:tt)*) => {
+        $crate::emit(format!($($arg)*))
+    };
+}
+
 use db_manager::DatabaseManager;
 use persistence::{DurabilityConfig, LogEntry, WriteAheadLog};
 use serde::{Deserialize, Serialize};
@@ -315,12 +343,6 @@ impl AggregateColumn {
             AggregateColumn::Regular(col.to_string())
         }
     }
-}
-
-#[allow(dead_code)]
-enum MetaCommandResult {
-    Success,
-    UnrecognizedCommand,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -1465,15 +1487,6 @@ pub fn compute_lag_map(
     }
 
     result
-}
-
-fn do_meta_command(input: &str, _table: &mut Table) -> MetaCommandResult {
-    if input == ".exit" {
-        println!("Bye!");
-        std::process::exit(0);
-    } else {
-        MetaCommandResult::UnrecognizedCommand
-    }
 }
 
 fn handle_session_statement(statement: &Statement, session: &mut SessionState) -> bool {
@@ -6576,121 +6589,224 @@ fn load_constraints() -> HashMap<
     constraints
 }
 
-fn main() {
-    // Undo any transaction left open by a previous run before tables are loaded
-    let recovery = match WriteAheadLog::new("data") {
-        Ok(mut wal) => {
-            let result = recover_unfinished_transactions(
-                &wal.get_recovery_entries(),
-                &table_file_for,
-                SCHEMA_FILE,
-            );
-            if result.is_ok() {
-                if let Err(error) = wal.clear_log() {
-                    eprintln!("Failed to clear WAL after recovery: {}", error);
-                }
-            }
-            result
-        }
-        Err(error) => Err(error),
-    };
-    match recovery {
-        Ok(0) => {}
-        Ok(count) => println!(
-            "Crash recovery: rolled back {} table file(s) from an unfinished transaction.",
-            count
+/// Owns all database state. Only one `Engine` should exist per process, and it
+/// should be driven from a single thread because some state is thread-local.
+struct Engine {
+    tables: HashMap<String, Table>,
+    views: HashMap<String, String>,
+    schemas: HashMap<String, Vec<String>>,
+    constraints: HashMap<
+        String,
+        (
+            Option<String>,
+            Vec<String>,
+            HashMap<String, String>,
+            Vec<String>,
         ),
-        Err(error) => {
-            eprintln!("Crash recovery failed: {}", error);
-            return;
-        }
-    }
+    >,
+    indexes: HashMap<String, (String, Vec<String>)>,
+    tx_state: TransactionState,
+    session: SessionState,
+    database_manager: DatabaseManager,
+    session_id: String,
+}
 
-    let mut database_manager =
-        match DatabaseManager::new("mash_db", "data", 100, DurabilityConfig::default()) {
-            Ok(manager) => manager,
-            Err(error) => {
-                eprintln!("Failed to initialize database persistence: {}", error);
-                return;
+impl Engine {
+    /// Runs WAL recovery, loads persisted state and returns a ready engine.
+    fn open() -> Result<Self, String> {
+        // Undo any transaction left open by a previous run before tables are loaded
+        let recovery = match WriteAheadLog::new("data") {
+            Ok(mut wal) => {
+                let result = recover_unfinished_transactions(
+                    &wal.get_recovery_entries(),
+                    &table_file_for,
+                    SCHEMA_FILE,
+                );
+                if result.is_ok() {
+                    if let Err(error) = wal.clear_log() {
+                        eprintln!("Failed to clear WAL after recovery: {}", error);
+                    }
+                }
+                result
             }
+            Err(error) => Err(error),
         };
-    let session_id = match database_manager.create_connection() {
-        Ok(session_id) => session_id,
+        match recovery {
+            Ok(0) => {}
+            Ok(count) => println!(
+                "Crash recovery: rolled back {} table file(s) from an unfinished transaction.",
+                count
+            ),
+            Err(error) => return Err(format!("Crash recovery failed: {}", error)),
+        }
+
+        let mut database_manager =
+            DatabaseManager::new("mash_db", "data", 100, DurabilityConfig::default())
+                .map_err(|error| format!("Failed to initialize database persistence: {}", error))?;
+        let session_id = database_manager
+            .create_connection()
+            .map_err(|error| format!("Failed to initialize database session: {}", error))?;
+
+        // Initialize table registry with default "users" table
+        let mut tables: HashMap<String, Table> = HashMap::new();
+        let default_schema = vec![
+            "id".to_string(),
+            "username".to_string(),
+            "email".to_string(),
+        ];
+        tables.insert(
+            "users".to_string(),
+            Table::new("data.json".to_string(), default_schema.clone()),
+        );
+
+        // Initialize view registry: store view name -> SELECT query
+        let views: HashMap<String, String> = HashMap::new();
+
+        // Restore persisted declared column types
+        COLUMN_TYPES.with(|t| *t.borrow_mut() = load_column_types());
+        let constraints = load_constraints();
+
+        // Initialize index registry: store index_name -> (table_name, column_names)
+        let indexes: HashMap<String, (String, Vec<String>)> = HashMap::new();
+
+        // Initialize authenticated session state.
+        let session = SessionState::new(auth::AuthCatalog::load("auth.json"));
+
+        // Load or initialize schema registry
+        let mut schemas = load_schemas();
+        if schemas.is_empty() {
+            schemas.insert(
+                "users".to_string(),
+                vec![
+                    "id".to_string(),
+                    "username".to_string(),
+                    "email".to_string(),
+                ],
+            );
+            schemas.insert(
+                "orders".to_string(),
+                vec![
+                    "id".to_string(),
+                    "username".to_string(),
+                    "email".to_string(),
+                ],
+            );
+            save_schemas(&schemas);
+        }
+
+        let tx_state = TransactionState {
+            active: false,
+            table_snapshots: HashMap::new(),
+            schema_snapshot: HashMap::new(),
+        };
+
+        // Optional: seed a secondary table for JOIN demos if empty
+        {
+            let mut orders = Table::new("orders.json".to_string(), default_schema.clone());
+            if orders.select_all().is_empty() {
+                let _ = orders.insert(
+                    Row::new(1, "alice".to_string(), "alice@orders.com".to_string()).unwrap(),
+                );
+                let _ = orders
+                    .insert(Row::new(2, "bob".to_string(), "bob@orders.com".to_string()).unwrap());
+                let _ = orders.insert(
+                    Row::new(3, "charlie".to_string(), "charlie@orders.com".to_string()).unwrap(),
+                );
+                let _ = orders.save();
+            }
+            tables.insert("orders".to_string(), orders);
+        }
+
+        Ok(Engine {
+            tables,
+            views,
+            schemas,
+            constraints,
+            indexes,
+            tx_state,
+            session,
+            database_manager,
+            session_id,
+        })
+    }
+
+    /// Executes one line of SQL or a session command and returns everything it printed.
+    fn execute_line(&mut self, raw: &str) -> String {
+        CAPTURE.with(|capture| *capture.borrow_mut() = Some(String::new()));
+        self.run_input(raw);
+        CAPTURE.with(|capture| capture.borrow_mut().take().unwrap_or_default())
+    }
+
+    fn run_input(&mut self, raw: &str) {
+        let input = raw.trim().trim_end_matches(';').trim();
+
+        if input.is_empty() || input.starts_with("--") {
+            return;
+        }
+
+        if input.starts_with('.') {
+            println!("Unrecognized command '{}'", input);
+            return;
+        }
+
+        match prepare_statement(input) {
+            PrepareResult::Success(statement) => {
+                if handle_session_statement(&statement, &mut self.session) {
+                    if let Some(username) = self.session.current_user.as_deref() {
+                        let _ = self
+                            .database_manager
+                            .login_to_session(&self.session_id, username);
+                    }
+                    let _ = self
+                        .database_manager
+                        .update_session_activity(&self.session_id);
+                    return;
+                }
+
+                execute_authorized_statement(
+                    statement,
+                    &self.session,
+                    &mut self.tables,
+                    &mut self.schemas,
+                    &mut self.views,
+                    &mut self.constraints,
+                    &mut self.indexes,
+                    &mut self.tx_state,
+                    &mut self.database_manager,
+                    &self.session_id,
+                );
+                let _ = self
+                    .database_manager
+                    .update_session_activity(&self.session_id);
+            }
+            PrepareResult::UnrecognizedStatement => {
+                println!("Unrecognized keyword at start of '{}'", input);
+            }
+        }
+    }
+
+    /// Flushes state to disk and closes the session.
+    fn shutdown(mut self) {
+        if self.tx_state.active {
+            // Keep the WAL images so the next start rolls the open transaction back
+            eprintln!(
+                "Transaction still open at exit; its changes will be rolled back on next start."
+            );
+        } else if let Err(error) = self.database_manager.checkpoint() {
+            eprintln!("Error completing database checkpoint: {}", error);
+        }
+        let _ = self.database_manager.close_connection(&self.session_id);
+    }
+}
+
+fn main() {
+    let mut engine = match Engine::open() {
+        Ok(engine) => engine,
         Err(error) => {
-            eprintln!("Failed to initialize database session: {}", error);
+            eprintln!("{}", error);
             return;
         }
     };
-
-    // Initialize table registry with default "users" table
-    let mut tables: HashMap<String, Table> = HashMap::new();
-    let default_schema = vec![
-        "id".to_string(),
-        "username".to_string(),
-        "email".to_string(),
-    ];
-    tables.insert(
-        "users".to_string(),
-        Table::new("data.json".to_string(), default_schema.clone()),
-    );
-
-    // Initialize view registry: store view name -> SELECT query
-    let mut views: HashMap<String, String> = HashMap::new();
-
-    // Initialize constraint registry: store table_name -> (primary_key, unique_columns, column defaults, not_null_columns)
-    // Restore persisted declared column types
-    COLUMN_TYPES.with(|t| *t.borrow_mut() = load_column_types());
-    let mut constraints = load_constraints();
-
-    // Initialize index registry: store index_name -> (table_name, column_names)
-    let mut indexes: HashMap<String, (String, Vec<String>)> = HashMap::new();
-
-    // Initialize authenticated session state.
-    let mut session = SessionState::new(auth::AuthCatalog::load("auth.json"));
-
-    // Load or initialize schema registry
-    let mut schemas = load_schemas();
-    if schemas.is_empty() {
-        schemas.insert(
-            "users".to_string(),
-            vec![
-                "id".to_string(),
-                "username".to_string(),
-                "email".to_string(),
-            ],
-        );
-        schemas.insert(
-            "orders".to_string(),
-            vec![
-                "id".to_string(),
-                "username".to_string(),
-                "email".to_string(),
-            ],
-        );
-        save_schemas(&schemas);
-    }
-
-    let mut tx_state = TransactionState {
-        active: false,
-        table_snapshots: HashMap::new(),
-        schema_snapshot: HashMap::new(),
-    };
-
-    // Optional: seed a secondary table for JOIN demos if empty
-    {
-        let mut orders = Table::new("orders.json".to_string(), default_schema.clone());
-        if orders.select_all().is_empty() {
-            let _ = orders
-                .insert(Row::new(1, "alice".to_string(), "alice@orders.com".to_string()).unwrap());
-            let _ = orders
-                .insert(Row::new(2, "bob".to_string(), "bob@orders.com".to_string()).unwrap());
-            let _ = orders.insert(
-                Row::new(3, "charlie".to_string(), "charlie@orders.com".to_string()).unwrap(),
-            );
-            let _ = orders.save();
-        }
-        tables.insert("orders".to_string(), orders);
-    }
 
     loop {
         print_prompt();
@@ -6709,61 +6825,17 @@ fn main() {
             break;
         }
 
-        let input = input.trim().trim_end_matches(';').trim();
-
-        if input.is_empty() || input.starts_with("--") {
-            continue;
+        if input.trim() == ".exit" {
+            println!("Bye!");
+            break;
         }
 
-        if input.starts_with('.') {
-            // Get the default users table for meta commands
-            let table = tables.get_mut("users").expect("Users table not found");
-            match do_meta_command(input, table) {
-                MetaCommandResult::Success => continue,
-                MetaCommandResult::UnrecognizedCommand => {
-                    println!("Unrecognized command '{}'", input);
-                    continue;
-                }
-            }
-        }
-
-        match prepare_statement(input) {
-            PrepareResult::Success(statement) => {
-                if handle_session_statement(&statement, &mut session) {
-                    if let Some(username) = session.current_user.as_deref() {
-                        let _ = database_manager.login_to_session(&session_id, username);
-                    }
-                    let _ = database_manager.update_session_activity(&session_id);
-                    continue;
-                }
-
-                execute_authorized_statement(
-                    statement,
-                    &session,
-                    &mut tables,
-                    &mut schemas,
-                    &mut views,
-                    &mut constraints,
-                    &mut indexes,
-                    &mut tx_state,
-                    &mut database_manager,
-                    &session_id,
-                );
-                let _ = database_manager.update_session_activity(&session_id);
-            }
-            PrepareResult::UnrecognizedStatement => {
-                println!("Unrecognized keyword at start of '{}'", input);
-            }
-        }
+        let output = engine.execute_line(&input);
+        print!("{}", output);
+        let _ = io::stdout().flush();
     }
 
-    if tx_state.active {
-        // Keep the WAL images so the next start rolls the open transaction back
-        eprintln!("Transaction still open at exit; its changes will be rolled back on next start.");
-    } else if let Err(error) = database_manager.checkpoint() {
-        eprintln!("Error completing database checkpoint: {}", error);
-    }
-    let _ = database_manager.close_connection(&session_id);
+    engine.shutdown();
 }
 
 #[cfg(test)]
