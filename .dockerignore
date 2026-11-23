@@ -1,0 +1,15 @@
+target/
+.venv/
+.git/
+docs/
+tests/
+test_backups/
+test_backups_stats/
+test_db_path*/
+Test-commands/
+data/
+auth.json
+*.json
+*.log
+*.txt
+*.md
